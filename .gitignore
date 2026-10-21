@@ -1,0 +1,14 @@
+/build/
+/build-*/
+/out/
+CMakeUserPresets.json
+CMakePresets.json
+/build.ps1
+/.vscode/
+*.exe
+*.obj
+*.o
+*.a
+*.dll
+*.log
+*.cursor

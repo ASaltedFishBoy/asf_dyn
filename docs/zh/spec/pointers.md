@@ -1,0 +1,270 @@
+# 指针与所有权（dyn Ptr）
+
+头文件：`dyn.hpp`（经 `interface.hpp`）。
+
+`dyn` / `sub_dyn` 通过完整指针类型 `Ptr` 描述擦除存储 (`void*`, `std::unique_ptr<void, Deleter>`, …). 句柄别名见 [dyn.md](dyn.md)。构造辅助见 [cast.md](cast.md)。
+
+每张物理虚表都有 `vt[-1]` 的 destroy：恒为 `~Src` / `~Storage`。 `~Src` 平凡时，所有这类槽都是同一个空函数 `vt_destroy_nop`。
+
+库不探测 `get_deleter()`。释放只看 `pointer_trait<P>::kind`。
+
+## 标签与 `pointer_trait`
+
+```cpp
+struct pointer_vt_destroy_tag {
+  explicit pointer_vt_destroy_tag() = default;
+};
+struct pointer_deleter_tag {
+  explicit pointer_deleter_tag() = default;
+};
+inline constexpr pointer_vt_destroy_tag pointer_vt_destroy{};
+inline constexpr pointer_deleter_tag pointer_deleter{};
+
+enum class pointer_kind { observer, vt_destroy, deleter };
+
+template <class P>
+struct pointer_trait {};
+```
+
+类型未特化，或 `kind` 缺失 / 认不出，就是观察器。
+
+```cpp
+template <class P>
+struct pointer_trait {
+  using kind = /* pointer_vt_destroy_tag | pointer_deleter_tag */;
+  static void release(/* Handle& */);  // optional; library passes *this
+};
+```
+
+- 观察器（默认）：释放时不跑 `destroy`。
+- `pointer_vt_destroy_tag`: 释放时先跑 `destroy`，再让指针丢掉存储。可选 `release(Handle&)` 替换默认行为。 `sub_dyn` 上只有这调用成立时才允许vt_destroy 类 `Ptr`。
+- `pointer_deleter_tag`: 释放时不跑 `destroy`。从vt_destroy 类源构造这个 `P` 时是 `P(raw, d)`（`d` 先 destroy 再释放）。
+
+未特化的自定义删除器仍是观察器。可编译的完整文件是 `examples/zh/07_pointer_trait.cpp`。
+
+库内特化写在标准指针类型本身上，不限于擦成 `void` 之后：
+
+```cpp
+template <class T, class U>
+struct pointer_trait<std::unique_ptr<T, std::default_delete<U>>> {
+  using kind = pointer_vt_destroy_tag;
+};
+template <class T, class Alloc>
+struct pointer_trait<std::unique_ptr<T, alloc_delete<Alloc>>> {
+  using kind = pointer_vt_destroy_tag;
+};
+template <class T, class Free>
+struct pointer_trait<std::unique_ptr<T, dyn_adopt_delete<Free>>> {
+  using kind = pointer_deleter_tag;
+};
+template <class T>
+struct pointer_trait<std::shared_ptr<T>> {
+  using kind = pointer_deleter_tag;
+};
+template <std::size_t Size, std::size_t Align, class Ops>
+struct pointer_trait<cache_ptr<Size, Align, Ops>> {
+  using kind = /* Ops::destroy_type:
+                  op_unset            -> absent (observer)
+                  op_stored           -> pointer_deleter_tag
+                  otherwise           -> pointer_vt_destroy_tag */;
+};
+```
+
+`std::weak_ptr<T>` 不特化（观察器）。`void*` 不是类类型，也不特化。
+
+传删除器是浅交接，不是深克隆：对象仍在源已有的分配里。同类型：移动。vt_destroy 类源 `release()` 出裸指针，目的是 `P(raw, d)`。`d` 跑 `vt[-1]` 再释放：目的删除器类型能从 destroy 函指构造则用该类型；否则默认源删除器不转发，`d` 是 `dyn_default_delete`（`dyn_adopt_delete` 的默认 Free 形态，`::operator delete`）。其它源删除器类型传给 `dyn_adopt_delete<Free>` 作为 `d`。`vt[-1]` 不是目的删除器。
+
+## `alloc_delete`
+
+```cpp
+template <class Alloc = std::allocator<std::byte>>
+struct alloc_delete {
+  using allocator_type = Alloc;
+  Alloc alloc{};
+  std::size_t size = 0;
+
+  alloc_delete() noexcept;
+  explicit alloc_delete(std::size_t n) noexcept;
+  alloc_delete(Alloc a, std::size_t n) noexcept;
+  void operator()(void* p) const noexcept;
+};
+```
+
+句柄先跑 `vt[-1]`。这个删除器只按尺寸块经 `allocator_traits` 释放。`Alloc` 是 `std::allocator` 时不用（那条路仍是 `unique_dyn` / `::operator delete`）。
+
+## `dyn_adopt_delete` / `dyn_default_delete`
+
+```cpp
+template <class Free = /* detail::new_delete */>
+struct dyn_adopt_delete {
+  void (*destroy)(void*) = nullptr;
+
+  dyn_adopt_delete() noexcept;
+  dyn_adopt_delete(void (*fn)(void*), Free = {}) noexcept;
+  void operator()(void* p) const noexcept;
+};
+
+using dyn_default_delete = dyn_adopt_delete<>;
+```
+
+`operator()` 跑 `destroy`（来自 `vt[-1]`）再跑 `Free`。`Free` 是私有基类（EBO）：空 `Free` 不占字节，默认形态只有一个指针。默认 `Free` 是 `detail::new_delete`：`std::default_delete<void>` 的 void 安全替身（`::operator delete`；std 类型本身不能对 `void*` 调用）。`dyn_default_delete` 是这个默认 Free 形态的别名：源存储删除器是默认且目的没有能从该函指构造的 `deleter_type` 时，它就是目的 `d`。`unique_ptr<T, dyn_adopt_delete<Free>>` 是删除器种。
+`operator()` 跑 `destroy`（来自 `vt[-1]`）再跑 `Free`。空且可默认构造的 `Free` 不存。`unique_ptr<T, dyn_adopt_delete<Free>>` 是删除器种。
+
+## `cache_ops` / `cache_ptr`
+
+```cpp
+struct op_trivial {};
+struct op_unsupported {};
+struct op_stored {};
+struct op_unset {};
+struct op_from_trait {
+  explicit op_from_trait() = default;
+};
+
+template <class T>
+struct op_copy_of {
+  void operator()(void* dst, void const* src) const;
+};
+template <class T>
+struct op_move_of {
+  void operator()(void* dst, void* src) const;
+};
+template <class T>
+struct op_destroy_of {
+  void operator()(void* p) const;
+};
+
+template <class Copy = op_unset, class Move = op_unset,
+          class Destroy = op_unset>
+struct cache_ops {
+  using copy_type = Copy;
+  using move_type = Move;
+  using destroy_type = Destroy;
+};
+```
+
+`Destroy` 不能是 `op_unsupported`。每个槽默认是 `op_unset`。非标签槽是可调用体，签名如上。库提供 `op_copy_of<T>` / `op_move_of<T>` / `op_destroy_of<T>`，用户也可自写同样调用的类型。 `op_from_trait` 是擦除后的 `cache_dyn` 形态：深虚表操作（`op_construct` / `vt[-1]`）接到这个浅槽上，Ptr 既不存类型也不存函指。
+
+请求的 op 只能弱化 `T` 能做的，或用 `op_unsupported` 剔掉（仅复制/移动）。
+
+放进 `cache_dyn` 时先校验 ops，再擦除：Trait 继承链能做的变成 `op_from_trait`；否则能用的源 op 变成 `op_stored`（或保留 `op_trivial`）。链上没有生命周期槽时，只要 `cache_ptr` 自己能复制、移动、析构仍可放入。带 `T` 的 ops 也可隐式收成这种擦除形式（每个支持的槽变成 stored，载荷按该函指转移）。下行只在 `cache_ops` 不自持生命周期时检查 Trait 链。
+
+```cpp
+template <std::size_t Size, std::size_t Align = alignof(std::max_align_t),
+          class Ops = cache_ops<>>
+class cache_ptr;
+
+template <class T, class Ops = cache_ops<>>
+using cache_ptr_for = cache_ptr<sizeof(T), alignof(T), Ops>;
+```
+
+缓冲跟着对象走。`cache_ptr` 不能靠偷指针搬家；dyn 移动经 `op_construct` 搬迁。
+
+```cpp
+using element_type = void;
+using ops_type = Ops;
+using cache_ptr_tag = void;
+static constexpr std::size_t size = Size;
+static constexpr std::size_t align = Align;
+static constexpr std::size_t cache_capacity = Size;
+static constexpr std::size_t cache_alignment = Align;
+
+cache_ptr() noexcept;
+cache_ptr(std::nullptr_t) noexcept;
+cache_ptr(cache_ptr const&) = default;
+cache_ptr(cache_ptr&&) = default;
+cache_ptr& operator=(cache_ptr const&) = default;
+cache_ptr& operator=(cache_ptr&&) = default;
+~cache_ptr() = default;
+
+template <class FromOps>  // Ops is the erased form of FromOps
+cache_ptr(cache_ptr<Size, Align, FromOps> const&);
+template <class FromOps>
+cache_ptr(cache_ptr<Size, Align, FromOps>&&);
+
+void* get() const noexcept;
+explicit operator bool() const noexcept;
+
+bool operator==(cache_ptr const& a, cache_ptr const& b) noexcept;
+bool operator==(cache_ptr const& a, std::nullptr_t) noexcept;
+```
+
+
+
+## 库提供的 Ptr
+
+```cpp
+// void*                                                 observer; default Ptr
+// std::unique_ptr<void, alloc_delete<Alloc>>            vt_destroy
+// std::unique_ptr<void, dyn_default_delete>            deleter
+// std::unique_ptr<void, dyn_adopt_delete<Free>>         deleter
+template <template <class> class Trait, class Deleter = std::default_delete<void>>
+using unique_dyn = dyn<Trait, std::unique_ptr<void, /* default unique_dyn deleter */>>;
+                                                          // vt_destroy; ::operator delete
+template <template <class> class Trait>
+using shared_dyn = dyn<Trait, std::shared_ptr<void>>;     // deleter
+template <template <class> class Trait>
+using weak_dyn = dyn<Trait, std::weak_ptr<void>>;         // observer
+template <template <class> class Trait, std::size_t Size,
+          std::size_t Align = alignof(std::max_align_t), class Ops = cache_ops<>>
+using cache_dyn = dyn<Trait, cache_ptr<Size, Align, Ops>>;
+```
+
+`unique_dyn<Trait>` 与 `unique_dyn<Trait, std::default_delete<void>>` 是同一类型。
+
+## 生成时的额外实参
+
+`Alloc` 不写进 `to_dyn` / `construct` 的模板参数。它是函数实参，转进 Ptr 构造。声明见 [cast.md](cast.md)。
+
+```cpp
+unique_dyn<Trait> to_dyn<Trait, std::unique_ptr>(U&& object);
+dyn<Trait, std::unique_ptr<void, alloc_delete<Alloc>>>
+to_dyn<Trait, std::unique_ptr>(Alloc alloc, U&& object);
+
+unique_dyn<Trait> construct<std::unique_ptr>(/* *dyn */, Extra&&... extra);
+dyn<Trait, std::unique_ptr<void, alloc_delete<Alloc>>>
+construct<std::unique_ptr>(Alloc alloc, /* *dyn */, Extra&&... extra);
+
+shared_dyn<Trait> construct<std::shared_ptr>(/* *dyn */, Extra&&... extra);
+shared_dyn<Trait> construct<std::shared_ptr>(Alloc alloc, /* *dyn */, Extra&&... extra);
+```
+
+`construct(*d)` 无模板实参时返回 `dyn<Trait, SrcP>`（与源同一 `Ptr`）。`Alloc` 是可选的第一个实参，按 `*dyn` / `rproxy` 的位置判定。代理之后的实参派到 `op_construct`。`std::allocator` 仍是默认 `unique_dyn`（`::operator delete`），不是 `alloc_delete`。
+
+## 创建
+
+源须能变成目标 `Ptr`（或为 sourced mirror / 已有句柄）。
+
+- 智能指针与自定义路径从不直接调 `::operator new/delete`。用 `allocator_traits`。默认 `unique_ptr` 的存储释放（`unique_dyn`）是 `::operator delete`。
+- 深克隆出的 `shared_ptr`：用给定分配器（默认 `std::allocator`）。分配里额外存一个析构指针。
+- `to_dyn<Trait>(T*|unique_ptr|shared_ptr|weak_ptr)`：按 `pointer_kind` 原则采纳，不看类型名：`T*` 观察；`default_delete` / `alloc_delete` 的 `unique_ptr` 是 vt_destroy；`shared_ptr` / `weak_ptr`（deleter 随控制块）直接采纳；`unique_ptr<T, dyn_default_delete>` 收为删除器种；`unique_ptr<T, D>` 的其它可 `T*` 调用自定义 `D` 经 `T` 型包装收为**删除器种**（不挂 `vt[-1]`，`D` 自备 `~T` 与释放）。
+- 值 → `unique_ptr`： `to_dyn<Trait, std::unique_ptr>(value)` — 转发构造到最终存储（无中间 dyn）。可选分配器放第一个： `to_dyn<Trait, std::unique_ptr>(alloc, value)`。
+- 已擦除句柄深构造：`construct<Ptr>(*dyn, extra...)` / `construct<Ptr>(d.rproxy(), extra...)`。可选分配器放第一个：`construct<std::unique_ptr>(alloc, *dyn, extra...)`。
+
+view 与 `Src` 不一致的 sourced mirror 仍用普通 `dyn`。 destroy 恒为 `vt[-1]`（`~Src`）。见 [mirror.md](mirror.md)。
+
+## 句柄转换
+
+Trait 上行（含 From 即 Trait）与 `SrcP` 到本 `Ptr` 一起检查。同一 `Ptr`：拷贝/移动（或 cache 走 vt）。否则用该值类别的 `SrcP` 构造本 `Ptr`。显隐跟指针类型走（`weak_ptr` 从 `shared_ptr` 隐式）。不是 `construct`（深克隆）。目的 `Ptr` 是删除器类、源是vt_destroy 类时，按上面交接。 `Ptr` 相同时与 `trait_cast<Trait>(o)` 同义。
+
+```cpp
+template <template <class> class From, class SrcP>
+explicit(!std::is_convertible_v<SrcP const&, Ptr>)
+dyn(dyn<From, SrcP> const& src);
+template <template <class> class From, class SrcP>
+explicit(!std::is_convertible_v<SrcP &&, Ptr>)
+dyn(dyn<From, SrcP>&& src);
+```
+
+```cpp
+std::pair<Ptr, dyn<Trait, void*>> release();
+```
+
+左值。不是 `cache_ptr` / `weak_ptr`。移出 `Ptr`；`dyn<Trait, void*>` 保留同一张 `vt` 并观察。源句柄为空。
+
+## 参见
+
+- [dyn.md](dyn.md)
+- [cast.md](cast.md) (`construct`)
+- [ref.md](ref.md)（密封引用，与 dyn Ptr 不同层）
+
