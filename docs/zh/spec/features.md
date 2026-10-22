@@ -29,6 +29,8 @@ asf::abi_namespace_name
 
 **实验性**：`dyn_cast` **只保证创建节点及其上方的节点**。纯链 `1-2-3-4` 绑在 `3`：`3-1-2` 受保证；`3-1-4` 可能过也可能不过。实现按叶 Final 的布局 / cover 集合查 Trait，不是精确的「此对象动态类型是否为 To」判定。创建节点之下或 cover 上查到不是承诺。生产路径请优先隐式上行 / `trait_cast` / `as`；需要运行时下行时自证类型，或用 `unsafe_downcast` 并自行承担 UB。API 与判定规则仍可能收紧或改掉。
 
+开启 `ASF_HAS_DYN_INTERMEDIATE=OFF`（仅 final 绑定）后上述保留消失：每个 dyn 都创建于 final 叶，叶即对象的真实动态类型，`meta.find` 的命中恰为「`To` 是否该叶的祖先」。此时 `dyn_cast` 完全确定——能静态上行则静态上行，否则经 meta 精确下行。
+
 meta 结构：一个 `{ find, type }` 头（`find` 是函指，`type` 是指向 Storage 的 `const std::type_info&`），`tables[0..x)` 紧随该头（`this + 1`，不是指针字段）。`tables[]` 装 Final 键下 x 张**互不相同**的物理虚表（叶 + 各 Redirect cover），按物理表索引而非按目标——多个目标可共享同一项。`find` 按 Final 生成为 x 次对编译期 `trait_id` 地址的比较（`trait_id<T>::id` 是每个 Trait 一个 static inline `char`，以地址为身份），返回 **tables 下标**（未命中为 `(std::size_t)-1`）：不传 `self` 的纯 Final 级映射，其下所有键共享一个函数；调用方再索引自己实例的 `tables[k]`。所有被比地址都是局部可见的编译期常量，该 vec 运行时从不改写，比较链可能被编译器编成 switch。每个物理虚表键各有一份 meta（非共享父树）。
 
 ```

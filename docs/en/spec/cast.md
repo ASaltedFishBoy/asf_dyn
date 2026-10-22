@@ -245,7 +245,7 @@ c_dyn<Trait, Ptr> unsafe_downcast(c_dyn<From, Ptr>&&);
 
 Free function only. Same ptr, same `vt`. Misuse is UB. After a Redirect upcast the handle may hold a cover `vt`; naming a more-derived Trait is then UB. [multi_vt.md](multi_vt.md). For `cache_dyn`, the target chain must not add copy/move `op_construct` the source chain lacked.
 
-`#if ASF_HAS_DYN_RTTI` (experimental; guaranteed only to the creation node and above it, [features.md](features.md)):
+`#if ASF_HAS_DYN_RTTI` (experimental; guaranteed only to the creation node and above it, or exact with `ASF_HAS_DYN_INTERMEDIATE=OFF`, [features.md](features.md)):
 
 ```cpp
 template <template <class> class Trait>

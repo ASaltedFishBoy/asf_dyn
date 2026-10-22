@@ -247,7 +247,7 @@ c_dyn<Trait, Ptr> unsafe_downcast(c_dyn<From, Ptr>&&);
 
 仅自由函数。同 ptr、同 `vt`。误用即 UB。 Redirect 上行后句柄可能握 cover `vt`；再命名更派生 Trait 即 UB。[multi_vt.md](multi_vt.md)。`cache_dyn` 的目标链不能多出源链没有的复制/移动 `op_construct`。
 
-`#if ASF_HAS_DYN_RTTI`（实验性；只保证创建节点及其上方，[features.md](features.md)）：
+`#if ASF_HAS_DYN_RTTI`（实验性；只保证创建节点及其上方，或在 `ASF_HAS_DYN_INTERMEDIATE=OFF` 下精确，[features.md](features.md)）：
 
 ```cpp
 template <template <class> class Trait>
