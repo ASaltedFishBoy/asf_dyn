@@ -69,7 +69,7 @@ template <template <class> class Trait, class Spec>
 using cache_dyn_t = dyn<Trait, cache_ptr<Spec::size, Spec::align>>;
 
 // Into cache_dyn: check Spec ops against Obj, then erase: Trait chain ->
-// op_from_trait, else usable source ops -> op_stored / op_trivial.
+// op_from_trait, else usable source ops -> detail::op_modified / op_trivial.
 template <template <class> class Trait, class Spec, class Obj>
 using cache_dyn_ptr_for_t =
     cache_ptr<Spec::size, Spec::align,
@@ -78,12 +78,6 @@ using cache_dyn_ptr_for_t =
 
 template <template <class> class Trait, class Spec, class Obj>
 using cache_dyn_for_t = dyn<Trait, cache_dyn_ptr_for_t<Trait, Spec, Obj>>;
-
-template <class Spec, class Obj>
-using cache_dyn_src_ops_t = std::conditional_t<
-    std::is_same_v<typename cache_spec_ops<Spec>::type,
-                   cache_ops<op_unset, op_unset, op_unset>>,
-    cache_ops_of<Obj>, typename cache_spec_ops<Spec>::type>;
 
 template <template <class> class Trait, class As>
 consteval bool can_ptr_bind_as() {
@@ -97,7 +91,6 @@ constexpr auto try_cache_forward_value(U&& object)
     -> cache_dyn_for_t<Trait, Spec, std::remove_cvref_t<U>> {
   using Obj = std::remove_cvref_t<U>;
   using Out = cache_dyn_for_t<Trait, Spec, Obj>;
-  using SrcOps = cache_dyn_src_ops_t<Spec, Obj>;
   static_assert(can_ptr_bind_as<Trait, Obj>(),
                 "cache_ptr value adopt requires Trait final for Obj "
                 "(or ASF_HAS_DYN_INTERMEDIATE)");
@@ -105,8 +98,7 @@ constexpr auto try_cache_forward_value(U&& object)
     return {};
   vt_ptr vt = dyn_object_slots<false, Trait, Obj, Obj>();
   return dyn_factory_access::from_cache_inplace<Out>(
-      cache_owned_inplace, std::type_identity<SrcOps>{}, vt, sizeof(Obj),
-      alignof(Obj), [&](void* dst) {
+      cache_owned_inplace, vt, sizeof(Obj), alignof(Obj), [&](void* dst) {
         std::construct_at(static_cast<Obj*>(dst), std::forward<U>(object));
       });
 }
@@ -117,7 +109,6 @@ constexpr auto try_cache_forward_mirror(mirror<T, Src> m, bool as_move)
     -> cache_dyn_for_t<Trait, Spec, Src> {
   constexpr bool allow_mirror = layout_allows_mirror_source_as<Trait, T>();
   using Out = cache_dyn_for_t<Trait, Spec, Src>;
-  using SrcOps = cache_dyn_src_ops_t<Spec, Src>;
   static_assert(allow_mirror,
                 "mirror -> dyn requires [[=asf_ann::mirror]] on every Trait "
                 "in the inheritance layout");
@@ -128,8 +119,7 @@ constexpr auto try_cache_forward_mirror(mirror<T, Src> m, bool as_move)
     return {};
   vt_ptr vt = dyn_bind_mirror_slots<false, Trait, T, T, Src>();
   return dyn_factory_access::from_cache_inplace<Out>(
-      cache_owned_inplace, std::type_identity<SrcOps>{}, vt, sizeof(Src),
-      alignof(Src), [&](void* dst) {
+      cache_owned_inplace, vt, sizeof(Src), alignof(Src), [&](void* dst) {
         if (as_move)
           std::construct_at(static_cast<Src*>(dst), std::move(src_of(m)));
         else

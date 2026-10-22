@@ -402,14 +402,14 @@ template <typename R, typename... Args>
 struct erased_fn {
   template <template <class> class Trait, typename Storage, typename As,
             std::size_t I>
-  static R call(void* ptr, vt_ptr vt, Args... args);
+  static R call(void* ptr, Args... args);
 
-  static R stub(void*, vt_ptr, Args...) { std::unreachable(); }
+  static R stub(void*, Args...) { std::unreachable(); }
 
-  static R dispatch(vt_fn slot, void* ptr, vt_ptr vt,
+  static R dispatch(vt_fn slot, void* ptr,
                     std::type_identity_t<Args>... args) {
-    return from_vt_fn<R(void*, vt_ptr, Args...)>(slot)(
-        ptr, vt, std::forward<Args>(args)...);
+    return from_vt_fn<R(void*, Args...)>(slot)(
+        ptr, std::forward<Args>(args)...);
   }
 };
 
@@ -1419,7 +1419,7 @@ inline const vtable_meta* meta_of(vt_ptr vt) {
 #endif  // ASF_HAS_DYN_RTTI
 
 using vt_destroy_fn = void (*)(void* p);
-using vt_construct_fn = void (*)(void*, vt_ptr, void*);
+using vt_construct_fn = void (*)(void*, void*);
 
 inline vt_destroy_fn dyn_vt_destroy(vt_ptr vt) {
   return from_vt_fn<void(void*)>(vt[-1]);
@@ -3804,8 +3804,7 @@ decltype(auto) invoke_wired(auto&& self, auto&&... args) {
 template <typename R, typename... Args>
 template <template <class> class Trait, typename Storage, typename As,
           std::size_t I>
-R erased_fn<R, Args...>::call(void* ptr, vt_ptr vt, Args... args) {
-  (void)vt;
+R erased_fn<R, Args...>::call(void* ptr, Args... args) {
   using Self = [:impl_self_info<Trait, As>():];
   using IdentityView = identity_mirror<As>;
 
@@ -4148,8 +4147,7 @@ consteval std::meta::info dyn_method_at() {
 // imple -> Src constructor (const& copy, && / auto&& move). Else Trait body.
 template <template <class> class Trait, typename Storage, typename As,
           std::size_t I, bool AsMove, class... Extra>
-void erased_construct_into(void* ptr, vt_ptr vt, void* dst, Extra... extra) {
-  (void)vt;
+void erased_construct_into(void* ptr, void* dst, Extra... extra) {
   constexpr auto method = dyn_methods_vec<Trait<void>>()[I];
   using Obj = std::remove_reference_t<As>;
   using Src = std::conditional_t<is_sourced_mirror_v<Storage>,
@@ -4179,17 +4177,17 @@ template <class... Extra>
 struct construct_erased_fn {
   template <template <class> class Trait, typename Storage, typename As,
             std::size_t I, bool AsMove>
-  static void call(void* ptr, vt_ptr vt, void* dst, Extra... extra) {
+  static void call(void* ptr, void* dst, Extra... extra) {
     erased_construct_into<Trait, Storage, As, I, AsMove>(
-        ptr, vt, dst, std::forward<Extra>(extra)...);
+        ptr, dst, std::forward<Extra>(extra)...);
   }
 
-  static void stub(void*, vt_ptr, void*, Extra...) { std::unreachable(); }
+  static void stub(void*, void*, Extra...) { std::unreachable(); }
 
-  static void dispatch(vt_fn slot, void* ptr, vt_ptr vt, void* dst,
+  static void dispatch(vt_fn slot, void* ptr, void* dst,
                        std::type_identity_t<Extra>... extra) {
-    from_vt_fn<void(void*, vt_ptr, void*, Extra...)>(slot)(
-        ptr, vt, dst, std::forward<Extra>(extra)...);
+    from_vt_fn<void(void*, void*, Extra...)>(slot)(
+        ptr, dst, std::forward<Extra>(extra)...);
   }
 };
 
@@ -4299,12 +4297,24 @@ inline std::size_t dyn_storage_align_log(vt_ptr vt)
 
 // Erased construct thunk from the matching 0-extra op_construct method slot
 // (copy/move). AsRvalue selects the rvalue-self overload (rproxy); the
-// function pointer is only (ptr, vt, dst).
+// function pointer is only (ptr, dst).
 template <template <class> class Trait, bool AsRvalue>
 inline vt_construct_fn dyn_construct_of(vt_ptr vt)
   requires(trait_has_dyn_construct<Trait>()) {
   constexpr auto idx = dyn_construct_slot_index<Trait, AsRvalue>();
-  return from_vt_fn<void(void*, vt_ptr, void*)>(vt[idx]);
+  return from_vt_fn<void(void*, void*)>(vt[idx]);
+}
+
+// Section-local variant (sub_dyn): index within Trait's own section; vt is
+// the section-adjusted one.
+template <template <class> class Trait, bool AsRvalue>
+inline vt_construct_fn dyn_construct_of_own_slice(vt_ptr vt)
+  requires(trait_has_dyn_construct<Trait>()) {
+  constexpr auto m = dyn_construct_method<Trait, AsRvalue>();
+  constexpr auto idx = own_dyn_method_index<Trait>(m);
+  static_assert(idx != static_cast<std::size_t>(-1),
+                "no op_construct overload on this section");
+  return from_vt_fn<void(void*, void*)>(vt[idx]);
 }
 
 // Deep construct into a sourced-mirror Storage is only defined when the
@@ -4330,7 +4340,7 @@ consteval bool sourced_object_construct() {
 }
 
 // Call the op_construct overload matching Extra... (empty Extra is copy/move).
-// AsRvalue selects the slot; the erased pointer is (ptr, vt, dst, extras...).
+// AsRvalue selects the slot; the erased pointer is (ptr, dst, extras...).
 template <template <class> class Trait, bool AsRvalue, class... Extra>
 inline void dyn_construct_into(vt_ptr vt, void* ptr, void* dst,
                                Extra&&... extra)
@@ -4342,10 +4352,10 @@ inline void dyn_construct_into(vt_ptr vt, void* ptr, void* dst,
   constexpr auto decl = signature_decl_of<method>();
   if constexpr (decl != std::meta::info{}) {
     using Ctor = [:construct_erased_sig(decl):];
-    Ctor::dispatch(vt[idx], ptr, vt, dst, std::forward<Extra>(extra)...);
+    Ctor::dispatch(vt[idx], ptr, dst, std::forward<Extra>(extra)...);
   } else {
     using Ctor = construct_erased_fn<Extra...>;
-    Ctor::dispatch(vt[idx], ptr, vt, dst, std::forward<Extra>(extra)...);
+    Ctor::dispatch(vt[idx], ptr, dst, std::forward<Extra>(extra)...);
   }
 }
 

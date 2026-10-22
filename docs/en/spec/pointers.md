@@ -65,7 +65,6 @@ template <std::size_t Size, std::size_t Align, class Ops>
 struct pointer_trait<cache_ptr<Size, Align, Ops>> {
   using kind = /* Ops::destroy_type:
                   op_unset            -> absent (observer)
-                  op_stored           -> pointer_deleter_tag
                   otherwise           -> pointer_vt_destroy_tag */;
 };
 ```
@@ -107,16 +106,15 @@ struct dyn_adopt_delete {
 using dyn_default_delete = dyn_adopt_delete<>;
 ```
 
-`operator()` runs `destroy` (from `vt[-1]`) then `Free`. `Free` is a private base, so an empty `Free` costs nothing (EBO) and the default form is a single pointer. The default `Free` is `detail::new_delete`: the void-safe stand-in for `std::default_delete<void>` (`::operator delete`; the std type itself cannot be called on `void*`). `dyn_default_delete` names that default-Free form: it is the dest `d` when the source storage deleter is the default and dest has no `deleter_type` built from the destroy function. `unique_ptr<T, dyn_adopt_delete<Free>>` is deleter-kind.
+`operator()` runs `destroy` (from `vt[-1]`) then `Free`. `Free` is a private base, so an empty `Free` costs nothing (EBO) and the default form is a single pointer. The default `Free` is `detail::new_delete`: the void-safe stand-in for `std::default_delete<void>` (`::operator delete`; the std type itself cannot be called on `void*`). `dyn_default_delete` names that default-Free form: it is the dest `d` when the source storage deleter is the default and dest has no `deleter_type` built from the destroy function. `unique_ptr<T, dyn_adopt_delete<Free>>` is deleter-kind; adopting one into a dyn (re)wires `destroy` to `vt[-1]`, so `~T` always runs before `Free` even when the source deleter's `destroy` was null.
 
 ## `cache_ops` / `cache_ptr`
 
 ```cpp
-struct op_trivial {};
-struct op_unsupported {};
-struct op_stored {};
-struct op_unset {};
-struct op_from_trait {
+struct op_trivial {};       // bytes, or no payload destructor
+struct op_unsupported {};   // that special member is deleted
+struct op_unset {};         // not chosen yet
+struct op_from_trait {      // erased cache_dyn form: deep vt op as that slot
   explicit op_from_trait() = default;
 };
 
@@ -132,21 +130,40 @@ template <class T>
 struct op_destroy_of {
   void operator()(void* p) const;
 };
+template <class T>
+struct op_assign_copy_of {
+  void operator()(void* dst, void const* src) const;
+};
+template <class T>
+struct op_assign_move_of {
+  void operator()(void* dst, void* src) const;
+};
 
-template <class Copy = op_unset, class Move = op_unset,
-          class Destroy = op_unset>
+template <class Destroy = op_unset, class Copy = op_unset,
+          class Move = op_unset, class CopyAssign = op_unset,
+          class MoveAssign = op_unset>
 struct cache_ops {
+  using destroy_type = Destroy;
   using copy_type = Copy;
   using move_type = Move;
-  using destroy_type = Destroy;
+  using copy_assign_type = CopyAssign;
+  using move_assign_type = MoveAssign;
 };
 ```
 
-`Destroy` cannot be `op_unsupported`. Default of each slot is `op_unset`. A non-tag slot is a callable with that signature. The library provides `op_copy_of<T>` / `op_move_of<T>` / `op_destroy_of<T>`; a user type with the same call operator is also fine. `op_from_trait` is the erased `cache_dyn` form: the deep vt op (`op_construct` / `vt[-1]`) is applied as that shallow slot; the Ptr stores neither a type nor a function pointer for it.
+`Destroy` cannot be `op_unsupported` (a compile error); copy and move may be stripped with it. Default of each slot is `op_unset`. A non-tag slot is a callable with that signature. The library provides the `op_*_of<T>` catalog above; a user type with the same call operator is also fine. `op_from_trait` is the erased `cache_dyn` form: the deep vt op (`op_construct` / `vt[-1]`) is applied as that shallow slot; the Ptr stores neither a type nor a function pointer for it.
+
+A slot that is not one of the tags `op_trivial` / `op_unsupported` / `op_unset` / `op_from_trait` is a callable op carried by the type itself (invoked in place, no per-object state). Erasure for a `cache_dyn` keeps such an op riding along in the type the same way (still no stored function pointer).
 
 A requested op may only weaken what `T` can do, or be stripped with `op_unsupported` (copy/move only).
 
-Putting into a `cache_dyn` checks ops, then erases: each operation the Trait inheritance chain can perform becomes `op_from_trait`; otherwise a usable source op becomes `op_stored` (or stays `op_trivial`). If the chain has no lifetime slots, a `cache_ptr` that itself can copy, move, and destroy may still enter. Typed `T` ops convert implicitly to that erased form (each supported slot becomes stored; the payload is transferred by that function). Downcast checks the Trait chain only when `cache_ops` does not supply lifetime itself.
+Relocation of a cache payload picks the first applicable tier: `op_trivial` (bytes), the typed assigner into an already-live destination, and finally the slot's own construct + destroy. Only assign has a substitute: when no assign op is live, assigning into an occupied cache simply destroys and re-constructs.
+
+Putting into a `cache_dyn` checks ops, then erases: each operation the Trait inheritance chain can perform becomes `op_from_trait`; otherwise a usable typed op rides along in the type (still no stored function pointer), or stays `op_trivial`. The two assign slots erase independently of the Trait: `op_unset` / `op_from_trait` degrade to `op_unset`, `op_trivial` stays, anything else rides along in the type. If the chain has no lifetime slots, a `cache_ptr` that itself can copy, move, and destroy may still enter. Downcast checks the Trait chain only when `cache_ops` does not supply lifetime itself.
+
+A custom op may additionally overload on the participating public handles (any dyn handle flavor, deduced). Wherever a fully-formed handle exists at the call site, the handle form is tried first; the `void*` form is the baseline every op must provide. A construct op receives the source handle only (its destination is raw storage, not yet a handle); an assign op receives both. Destroy is offered a live handle everywhere except the final destructor, which has none left. An op callable only with handles is not live at the storage level (tier liveness is a storage-level property); for assign that just means the destroy + construct substitute runs.
+
+A `cache_ptr` converts to another `cache_ptr` only when `Size` and `Align` both stay or grow; a shrink is a compile error. The payload then provably fits (it lived in the smaller-or-equal source buffer), so the transfer needs no runtime fit check. The same growth rule holds for the typed -> erased conversion (each slot transferred by its own op) and for erased `cache_dyn` -> `cache_dyn` conversion (a vt construct into the bigger buffer, when the chain provides that construct).
 
 ```cpp
 template <std::size_t Size, std::size_t Align = alignof(std::max_align_t),
@@ -170,23 +187,27 @@ static constexpr std::size_t cache_alignment = Align;
 
 cache_ptr() noexcept;
 cache_ptr(std::nullptr_t) noexcept;
-cache_ptr(cache_ptr const&) = default;
-cache_ptr(cache_ptr&&) = default;
-cache_ptr& operator=(cache_ptr const&) = default;
-cache_ptr& operator=(cache_ptr&&) = default;
+cache_ptr(cache_ptr const&);            // per Ops
+cache_ptr(cache_ptr&&);
+cache_ptr& operator=(cache_ptr const&);
+cache_ptr& operator=(cache_ptr&&);
 ~cache_ptr() = default;
 
-template <class FromOps>  // Ops is the erased form of FromOps
-cache_ptr(cache_ptr<Size, Align, FromOps> const&);
-template <class FromOps>
-cache_ptr(cache_ptr<Size, Align, FromOps>&&);
+// Grow-only conversions (S1 <= Size && A1 <= Align, else compile error):
+template <std::size_t S1, std::size_t A1>
+cache_ptr(cache_ptr<S1, A1, Ops> const&);
+template <std::size_t S1, std::size_t A1>
+cache_ptr(cache_ptr<S1, A1, Ops>&&);
+template <std::size_t S1, std::size_t A1, class FromOps>
+  // Ops is the erased form of FromOps
+cache_ptr(cache_ptr<S1, A1, FromOps> const&);
+template <std::size_t S1, std::size_t A1, class FromOps>
+cache_ptr(cache_ptr<S1, A1, FromOps>&&);
 
 void* get() const noexcept;
-explicit operator bool() const noexcept;
-
-bool operator==(cache_ptr const& a, cache_ptr const& b) noexcept;
-bool operator==(cache_ptr const& a, std::nullptr_t) noexcept;
 ```
+
+A `cache_ptr` tracks no occupancy: `get()` always returns the buffer and the ptr level has no empty/`nullptr` state or boolean query. Inside a `dyn`, emptiness is judged from the vtable (`vt_ == nullptr`). With no occupancy flag to store, a `cache_dyn` is exactly `Size + sizeof(vt)` bytes (16 B buffer -> 24 B handle).
 
 ## Ptrs the library provides
 

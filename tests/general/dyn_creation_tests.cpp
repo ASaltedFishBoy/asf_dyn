@@ -732,7 +732,7 @@ void TestAllocateDyn_IndirectAllocator_FromValue() {
 #if 1
 using CacheSession = asf::cache_dyn<
     Stringable, sizeof(Session), alignof(Session),
-    asf::cache_ops_from_trait<Stringable>>;
+    asf::cache_ops_from_trait_or_t<Stringable, Session>>;
 
 void TestCacheDyn_FromValue() {
   CountingAllocState::allocate_count = 0;
@@ -793,12 +793,12 @@ struct NumView<TrivialNum> final {
 
 void TestCacheTrivialCopyMove() {
   using Ops = asf::cache_ops_of<TrivialNum>;
-  static_assert(std::same_as<
-                Ops, asf::cache_ops<asf::op_trivial, asf::op_trivial,
-                                    asf::op_trivial>>);
+  static_assert(std::same_as<Ops,
+                             asf::cache_ops<asf::op_trivial, asf::op_trivial,
+                                            asf::op_trivial, asf::op_trivial,
+                                            asf::op_trivial>>);
 
-  using DynOps =
-      asf::cache_ops<asf::op_trivial, asf::op_trivial, asf::op_from_trait>;
+  using DynOps = asf::cache_ops_from_trait_or_t<NumView, TrivialNum>;
   using DynPtr = asf::cache_ptr<sizeof(TrivialNum), alignof(TrivialNum), DynOps>;
   auto d = asf::to_dyn<NumView, asf::cache_ptr>(TrivialNum{11});
   static_assert(std::same_as<decltype(d), asf::dyn<NumView, DynPtr>>);

@@ -65,7 +65,6 @@ template <std::size_t Size, std::size_t Align, class Ops>
 struct pointer_trait<cache_ptr<Size, Align, Ops>> {
   using kind = /* Ops::destroy_type:
                   op_unset            -> absent (observer)
-                  op_stored           -> pointer_deleter_tag
                   otherwise           -> pointer_vt_destroy_tag */;
 };
 ```
@@ -107,17 +106,15 @@ struct dyn_adopt_delete {
 using dyn_default_delete = dyn_adopt_delete<>;
 ```
 
-`operator()` 跑 `destroy`（来自 `vt[-1]`）再跑 `Free`。`Free` 是私有基类（EBO）：空 `Free` 不占字节，默认形态只有一个指针。默认 `Free` 是 `detail::new_delete`：`std::default_delete<void>` 的 void 安全替身（`::operator delete`；std 类型本身不能对 `void*` 调用）。`dyn_default_delete` 是这个默认 Free 形态的别名：源存储删除器是默认且目的没有能从该函指构造的 `deleter_type` 时，它就是目的 `d`。`unique_ptr<T, dyn_adopt_delete<Free>>` 是删除器种。
-`operator()` 跑 `destroy`（来自 `vt[-1]`）再跑 `Free`。空且可默认构造的 `Free` 不存。`unique_ptr<T, dyn_adopt_delete<Free>>` 是删除器种。
+`operator()` 跑 `destroy`（来自 `vt[-1]`）再跑 `Free`。`Free` 是私有基类（EBO）：空 `Free` 不占字节，默认形态只有一个指针。默认 `Free` 是 `detail::new_delete`：`std::default_delete<void>` 的 void 安全替身（`::operator delete`；std 类型本身不能对 `void*` 调用）。`dyn_default_delete` 是这个默认 Free 形态的别名：源存储删除器是默认且目的没有能从该函指构造的 `deleter_type` 时，它就是目的 `d`。`unique_ptr<T, dyn_adopt_delete<Free>>` 是删除器种；把它收纳进 dyn 时会将 `destroy`（重）接线到 `vt[-1]`，即使源删除器的 `destroy` 为空，`~T` 也总在 `Free` 之前运行。
 
 ## `cache_ops` / `cache_ptr`
 
 ```cpp
-struct op_trivial {};
-struct op_unsupported {};
-struct op_stored {};
-struct op_unset {};
-struct op_from_trait {
+struct op_trivial {};       // 字节拷贝，或载荷无需析构
+struct op_unsupported {};   // 该特殊成员被删除
+struct op_unset {};         // 尚未选定
+struct op_from_trait {      // 擦除 cache_dyn 形态：深虚表操作充当该浅槽
   explicit op_from_trait() = default;
 };
 
@@ -133,21 +130,40 @@ template <class T>
 struct op_destroy_of {
   void operator()(void* p) const;
 };
+template <class T>
+struct op_assign_copy_of {
+  void operator()(void* dst, void const* src) const;
+};
+template <class T>
+struct op_assign_move_of {
+  void operator()(void* dst, void* src) const;
+};
 
-template <class Copy = op_unset, class Move = op_unset,
-          class Destroy = op_unset>
+template <class Destroy = op_unset, class Copy = op_unset,
+          class Move = op_unset, class CopyAssign = op_unset,
+          class MoveAssign = op_unset>
 struct cache_ops {
+  using destroy_type = Destroy;
   using copy_type = Copy;
   using move_type = Move;
-  using destroy_type = Destroy;
+  using copy_assign_type = CopyAssign;
+  using move_assign_type = MoveAssign;
 };
 ```
 
-`Destroy` 不能是 `op_unsupported`。每个槽默认是 `op_unset`。非标签槽是可调用体，签名如上。库提供 `op_copy_of<T>` / `op_move_of<T>` / `op_destroy_of<T>`，用户也可自写同样调用的类型。 `op_from_trait` 是擦除后的 `cache_dyn` 形态：深虚表操作（`op_construct` / `vt[-1]`）接到这个浅槽上，Ptr 既不存类型也不存函指。
+`Destroy` 不能是 `op_unsupported`（编译错误）；复制和移动可以用它剔掉。每个槽默认是 `op_unset`。非标签槽是按上表可调用的类型。库提供上面的 `op_*_of<T>` 目录，用户自写同签名的调用类型也可以。`op_from_trait` 是擦除后的 `cache_dyn` 形态：深虚表操作（`op_construct` / `vt[-1]`）接到这个浅槽上，Ptr 既不存类型也不存函指。
+
+不属于标签的槽值是由类型本身携带的可调用算子（原地调用，无每对象状态）。为 `cache_dyn` 擦除时，能用的算子同样随类型携带（仍不存函指）。
 
 请求的 op 只能弱化 `T` 能做的，或用 `op_unsupported` 剔掉（仅复制/移动）。
 
-放进 `cache_dyn` 时先校验 ops，再擦除：Trait 继承链能做的变成 `op_from_trait`；否则能用的源 op 变成 `op_stored`（或保留 `op_trivial`）。链上没有生命周期槽时，只要 `cache_ptr` 自己能复制、移动、析构仍可放入。带 `T` 的 ops 也可隐式收成这种擦除形式（每个支持的槽变成 stored，载荷按该函指转移）。下行只在 `cache_ops` 不自持生命周期时检查 Trait 链。
+cache 载荷搬迁按层取第一个可用者：`op_trivial`（字节）、对已就位目的地的 typed 赋值算子，最后才是该槽自身的构造+析构。只有赋值有替身：赋值算子不活时，向已占用 cache 赋值就退化为析构再构造。
+
+放进 `cache_dyn` 时先校验 ops，再擦除：Trait 继承链能做的变成 `op_from_trait`；否则能用的 typed 算子随类型携带（仍不存函指），或保留 `op_trivial`。两个赋值槽的擦除与 Trait 无关：`op_unset` / `op_from_trait` 退化为 `op_unset`，`op_trivial` 保留，其余随类型携带。链上没有生命周期槽时，只要 `cache_ptr` 自己能复制、移动、析构仍可放入。下行只在 `cache_ops` 不自持生命周期时检查 Trait 链。
+
+自定义算子还可以按参与的公开句柄重载（任意 dyn 句柄形态，推导）。调用点只要存在完全成型的句柄，就先尝试句柄形式；`void*` 形式是每个算子必须提供的基线。构造算子只收到源句柄（目的地还是裸存储，不是句柄）；赋值算子两个都收到。析构在最终析构函数之外的各处都会收到活句柄（最终析构函数那里句柄已不存在）。只能以句柄调用的算子在存储层不活（层活性是存储层属性）；对赋值而言就是退化为析构+构造替身。
+
+`cache_ptr` 到 `cache_ptr` 的转换只允许 `Size` 与 `Align` 不变或变大；缩小是编译错误。载荷必然放得下（它本来就活在更小或相等的源缓冲里），因此转移不需要运行时尺寸检查。typed -> erased 转换（每个槽由自己的算子转移）与擦除 `cache_dyn` -> `cache_dyn` 转换（链提供该构造时，经虚表构造进更大的缓冲）遵守同样的增长规则。
 
 ```cpp
 template <std::size_t Size, std::size_t Align = alignof(std::max_align_t),
@@ -171,24 +187,27 @@ static constexpr std::size_t cache_alignment = Align;
 
 cache_ptr() noexcept;
 cache_ptr(std::nullptr_t) noexcept;
-cache_ptr(cache_ptr const&) = default;
-cache_ptr(cache_ptr&&) = default;
-cache_ptr& operator=(cache_ptr const&) = default;
-cache_ptr& operator=(cache_ptr&&) = default;
+cache_ptr(cache_ptr const&);            // 按 Ops
+cache_ptr(cache_ptr&&);
+cache_ptr& operator=(cache_ptr const&);
+cache_ptr& operator=(cache_ptr&&);
 ~cache_ptr() = default;
 
-template <class FromOps>  // Ops is the erased form of FromOps
-cache_ptr(cache_ptr<Size, Align, FromOps> const&);
-template <class FromOps>
-cache_ptr(cache_ptr<Size, Align, FromOps>&&);
+// 仅增长转换（S1 <= Size && A1 <= Align，否则编译错误）：
+template <std::size_t S1, std::size_t A1>
+cache_ptr(cache_ptr<S1, A1, Ops> const&);
+template <std::size_t S1, std::size_t A1>
+cache_ptr(cache_ptr<S1, A1, Ops>&&);
+template <std::size_t S1, std::size_t A1, class FromOps>
+  // Ops 是 FromOps 的擦除形式
+cache_ptr(cache_ptr<S1, A1, FromOps> const&);
+template <std::size_t S1, std::size_t A1, class FromOps>
+cache_ptr(cache_ptr<S1, A1, FromOps>&&);
 
 void* get() const noexcept;
-explicit operator bool() const noexcept;
-
-bool operator==(cache_ptr const& a, cache_ptr const& b) noexcept;
-bool operator==(cache_ptr const& a, std::nullptr_t) noexcept;
 ```
 
+`cache_ptr` 不记录占用状态：`get()` 恒返回缓冲，ptr 层没有空/`nullptr` 状态或布尔查询。在 dyn 里，空与否由虚表判断（`vt_ == nullptr`）。没有占用位要存，`cache_dyn` 恰好是 `Size + sizeof(vt)` 字节（16 B 缓冲 -> 24 B 句柄）。
 
 
 ## 库提供的 Ptr

@@ -680,7 +680,7 @@ decltype(auto) handle_cast_special(void* ptr, vt_ptr vt,
   if constexpr (Op == special_op::construct) {
     using Erased = erased_fn<void, void*>;
     alignas(Key) std::byte buf[sizeof(Key)];
-    Erased::dispatch(vt[index], ptr, vt, static_cast<void*>(buf));
+    Erased::dispatch(vt[index], ptr, static_cast<void*>(buf));
     Key out{std::move(*reinterpret_cast<Key*>(buf))};
     std::destroy_at(reinterpret_cast<Key*>(buf));
     return out;
@@ -689,7 +689,7 @@ decltype(auto) handle_cast_special(void* ptr, vt_ptr vt,
     static_assert(inst != std::meta::info{},
                   "cannot determine dyn special-op signature");
     using Erased = [:erased_sig(inst):];
-    return Erased::dispatch(vt[index], ptr, vt,
+    return Erased::dispatch(vt[index], ptr,
                             std::forward<decltype(args)>(args)...);
   }
 }
@@ -713,7 +713,7 @@ decltype(auto) handle_call(void* ptr, vt_ptr vt,
   static_assert(inst != std::meta::info{},
                 "cannot determine dyn method signature");
   using Erased = [:erased_sig(inst):];
-  return Erased::dispatch(vt[index], ptr, vt,
+  return Erased::dispatch(vt[index], ptr,
                           std::forward<decltype(args)>(args)...);
 }
 
@@ -733,15 +733,16 @@ decltype(auto) handle_call_in(void* ptr, vt_ptr vt,
   static_assert(inst != std::meta::info{},
                 "cannot determine dyn method signature");
   using Erased = [:erased_sig(inst):];
-  return Erased::dispatch(vt[index], ptr, vt,
+  return Erased::dispatch(vt[index], ptr,
                           std::forward<decltype(args)>(args)...);
 }
 
 // sub_dyn: vt_ is the Final table; slice_off selects Trait's own section.
+// sub_dyn dispatch: vt already points at the section start (adjusted at
+// creation), so indexing is direct.
 template <template <class> class Trait, std::meta::info Method,
           bool RequireConst>
-decltype(auto) handle_call_own_slice(void* ptr, vt_ptr vt,
-                                     std::size_t slice_off, auto&&... args) {
+decltype(auto) handle_call_own_slice(void* ptr, vt_ptr vt, auto&&... args) {
   constexpr auto index = own_dyn_method_index<Trait>(Method);
   static_assert(index != static_cast<std::size_t>(-1),
                 "method is not a dyn slot on this Trait section");
@@ -752,7 +753,7 @@ decltype(auto) handle_call_own_slice(void* ptr, vt_ptr vt,
   static_assert(inst != std::meta::info{},
                 "cannot determine dyn method signature");
   using Erased = [:erased_sig(inst):];
-  return Erased::dispatch(vt[slice_off + index], ptr, vt,
+  return Erased::dispatch(vt[index], ptr,
                           std::forward<decltype(args)>(args)...);
 }
 

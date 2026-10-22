@@ -160,6 +160,7 @@ endforeach()
 foreach(dir_name IN ITEMS
     "general|static_method_on_dyn"
     "general|identity_mirror_self_bind"
+    "general|cache_destroy_unsupported"
     "mirror|explicit_mirror_copy_init"
     "mirror|unsourced_mirror_dyn")
   string(REPLACE "|" ";" dir_name_list ${dir_name})
