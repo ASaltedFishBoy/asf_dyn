@@ -136,6 +136,16 @@ static_assert(!asf_test::detect_typeid_of<asf::sub_dyn<Stringable>>);
 static_assert(!asf_test::detect_typeid_of<asf::c_sub_dyn<Stringable>>);
 #endif
 
+void TestDestroyThunk_Alignment() {
+  // tag_destroy_align packs the align log into the destroy pointer's low
+  // bits: the two vtable destroy thunks must stay max-aligned.
+  ASF_CHECK((reinterpret_cast<std::uintptr_t>(
+                 &asf::detail::vt_src_destroy<Session>) &
+             asf::detail::dyn_align_tag_mask) == 0);
+  ASF_CHECK((reinterpret_cast<std::uintptr_t>(&asf::detail::vt_destroy_nop) &
+             asf::detail::dyn_align_tag_mask) == 0);
+}
+
 void TestDefaultBodyUsesMembers() {
   Session s{1, "lab"};
   auto p = asf::to_dyn<Labeled>(&s);
@@ -446,6 +456,7 @@ void TestOwnedMove_Cache() {
 
 int main() {
   std::fprintf(stdout, "dyn_lifetime_tests\n");
+  ASF_RUN(dyn_lifetime_tests_detail::TestDestroyThunk_Alignment);
   ASF_RUN(dyn_lifetime_tests_detail::TestDefaultBodyUsesMembers);
 #if !ASF_TEST_VIA_MIRROR
   ASF_RUN(dyn_lifetime_tests_detail::TestConstructExtrasUseMembers);

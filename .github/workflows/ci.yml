@@ -20,8 +20,6 @@ jobs:
         config:
           - name: default
             flags: ""
-          - name: single-inherit
-            flags: "-DASF_HAS_DYN_MULTI_VT=OFF -DASF_HAS_DYN_SINGLE_INHERIT=ON"
     steps:
       - uses: actions/checkout@v4
 

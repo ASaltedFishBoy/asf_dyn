@@ -1480,11 +1480,10 @@ inline std::size_t storage_align_from_slot(vt_fn slot) {
   return std::size_t{1} << storage_align_log_from_slot(slot);
 }
 
-// Packs align_log into the low bits of a function pointer. Platform bet:
-// function addresses keep the low dyn_align_tag_bits bits zero (>= 8-byte
-// function alignment). Not constexpr-checkable (addresses are runtime), so
-// assert at the point of tagging; a platform that misaligns must disable this
-// packing and carry align separately.
+// Packs align_log into the low bits of a function pointer. The vtable
+// destroy thunks carry aligned(dyn_max_align) so the low dyn_align_tag_bits
+// bits are always free. Not constexpr-checkable (addresses are runtime), so
+// assert at the point of tagging; any future tagged fn must be aligned too.
 inline vt_destroy_fn tag_destroy_align(vt_destroy_fn fn, std::size_t align_log) {
   auto bits = reinterpret_cast<std::uintptr_t>(fn);
   assert((bits & dyn_align_tag_mask) == 0 &&
@@ -2930,13 +2929,17 @@ void destroy_src(void* ptr) {
 }
 
 // Fixed vt[-1] thunk: always ~Storage / Src. Not a Trait method.
+// aligned(dyn_max_align): tag_destroy_align packs the align log into the
+// low pointer bits, so the two destroy thunks must stay max-aligned (some
+// GCC builds default to tighter function alignment).
 template <typename Storage>
-void vt_src_destroy(void* ptr) {
+__attribute__((aligned(dyn_max_align))) void vt_src_destroy(void* ptr) {
   destroy_src<Storage>(ptr);
 }
 
 // One address for every trivial destroy. Callers can compare the slot to this.
-inline void vt_destroy_nop(void*) noexcept {}
+__attribute__((aligned(dyn_max_align))) inline void vt_destroy_nop(
+    void*) noexcept {}
 
 template <typename Storage>
 consteval bool vt_destroy_is_nop() {
