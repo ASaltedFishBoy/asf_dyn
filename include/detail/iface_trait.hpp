@@ -2929,17 +2929,16 @@ void destroy_src(void* ptr) {
 }
 
 // Fixed vt[-1] thunk: always ~Storage / Src. Not a Trait method.
-// aligned(dyn_max_align): tag_destroy_align packs the align log into the
-// low pointer bits, so the two destroy thunks must stay max-aligned (some
-// GCC builds default to tighter function alignment).
+// ASF_FN_ALIGN(dyn_max_align): tag_destroy_align packs the align log into
+// the low pointer bits, so the two destroy thunks must stay max-aligned
+// (some GCC builds default to tighter function alignment).
 template <typename Storage>
-__attribute__((aligned(dyn_max_align))) void vt_src_destroy(void* ptr) {
+ASF_FN_ALIGN(dyn_max_align) void vt_src_destroy(void* ptr) {
   destroy_src<Storage>(ptr);
 }
 
 // One address for every trivial destroy. Callers can compare the slot to this.
-__attribute__((aligned(dyn_max_align))) inline void vt_destroy_nop(
-    void*) noexcept {}
+ASF_FN_ALIGN(dyn_max_align) inline void vt_destroy_nop(void*) noexcept {}
 
 template <typename Storage>
 consteval bool vt_destroy_is_nop() {

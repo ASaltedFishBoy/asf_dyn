@@ -63,6 +63,16 @@
 #define ASF_PP_STRINGIZE2(x) #x
 #define ASF_PP_STRINGIZE(x) ASF_PP_STRINGIZE2(x)
 
+// Function entry alignment. The align-tag packing in destroy pointers
+// needs the low bits of the tagged thunks free. GCC/Clang only: no
+// portable per-function alignment on MSVC (that path must carry align
+// separately; the tagging assert will catch it).
+#if defined(__GNUC__) || defined(__clang__)
+#define ASF_FN_ALIGN(n) __attribute__((aligned(n)))
+#else
+#define ASF_FN_ALIGN(n)
+#endif
+
 // Binary feature tag (MSB->LSB): RTTI, INTERMEDIATE, MULTI_VT,
 // SINGLE_INHERIT. Pasted as ..._bXXXX into the inline ABI namespace.
 #define ASF_ABI_FEATURE_BITS                                                   \

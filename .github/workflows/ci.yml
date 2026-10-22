@@ -41,3 +41,39 @@ jobs:
 
       - name: Test
         run: ctest --test-dir build --output-on-failure -j"$(nproc)"
+
+  single-inherit:
+    name: GCC 16 (single-inherit, SI-safe subset)
+    runs-on: ubuntu-latest
+    container: gcc:16
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain (cmake from Kitware; distro cmake is too old)
+        run: |
+          g++ --version
+          apt-get update -qq
+          apt-get install -y -qq ninja-build curl ca-certificates
+          curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.30.5/cmake-3.30.5-linux-x86_64.tar.gz \
+            | tar xz -C /usr/local --strip-components=1
+          cmake --version
+
+      # The full suite is intentionally not SI-compatible (MI Traits
+      # static_assert by design). This subset is SI-safe (single-Trait or
+      # truncate-gated DAGs only).
+      - name: Configure (single-inherit)
+        run: cmake -S . -B build-si -G Ninja -DASF_HAS_DYN_MULTI_VT=OFF -DASF_HAS_DYN_SINGLE_INHERIT=ON
+
+      - name: Build (SI-safe subset)
+        run: >-
+          cmake --build build-si -j"$(nproc)" --target
+          dyn_integration_tests dyn_invocation_tests dyn_view_tests
+          dyn_lifetime_tests dyn_creation_tests dyn_dispatch_tests
+          dyn_rtti_tests
+          mirror_dyn_integration_tests mirror_dyn_invocation_tests
+          mirror_dyn_view_tests mirror_dyn_lifetime_tests
+          mirror_dyn_creation_tests mirror_dyn_dispatch_tests
+          mirror_dyn_rtti_tests iface_single_inherit
+
+      - name: Test (single-inherit)
+        run: ctest --test-dir build-si --output-on-failure -j"$(nproc)" -R "dyn_|single_inherit"
