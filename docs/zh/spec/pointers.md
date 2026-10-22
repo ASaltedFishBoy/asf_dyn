@@ -112,6 +112,7 @@ using dyn_default_delete = dyn_adopt_delete<>;
 
 ```cpp
 struct op_trivial {};       // 字节拷贝，或载荷无需析构
+struct op_trivial_relocate {};   // move: memcpy (源 vt 由 dyn 置空)
 struct op_unsupported {};   // 该特殊成员被删除
 struct op_unset {};         // 尚未选定
 struct op_from_trait {      // 擦除 cache_dyn 形态：深虚表操作充当该浅槽
@@ -157,7 +158,7 @@ struct cache_ops {
 
 请求的 op 只能弱化 `T` 能做的，或用 `op_unsupported` 剔掉（仅复制/移动）。
 
-cache 载荷搬迁按层取第一个可用者：`op_trivial`（字节）、对已就位目的地的 typed 赋值算子，最后才是该槽自身的构造+析构。只有赋值有替身：赋值算子不活时，向已占用 cache 赋值就退化为析构再构造。
+cache 载荷搬迁按层取第一个可用者：`op_trivial` / `op_trivial_relocate`（字节；relocate 仅 memcpy，源 vt 由 dyn 置空）、对已就位目的地的 typed 赋值算子，最后才是该槽自身的构造+析构。只有赋值有替身：赋值算子不活时，向已占用 cache 赋值就退化为析构再构造。
 
 放进 `cache_dyn` 时先校验 ops，再擦除：Trait 继承链能做的变成 `op_from_trait`；否则能用的 typed 算子随类型携带（仍不存函指），或保留 `op_trivial`。两个赋值槽的擦除与 Trait 无关：`op_unset` / `op_from_trait` 退化为 `op_unset`，`op_trivial` 保留，其余随类型携带。链上没有生命周期槽时，只要 `cache_ptr` 自己能复制、移动、析构仍可放入。下行只在 `cache_ops` 不自持生命周期时检查 Trait 链。
 
@@ -230,6 +231,22 @@ using cache_dyn = dyn<Trait, cache_ptr<Size, Align, Ops>>;
 ```
 
 `unique_dyn<Trait>` 与 `unique_dyn<Trait, std::default_delete<void>>` 是同一类型。
+
+## `proxy_wrap`
+
+持有可解引用的 `Ptr`，用来派发进 `cache_dyn`。缓冲的 Size/Align/Ops 来自 `cache_ptr` Spec（不是 `proxy_wrap` 自己）。它不是 dyn 的存储 `Ptr`。
+
+```cpp
+template <class Ptr>
+class proxy_wrap;
+```
+
+```cpp
+to_dyn<Trait, cache_ptr<sizeof(P), alignof(P)>>(proxy_wrap{std::make_unique<T>(...)});
+to_dyn<Trait>(proxy_wrap{std::make_unique<T>(...)});  // Spec = sizeof/alignof(P)
+```
+
+拟合与 `Ops` 擦除都针对 **Ptr**（规则同 cache）。缓冲存 `Ptr`；`get()` 返回缓冲地址。虚表：`Storage=Ptr`，`As=pointee`；深构造 / 析构 / `storage_size` 走 `Ptr`；方法走 `*Ptr`。浅层 copy/move 被盖掉（`op_unsupported` 或调不到）时，对应的深 `op_construct` 槽可以空着。
 
 ## 生成时的额外实参
 

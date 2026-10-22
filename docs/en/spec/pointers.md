@@ -111,10 +111,11 @@ using dyn_default_delete = dyn_adopt_delete<>;
 ## `cache_ops` / `cache_ptr`
 
 ```cpp
-struct op_trivial {};       // bytes, or no payload destructor
-struct op_unsupported {};   // that special member is deleted
-struct op_unset {};         // not chosen yet
-struct op_from_trait {      // erased cache_dyn form: deep vt op as that slot
+struct op_trivial {};            // bytes, or no payload destructor
+struct op_trivial_relocate {};   // move only: memcpy (source vt cleared by dyn)
+struct op_unsupported {};        // that special member is deleted
+struct op_unset {};              // not chosen yet
+struct op_from_trait {           // erased cache_dyn form: deep vt op as that slot
   explicit op_from_trait() = default;
 };
 
@@ -153,13 +154,15 @@ struct cache_ops {
 
 `Destroy` cannot be `op_unsupported` (a compile error); copy and move may be stripped with it. Default of each slot is `op_unset`. A non-tag slot is a callable with that signature. The library provides the `op_*_of<T>` catalog above; a user type with the same call operator is also fine. `op_from_trait` is the erased `cache_dyn` form: the deep vt op (`op_construct` / `vt[-1]`) is applied as that shallow slot; the Ptr stores neither a type nor a function pointer for it.
 
-A slot that is not one of the tags `op_trivial` / `op_unsupported` / `op_unset` / `op_from_trait` is a callable op carried by the type itself (invoked in place, no per-object state). Erasure for a `cache_dyn` keeps such an op riding along in the type the same way (still no stored function pointer).
+A slot that is not one of the tags `op_trivial` / `op_trivial_relocate` / `op_unsupported` / `op_unset` / `op_from_trait` is a callable op carried by the type itself (invoked in place, no per-object state). Erasure for a `cache_dyn` keeps such an op riding along in the type the same way (still no stored function pointer).
+
+VT construct / destroy slots come from the Trait alone. `cache_ops` only chooses whether the Ptr-level shallow path uses a Trait slot (`op_from_trait`), a byte path (`op_trivial` / `op_trivial_relocate`), a typed callable, or leaves the operation unsupported — needing an unsupported slot is a compile error.
 
 A requested op may only weaken what `T` can do, or be stripped with `op_unsupported` (copy/move only).
 
-Relocation of a cache payload picks the first applicable tier: `op_trivial` (bytes), the typed assigner into an already-live destination, and finally the slot's own construct + destroy. Only assign has a substitute: when no assign op is live, assigning into an occupied cache simply destroys and re-constructs.
+Relocation of a cache payload picks the first applicable tier: `op_trivial` / `op_trivial_relocate` (bytes; relocate is memcpy — the dyn clears the source vt so destroy does not run on the vacated buffer), the typed assigner into an already-live destination, and finally the slot's own construct + destroy. Only assign has a substitute: when no assign op is live, assigning into an occupied cache simply destroys and re-constructs.
 
-Putting into a `cache_dyn` checks ops, then erases: each operation the Trait inheritance chain can perform becomes `op_from_trait`; otherwise a usable typed op rides along in the type (still no stored function pointer), or stays `op_trivial`. The two assign slots erase independently of the Trait: `op_unset` / `op_from_trait` degrade to `op_unset`, `op_trivial` stays, anything else rides along in the type. If the chain has no lifetime slots, a `cache_ptr` that itself can copy, move, and destroy may still enter. Downcast checks the Trait chain only when `cache_ops` does not supply lifetime itself.
+Putting into a `cache_dyn` checks ops, then erases: each operation the Trait inheritance chain can perform becomes `op_from_trait`, except an explicit `op_trivial_relocate` which stays at the Ptr level; otherwise a usable typed op rides along in the type (still no stored function pointer), or stays `op_trivial`. The two assign slots erase independently of the Trait: `op_unset` / `op_from_trait` degrade to `op_unset`, `op_trivial` / `op_trivial_relocate` stay, anything else rides along in the type. If the chain has no lifetime slots, a `cache_ptr` that itself can copy, move, and destroy may still enter. Downcast checks the Trait chain only when `cache_ops` does not supply lifetime itself.
 
 A custom op may additionally overload on the participating public handles (any dyn handle flavor, deduced). Wherever a fully-formed handle exists at the call site, the handle form is tried first; the `void*` form is the baseline every op must provide. A construct op receives the source handle only (its destination is raw storage, not yet a handle); an assign op receives both. Destroy is offered a live handle everywhere except the final destructor, which has none left. An op callable only with handles is not live at the storage level (tier liveness is a storage-level property); for assign that just means the destroy + construct substitute runs.
 
@@ -229,6 +232,22 @@ using cache_dyn = dyn<Trait, cache_ptr<Size, Align, Ops>>;
 ```
 
 `unique_dyn<Trait>` and `unique_dyn<Trait, std::default_delete<void>>` are the same type.
+
+## `proxy_wrap`
+
+Holds a dereferenceable `Ptr` for dispatch into `cache_dyn`. Cache Size/Align/Ops come from a `cache_ptr` Spec (not from `proxy_wrap`). Not a dyn storage `Ptr`.
+
+```cpp
+template <class Ptr>
+class proxy_wrap;
+```
+
+```cpp
+to_dyn<Trait, cache_ptr<sizeof(P), alignof(P)>>(proxy_wrap{std::make_unique<T>(...)});
+to_dyn<Trait>(proxy_wrap{std::make_unique<T>(...)});  // Spec = sizeof/alignof(P)
+```
+
+Fit check and `Ops` erase target **Ptr** (same rules as cache). Buffer stores `Ptr`; `get()` is the buffer address. VT: `Storage=Ptr`, `As=pointee`; construct/destroy/`storage_size` use `Ptr`; methods `*Ptr`. When shallow copy/move is covered away (`op_unsupported` / unreachable), the matching deep `op_construct` slot is left empty.
 
 ## Extra arguments at creation
 

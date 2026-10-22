@@ -126,7 +126,7 @@ void run_invoke(const char* name, Vec const& data) {
 }
 
 template <typename Vec>
-void run_relocate(Vec& data) {
+void run_relocate(const char* name, Vec& data) {
   Vec buffer(data.size());
   Timer t;
   for (int round = 0; round < 25; ++round) {
@@ -136,54 +136,79 @@ void run_relocate(Vec& data) {
   }
   sink += buffer.size();
   double ms = t.ms();
-  std::println("  relocate  x25                     {:>9.3f} ms  ({:.3f} ns/move)",
-               ms, ms * 1e6 / (25.0 * kDataSize));
+  std::println("  relocate {:<32} {:>9.3f} ms  ({:.3f} ns/move)", name, ms,
+               ms * 1e6 / (25.0 * kDataSize));
 }
+
+// Same-shell SBO as microsoft/proxy: 16 B payload. Small fits inline; Large
+// stores unique_ptr in that buffer (proxy_wrap + unique_cache_ops).
+using SboSpec = asf::cache_ptr<16, 8, asf::unique_cache_ops>;
 
 template <template <int> class Impl, template <int> class VImpl,
           class CacheSpec>
 void run_size(const char* label) {
   std::println("-- {} --", label);
 
-  // Owning handles.
-  auto proxies = Generate([]<int N>(IntConstant<N>, int seed) {
-    return pro::make_proxy<Facade, Impl<N>>(seed);
-  });
-  run_invoke("pro::proxy (owning)", proxies);
-  run_relocate(proxies);
-
-  auto owned_asf = Generate([]<int N>(IntConstant<N>, int seed) {
-    return asf::to_dyn<Ops, std::unique_ptr>(Impl<N>{seed});
-  });
-  run_invoke("asf unique_dyn (owning)", owned_asf);
-  run_relocate(owned_asf);
-
-  // cache_dyn: the object travels inside the handle (no allocation).
-  // Small: buffer aligned with proxy's inline storage (16 B). Large: a cache
-  // that actually fits the object (48 B) -- our cache size is per-Ptr, not
-  // facade-capped.
-  auto cached_asf = Generate([]<int N>(IntConstant<N>, int seed) {
-    return asf::to_dyn<Ops, CacheSpec>(Impl<N>{seed});
-  });
+  // Owning rows: measure then drop so the next Generate is not sitting on
+  // 200k live handles (cache48 build especially polluted sbo Large invoke).
   std::println(
-      "  handle sizes: proxy {} B, unique_dyn {} B, cache_dyn {} B, "
-      "observer {} B, proxy_view {} B",
-      sizeof(typename decltype(proxies)::value_type),
-      sizeof(typename decltype(owned_asf)::value_type),
-      sizeof(typename decltype(cached_asf)::value_type), sizeof(asf::dyn<Ops>),
-      sizeof(pro::proxy_view<Facade>));
-  run_invoke("asf cache_dyn (in-handle)", cached_asf);
-  run_relocate(cached_asf);
+      "  handle sizes: proxy {} B, unique_dyn {} B, sbo {} B, "
+      "cache_dyn {} B, observer {} B, proxy_view {} B",
+      sizeof(pro::proxy<Facade>),
+      sizeof(asf::dyn<Ops, std::unique_ptr<void, asf::detail::new_delete>>),
+      sizeof(asf::dyn<Ops, SboSpec>), sizeof(asf::dyn<Ops, CacheSpec>),
+      sizeof(asf::dyn<Ops>), sizeof(pro::proxy_view<Facade>));
+
+  {
+    auto proxies = Generate([]<int N>(IntConstant<N>, int seed) {
+      return pro::make_proxy<Facade, Impl<N>>(seed);
+    });
+    run_invoke("pro::proxy (owning)", proxies);
+    run_relocate("pro::proxy (owning)", proxies);
+  }
+
+  {
+    auto owned_asf = Generate([]<int N>(IntConstant<N>, int seed) {
+      return asf::to_dyn<Ops, std::unique_ptr>(Impl<N>{seed});
+    });
+    run_invoke("asf unique_dyn (owning)", owned_asf);
+    run_relocate("asf unique_dyn (owning)", owned_asf);
+  }
+
+  // Cos proxy SBO: fixed 16 B shell; inline value or unique_ptr-in-cache.
+  {
+    auto sbo_asf = Generate([]<int N>(IntConstant<N>, int seed) {
+      if constexpr (sizeof(Impl<N>) <= SboSpec::size &&
+                    alignof(Impl<N>) <= SboSpec::align) {
+        return asf::to_dyn<Ops, SboSpec>(Impl<N>{seed});
+      } else {
+        return asf::to_dyn<Ops, SboSpec>(
+            asf::proxy_wrap{std::make_unique<Impl<N>>(seed)});
+      }
+    });
+    run_invoke("asf sbo (cache/uptr-in-cache)", sbo_asf);
+    run_relocate("asf sbo (cache/uptr-in-cache)", sbo_asf);
+  }
+
+  // cache_dyn: object travels in-handle. Small ~proxy inline (16 B); Large
+  // uses a cache that fits (48 B) -- size is per-Ptr, not facade-capped.
+  {
+    auto cached_asf = Generate([]<int N>(IntConstant<N>, int seed) {
+      return asf::to_dyn<Ops, CacheSpec>(Impl<N>{seed});
+    });
+    run_invoke("asf cache_dyn (in-handle)", cached_asf);
+    run_relocate("asf cache_dyn (in-handle)", cached_asf);
+  }
 
   auto uniq = Generate([]<int N>(IntConstant<N>, int seed) {
     return std::unique_ptr<VBase>{new VImpl<N>(seed)};
   });
   run_invoke("virtual (unique_ptr)", uniq);
-  run_relocate(uniq);
+  run_relocate("virtual (unique_ptr)", uniq);
 
   auto anys = Generate(
       []<int N>(IntConstant<N>, int seed) { return std::any{Impl<N>{seed}}; });
-  run_relocate(anys);
+  run_relocate("std::any", anys);
 
   // Observer handles: one arena per type series (raw objects live there);
   // dyn / proxy_view / raw-ptr rows point into them.
@@ -211,9 +236,9 @@ void run_size(const char* label) {
       arenas);
 
   run_invoke("asf::dyn (observer)", dyn_obs);
-  run_relocate(dyn_obs);
+  run_relocate("asf::dyn (observer)", dyn_obs);
   run_invoke("pro::proxy_view", views);
-  run_relocate(views);
+  run_relocate("pro::proxy_view", views);
 
   std::vector<VBase*> rawptrs;
   rawptrs.reserve(uniq.size());

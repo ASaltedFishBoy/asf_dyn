@@ -127,6 +127,7 @@ asf_dual_test(dyn_invocation_tests)
 asf_dual_test(dyn_view_tests)
 asf_dual_test(dyn_lifetime_tests)
 asf_dual_test(dyn_creation_tests)
+asf_dual_test(proxy_wrap_tests)
 asf_dual_test(dyn_dispatch_tests)
 # RTTI suite always enables meta header / dyn_cast (independent of global option).
 asf_dual_test(dyn_rtti_tests)
@@ -242,13 +243,14 @@ foreach(t IN ITEMS
     iface_inherit iface_truncate iface_single_inherit iface_dominant_base
     multi_final_ub iface_final_vt iface_grid_vt
     dyn_integration_tests dyn_invocation_tests dyn_view_tests
-    dyn_lifetime_tests dyn_creation_tests dyn_dispatch_tests
+    dyn_lifetime_tests dyn_creation_tests proxy_wrap_tests dyn_dispatch_tests
     dyn_rtti_tests
     design_probe
     mirror_iface_inherit mirror_multi_final_ub mirror_iface_final_vt
     mirror_iface_grid_vt mirror_dyn_integration_tests
     mirror_dyn_invocation_tests mirror_dyn_view_tests
     mirror_dyn_lifetime_tests mirror_dyn_creation_tests
+    mirror_proxy_wrap_tests
     mirror_dyn_dispatch_tests
     mirror_dyn_rtti_tests)
   add_test(NAME ${t} COMMAND ${t})

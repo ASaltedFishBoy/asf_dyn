@@ -10,6 +10,7 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <meta>
 #include <new>
 #include <string>
@@ -26,6 +27,29 @@ namespace detail {
 // signature (fn-to-fn). Object pointers are not stored in the table.
 using vt_fn = void (*)();
 using vt_ptr = vt_fn const*;
+
+// VT Storage is an owning/observing Ptr; As is the pointee (proxy_wrap path).
+// Method slots dereference; construct/destroy stay on Storage.
+template <typename Storage, typename As>
+consteval bool storage_derefs_to_as() {
+  using S = std::remove_cvref_t<Storage>;
+  using A = std::remove_cvref_t<As>;
+  if constexpr (std::is_same_v<S, A> || is_mirror_v<S>)
+    return false;
+  else if constexpr (!requires {
+                       typename std::pointer_traits<S>::element_type;
+                     })
+    return false;
+  else if constexpr (!std::is_same_v<
+                         std::remove_cv_t<
+                             typename std::pointer_traits<S>::element_type>,
+                         std::remove_cv_t<A>>)
+    return false;
+  else
+    return requires(S& s) {
+      { *s } -> std::convertible_to<A&>;
+    };
+}
 
 template <class Fp>
 constexpr vt_fn as_vt_fn(Fp* fp) noexcept {
@@ -916,10 +940,18 @@ template <typename T, std::size_t I>
 consteval bool direct_base_dominated();
 
 // Defined after reachable_t: warning marker for dominated edges.
+// [[deprecated]] on a callable (not a class template): naming a deprecated
+// class template warns even in discarded if constexpr / uninstantiated
+// templates. Called only from the true branch when forming dominated_t.
+// GCC still dedups to one warning per TU when the call sits inside a library
+// template (even a function template specialization per T).
 template <typename T>
-struct [[deprecated(
+[[deprecated(
     "redundant direct Trait base (ancestor of another direct base): the "
-    "edge is treated as truncate")]] redundant_edge_marker;
+    "edge is treated as truncate")]]
+consteval std::size_t redundant_edge_marker() {
+  return 1;
+}
 
 template <typename T, std::size_t I>
 consteval std::size_t warn_if_dominated_edge();
@@ -996,7 +1028,7 @@ consteval std::size_t warn_if_dominated_edge() {
   if constexpr (edge_tag_live<T, I>() &&
                 dominated_edge_fold<T, I>(
                     std::make_index_sequence<n_direct_bases<T>()>{}))
-    return sizeof(redundant_edge_marker<T>);
+    return redundant_edge_marker<T>();
   else
     return 0;
 }
@@ -1014,14 +1046,20 @@ struct dominated_merge<T, Acc, I0, Is...> {
   using type = typename dominated_merge<T, next, Is...>::type;
 };
 
+// NTTP forces warn_if_dominated_edge when ::type is formed (a plain
+// static constexpr member is not instantiated just by naming ::type).
+template <typename List, std::size_t /*Warn*/>
+struct dominated_warn_attach {
+  using type = List;
+};
+
 template <typename T, typename ISq>
 struct dominated_resident_impl;
 template <typename T, std::size_t... I>
 struct dominated_resident_impl<T, std::index_sequence<I...>> {
-  // Referenced in `type` so dominated edges warn exactly once per T.
-  static constexpr std::size_t edge_warn_ =
-      (warn_if_dominated_edge<T, I>() + ... + 0);
-  using type = typename dominated_merge<T, tlist<>, I...>::type;
+  using type = typename dominated_warn_attach<
+      typename dominated_merge<T, tlist<>, I...>::type,
+      (warn_if_dominated_edge<T, I>() + ... + 0)>::type;
 };
 
 template <typename T>
@@ -3832,6 +3870,17 @@ R erased_fn<R, Args...>::call(void* ptr, Args... args) {
           std::forward<decltype(src)>(src), std::forward<Args>(args)...);
       return result;
     }
+  } else if constexpr (!lifetime_op && storage_derefs_to_as<Storage, As>()) {
+    // proxy_wrap VT: buffer holds Ptr; methods see the pointee.
+    auto&& obj = **static_cast<Storage*>(ptr);
+    if constexpr (std::is_void_v<R>) {
+      invoke_wired<Trait, As, void, method>(
+          std::forward<decltype(obj)>(obj), std::forward<Args>(args)...);
+    } else {
+      R result = invoke_wired<Trait, As, void, method>(
+          std::forward<decltype(obj)>(obj), std::forward<Args>(args)...);
+      return result;
+    }
   } else {
     // ptr -> declaration cvref (in invoke_method). Mirror impls construct
     // from that cvref or fail.
@@ -4370,9 +4419,20 @@ vt_fn make_slot() {
     check_construct_return_decl<method>();
     using Ctor = [:construct_slot_sig<method>():];
     constexpr bool AsMove = is_rvalue_self_method_of<method>();
+    using RawStorage = std::remove_cvref_t<Storage>;
+    // Nullary copy/move: if Storage cannot perform it (e.g. unique_ptr copy),
+    // leave the slot empty -- cache shallow ops already covered it away.
+    constexpr bool nullary = method_nonself_arity(method) == 0;
     if constexpr (sourced_object_construct<Storage, method>())
       return as_vt_fn(&Ctor::stub);
-    return as_vt_fn(&Ctor::template call<Trait, Storage, As, I, AsMove>);
+    else if constexpr (nullary && AsMove &&
+                       !std::is_move_constructible_v<RawStorage>)
+      return as_vt_fn(&Ctor::stub);
+    else if constexpr (nullary && !AsMove &&
+                       !std::is_copy_constructible_v<RawStorage>)
+      return as_vt_fn(&Ctor::stub);
+    else
+      return as_vt_fn(&Ctor::template call<Trait, Storage, As, I, AsMove>);
   } else if constexpr (method_prefers_imple(method)) {
     constexpr auto decl = signature_decl_of<method>();
     static_assert(decl != std::meta::info{},
