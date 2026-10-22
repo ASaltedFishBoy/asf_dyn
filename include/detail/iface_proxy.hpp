@@ -433,7 +433,7 @@ consteval std::meta::info iface_const_host() {
 
 template <template <class> class Trait, typename T, typename Src, std::size_t I>
 consteval std::meta::info iface_bound_at() {
-  constexpr auto m = trait_methods(^^Trait<void>)[I];
+  constexpr auto m = trait_methods_t<Trait<void>>::template at<I>();
   if (!std::meta::has_identifier(m))
     return std::meta::info{};
   auto name = std::meta::identifier_of(m);
@@ -453,8 +453,8 @@ consteval std::vector<std::meta::info>
 iface_fn_specs_impl(std::index_sequence<I...>) {
   std::meta::info bounds[] = {iface_bound_at<Trait, T, Src, I>()...};
   std::string_view names[] = {
-      std::meta::has_identifier(trait_methods(^^Trait<void>)[I])
-          ? std::meta::identifier_of(trait_methods(^^Trait<void>)[I])
+      std::meta::has_identifier(trait_methods_t<Trait<void>>::template at<I>())
+          ? std::meta::identifier_of(trait_methods_t<Trait<void>>::template at<I>())
           : std::string_view{}...};
   std::vector<std::meta::info> specs;
   std::vector<std::string_view> seen;
@@ -490,7 +490,7 @@ iface_fn_specs_impl(std::index_sequence<I...>) {
 
 template <template <class> class Trait, typename T, typename Src>
 consteval std::vector<std::meta::info> iface_fn_specs() {
-  constexpr auto n = trait_methods(^^Trait<void>).size();
+  constexpr auto n = trait_methods_t<Trait<void>>::size;
   if constexpr (n == 0)
     return {};
   else
@@ -507,7 +507,7 @@ struct iface_fn_box {
 
 template <template <class> class Trait, typename T, typename Src, std::size_t I>
 consteval std::meta::info c_iface_bound_at() {
-  constexpr auto m = trait_methods(^^Trait<void>)[I];
+  constexpr auto m = trait_methods_t<Trait<void>>::template at<I>();
   if (!std::meta::has_identifier(m) || !is_const_self_method(m))
     return std::meta::info{};
   auto name = std::meta::identifier_of(m);
@@ -529,8 +529,8 @@ consteval std::vector<std::meta::info>
 c_iface_fn_specs_impl(std::index_sequence<I...>) {
   std::meta::info bounds[] = {c_iface_bound_at<Trait, T, Src, I>()...};
   std::string_view names[] = {
-      std::meta::has_identifier(trait_methods(^^Trait<void>)[I])
-          ? std::meta::identifier_of(trait_methods(^^Trait<void>)[I])
+      std::meta::has_identifier(trait_methods_t<Trait<void>>::template at<I>())
+          ? std::meta::identifier_of(trait_methods_t<Trait<void>>::template at<I>())
           : std::string_view{}...};
   std::vector<std::meta::info> specs;
   std::vector<std::string_view> seen;
@@ -567,7 +567,7 @@ c_iface_fn_specs_impl(std::index_sequence<I...>) {
 // iface<Trait, const T>: const-self methods only (parallel to c_dyn).
 template <template <class> class Trait, typename T, typename Src>
 consteval std::vector<std::meta::info> c_iface_fn_specs() {
-  constexpr auto n = trait_methods(^^Trait<void>).size();
+  constexpr auto n = trait_methods_t<Trait<void>>::size;
   if constexpr (n == 0)
     return {};
   else
@@ -589,7 +589,7 @@ struct c_iface_fn_box {
 // one member. Static methods are iface-only, never on the dyn proxy.
 template <template <class> class Trait, bool ConstOnly, std::size_t I>
 consteval std::meta::info dyn_bound_at(std::meta::info host) {
-  constexpr auto m = dyn_methods(^^Trait<void>)[I];
+  constexpr auto m = dyn_methods_t<Trait<void>>::template at<I>();
   if (!std::meta::has_identifier(m))
     return std::meta::info{};
   if (ConstOnly && !is_const_self_method(m))
@@ -605,8 +605,8 @@ consteval std::vector<std::meta::info>
 dyn_like_fn_specs_impl(std::meta::info host, std::index_sequence<I...>) {
   std::meta::info bounds[] = {dyn_bound_at<Trait, ConstOnly, I>(host)...};
   std::string_view names[] = {
-      std::meta::has_identifier(dyn_methods(^^Trait<void>)[I])
-          ? std::meta::identifier_of(dyn_methods(^^Trait<void>)[I])
+      std::meta::has_identifier(dyn_methods_t<Trait<void>>::template at<I>())
+          ? std::meta::identifier_of(dyn_methods_t<Trait<void>>::template at<I>())
           : std::string_view{}...};
   std::vector<std::meta::info> specs;
   std::vector<std::string_view> seen;
@@ -643,7 +643,7 @@ dyn_like_fn_specs_impl(std::meta::info host, std::index_sequence<I...>) {
 template <template <class> class Trait, bool ConstOnly>
 consteval std::vector<std::meta::info>
 dyn_like_fn_specs(std::meta::info host) {
-  constexpr auto n = dyn_methods(^^Trait<void>).size();
+  constexpr auto n = dyn_methods_t<Trait<void>>::size;
   if constexpr (n == 0)
     return {};
   else

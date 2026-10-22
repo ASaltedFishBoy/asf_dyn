@@ -201,8 +201,7 @@ consteval std::size_t layout_table_count() {
 template <template <class> class Final, std::size_t I>
 asf::detail::vt_ptr table_at() {
   constexpr auto trait = [] {
-    std::vector<std::meta::info> out;
-    asf::detail::collect_vtable_traits(^^Final<void>, out);
+    auto out = asf::detail::vtable_traits_vec<Final<void>>();
     return out[I];
   }();
   constexpr auto helper = std::meta::substitute(

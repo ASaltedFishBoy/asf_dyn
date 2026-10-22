@@ -74,7 +74,7 @@ struct dyn_vt_register {
 template <bool MaskNonConst, template <class> class Final, typename Storage,
           typename As, std::size_t I>
 struct dyn_vt_register_at {
-  static constexpr auto sec = sections_only_of(^^Final<void>)[I];
+  static constexpr auto sec = sections_vec<Final<void>>()[I];
   using Reg = [:std::meta::substitute(
       ^^dyn_vt_register,
       {std::meta::reflect_constant(MaskNonConst), ^^Final,
@@ -86,7 +86,7 @@ template <bool MaskNonConst, template <class> class Final, typename Storage,
           typename As>
 struct dyn_vt_adl_registrar {
   static consteval std::size_t n() {
-    return sections_only_of(^^Final<void>).size();
+    return sections_t<Final<void>>::size;
   }
 
   template <class...>
@@ -110,7 +110,7 @@ struct dyn_vt_adl_registrar {
   // emitted it implicitly.)
   template <std::size_t I>
   static void emit_one() {
-    constexpr auto sec = sections_only_of(^^Final<void>)[I];
+    constexpr auto sec = sections_vec<Final<void>>()[I];
     using Tag = [:std::meta::substitute(
         ^^dyn_vt_tag,
         {std::meta::reflect_constant(MaskNonConst),

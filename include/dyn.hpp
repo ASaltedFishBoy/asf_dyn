@@ -2743,8 +2743,7 @@ class dyn_handle_base
     if constexpr (is_section_prefix_of<To, Trait>()) {
       return vt;
     } else {
-      constexpr auto idx =
-          find_redirect_slot(^^Trait<void>, ^^To<void>);
+      constexpr auto idx = find_redirect_slot_v<Trait<void>, To<void>>;
       static_assert(idx != static_cast<std::size_t>(-1),
                     "no shared redirect path to target interface");
       return from_vt_fn<vt_ptr()>(vt[idx])();

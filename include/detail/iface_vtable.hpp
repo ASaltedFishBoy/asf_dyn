@@ -33,13 +33,14 @@ vt_ptr vtable_cover_slots() {
 // One switch arm: trait_id match -> consteval tables index.
 template <template <class> class Final, std::size_t I>
 bool rtti_find_index_arm(const void* to_id, std::size_t* out) {
-  constexpr auto target = rtti_targets_of(^^Final<void>)[I];
+  using target_t = tlist_at<rtti_targets_t<Final<void>>, I>;
+  constexpr auto target = std::meta::dealias(^^target_t);
   constexpr auto target_tmpl = std::meta::template_of(target);
   constexpr auto id_helper =
       std::meta::substitute(^^trait_id_addr, {target_tmpl});
   if (to_id != [:id_helper:]())
     return false;
-  constexpr auto k = rtti_table_index_of(^^Final<void>, target);
+  constexpr auto k = rtti_table_index_t<Final<void>, target_t>();
   static_assert(k != static_cast<std::size_t>(-1),
                 "rtti target has no physical table under Final");
   *out = k;
@@ -56,15 +57,16 @@ std::size_t rtti_find_index_pack(const void* to_id, std::index_sequence<I...>) {
 
 template <template <class> class Final>
 std::size_t rtti_find_index(const void* to_id) {
-  constexpr auto n = rtti_targets_of(^^Final<void>).size();
+  constexpr auto n = rtti_targets_t<Final<void>>::size;
   return rtti_find_index_pack<Final>(to_id, std::make_index_sequence<n>{});
 }
 
-// I-th distinct physical vt (vtable_traits_of(Final)[I]).
+// I-th distinct physical vt (vtable_traits_t<Final>)[I]).
 template <bool MaskNonConst, template <class> class Final, typename Storage,
           typename As, std::size_t I>
 vt_ptr rtti_table_at() {
-  constexpr auto trait = vtable_traits_of(^^Final<void>)[I];
+  constexpr auto trait =
+      std::meta::dealias(^^tlist_at<vtable_traits_t<Final<void>>, I>);
   constexpr auto trait_tmpl = std::meta::template_of(trait);
   constexpr auto slots_helper = std::meta::substitute(
       ^^vtable_cover_slots,
@@ -99,7 +101,7 @@ template <bool MaskNonConst, template <class> class Final,
 struct vtable_meta_holder
     : vtable_meta_holder_for<
           MaskNonConst, Final, Storage, As,
-          std::make_index_sequence<vtable_traits_of(^^Final<void>).size()>> {};
+          std::make_index_sequence<vtable_traits_t<Final<void>>::size>> {};
 
 template <bool MaskNonConst, template <class> class Final,
           template <class> class Trait, typename Storage, typename As>
@@ -278,13 +280,13 @@ vt_ptr dyn_object_slots() {
 
 template <template <class> class Trait>
 consteval std::size_t trait_method_count() {
-  return trait_methods(^^Trait<void>).size();
+  return trait_methods_t<Trait<void>>::size;
 }
 
 template <template <class> class Trait>
 consteval std::size_t c_dyn_count() {
   std::size_t n = 0;
-  for (auto method : dyn_methods(^^Trait<void>)) {
+  for (auto method : dyn_methods_vec<Trait<void>>()) {
     if (is_const_self_method(method))
       ++n;
   }

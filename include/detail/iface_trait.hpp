@@ -526,6 +526,58 @@ consteval std::vector<std::meta::info> find_methods_named(
   return out;
 }
 
+// --- Method-list residency -------------------------------------------------
+// members_of + filtering runs once per class; the result lives in an info
+// NTTP pack (no static info objects). The raw consteval walk stays as the
+// single source of truth; the pack just carries its result.
+template <std::meta::info... Ms>
+struct method_list {
+  static constexpr std::size_t size = sizeof...(Ms);
+  static consteval std::vector<std::meta::info> vec() { return {Ms...}; }
+  template <std::size_t I>
+  static consteval std::meta::info at() {
+    return Ms...[I];
+  }
+};
+
+template <typename Cls, std::size_t... I>
+consteval auto trait_methods_pack(std::index_sequence<I...>)
+    -> method_list<trait_methods(^^Cls)[I]...>;
+
+template <typename Cls>
+using trait_methods_t = decltype(trait_methods_pack<Cls>(
+    std::make_index_sequence<trait_methods(^^Cls).size()>{}));
+
+template <typename Cls>
+consteval std::vector<std::meta::info> trait_methods_vec() {
+  return trait_methods_t<Cls>::vec();
+}
+
+template <typename Cls>
+consteval std::size_t trait_methods_count() {
+  return trait_methods_t<Cls>::size;
+}
+
+template <typename Cls, std::size_t... I>
+consteval auto dyn_methods_pack(std::index_sequence<I...>)
+    -> method_list<dyn_methods(^^Cls)[I]...>;
+
+// Instantiation of dyn_methods_t is deferred to its use points, all of which
+// follow check_dyn_ann_method's definition (same rule dyn_methods relies on).
+template <typename Cls>
+using dyn_methods_t = decltype(dyn_methods_pack<Cls>(
+    std::make_index_sequence<dyn_methods(^^Cls).size()>{}));
+
+template <typename Cls>
+consteval std::vector<std::meta::info> dyn_methods_vec() {
+  return dyn_methods_t<Cls>::vec();
+}
+
+template <typename Cls>
+consteval std::size_t dyn_methods_count() {
+  return dyn_methods_t<Cls>::size;
+}
+
 enum class special_op { convert, construct, assign };
 
 consteval bool is_assign_op(special_op kind) {
@@ -583,8 +635,6 @@ consteval bool is_convert_method_name(std::string_view name) {
   return is_special_op_name(name, special_op::convert);
 }
 
-consteval std::vector<std::meta::info> sections_only_of(std::meta::info trait_void);
-
 // Static methods are iface-only: a dyn cannot name the concrete mirror
 // view a static self expects, and dispatching it through the vtable would
 // just be a dyn method with extra steps. A user who needs a mirror from a
@@ -604,13 +654,133 @@ struct flat_slot {
   std::size_t method_index{};
 };
 
-consteval bool contains_info(const std::vector<std::meta::info>& v,
-                             std::meta::info x) {
-  for (auto e : v) {
-    if (e == x)
-      return true;
+// ---------------------------------------------------------------------------
+// Type-domain residency: reflection results live as template arguments (one
+// instantiation per key), never as static std::meta::info objects (info is a
+// consteval-only type). Each recursive DAG walk below instantiates once per
+// Trait<void> and is reused by every later lookup in the TU.
+// ---------------------------------------------------------------------------
+
+// Type list carrying class types (the [:info:] splice of a Trait<void>).
+template <typename... Ts>
+struct tlist {
+  static constexpr std::size_t size = sizeof...(Ts);
+  template <std::size_t I>
+  using at = Ts...[I];
+  static consteval std::vector<std::meta::info> vec() { return {^^Ts...}; }
+};
+
+template <typename List, std::size_t I>
+using tlist_at = typename List::template at<I>;
+
+template <typename List, typename N>
+struct tlist_has;
+template <typename... Ts, typename N>
+struct tlist_has<tlist<Ts...>, N>
+    : std::bool_constant<(std::is_same_v<Ts, N> || ...)> {};
+
+template <typename Acc, typename... New>
+struct tlist_append_unique;
+template <typename Acc>
+struct tlist_append_unique<Acc> {
+  using type = Acc;
+};
+template <typename... AccTs, typename N0, typename... Ns>
+struct tlist_append_unique<tlist<AccTs...>, N0, Ns...>
+    : tlist_append_unique<
+          std::conditional_t<tlist_has<tlist<AccTs...>, N0>::value,
+                             tlist<AccTs...>, tlist<AccTs..., N0>>,
+          Ns...> {};
+
+// Ordered union (first occurrence wins), as sections_only_of / the reachable
+// walk require.
+template <typename Acc, typename... Lists>
+struct tlist_concat_unique;
+template <typename Acc>
+struct tlist_concat_unique<Acc> {
+  using type = Acc;
+};
+template <typename Acc, typename... A, typename... Ls>
+struct tlist_concat_unique<Acc, tlist<A...>, Ls...>
+    : tlist_concat_unique<typename tlist_append_unique<Acc, A...>::type,
+                          Ls...> {};
+
+// Ordered concatenation (duplicates kept), for layout flatten.
+template <typename... Lists>
+struct tlist_concat_plain;
+template <>
+struct tlist_concat_plain<> {
+  using type = tlist<>;
+};
+template <typename... A>
+struct tlist_concat_plain<tlist<A...>> {
+  using type = tlist<A...>;
+};
+template <typename... A, typename... B, typename... Rest>
+struct tlist_concat_plain<tlist<A...>, tlist<B...>, Rest...>
+    : tlist_concat_plain<tlist<A..., B...>, Rest...> {};
+
+// A is a prefix of B (element-wise, from the front).
+template <typename A, typename B>
+struct tlist_prefix : std::false_type {};
+template <typename... Bs>
+struct tlist_prefix<tlist<>, tlist<Bs...>> : std::true_type {};
+template <typename A0, typename... As, typename B0, typename... Bs>
+struct tlist_prefix<tlist<A0, As...>, tlist<B0, Bs...>>
+    : std::bool_constant<std::is_same_v<A0, B0> &&
+                         tlist_prefix<tlist<As...>, tlist<Bs...>>::value> {};
+
+// Element index of T in List (compile-time find; (std::size_t)-1 on miss).
+template <typename List, typename T, std::size_t I = 0>
+struct tlist_index_of_impl {
+  static constexpr std::size_t value = static_cast<std::size_t>(-1);
+};
+template <typename T, std::size_t I>
+struct tlist_index_of_impl<tlist<>, T, I> {
+  static constexpr std::size_t value = static_cast<std::size_t>(-1);
+};
+template <typename H, typename... Ts, typename T, std::size_t I>
+struct tlist_index_of_impl<tlist<H, Ts...>, T, I> {
+  static constexpr std::size_t value =
+      std::is_same_v<H, T>
+          ? I
+          : tlist_index_of_impl<tlist<Ts...>, T, I + 1>::value;
+};
+template <typename List, typename T>
+inline constexpr std::size_t tlist_index_of =
+    tlist_index_of_impl<List, T>::value;
+
+// Direct base count / I-th direct base as a type (for resident recursion).
+template <typename T>
+consteval std::size_t n_direct_bases() {
+  return std::meta::bases_of(^^T, unchecked()).size();
+}
+
+template <typename T, std::size_t I>
+using base_t =
+    [:std::meta::type_of(std::meta::bases_of(^^T, unchecked())[I]):];
+
+// Sections (grid-merge order, self last), one instantiation per Trait<void>.
+template <typename T>
+struct sections_resident {
+  template <std::size_t... I>
+  static consteval auto merge(std::index_sequence<I...>) {
+    if constexpr (sizeof...(I) == 0)
+      return tlist<T>{};
+    else
+      return typename tlist_concat_unique<
+          tlist<>, typename sections_resident<base_t<T, I>>::type...,
+          tlist<T>>::type{};
   }
-  return false;
+  using type = decltype(merge(std::make_index_sequence<n_direct_bases<T>()>{}));
+};
+
+template <typename T>
+using sections_t = typename sections_resident<T>::type;
+
+template <typename T>
+consteval std::vector<std::meta::info> sections_vec() {
+  return sections_t<T>::vec();
 }
 
 // Direct bases from `struct Trait<void> : B0<void>, B1<void>, ...`.
@@ -638,38 +808,31 @@ consteval bool is_trait_final() {
     return std::is_final_v<Trait<Raw>>;
 }
 
-// Info-keyed (for Redirect cover search over ancestor infos).
-consteval std::vector<std::meta::info> sections_only_of(
-    std::meta::info trait_void) {
-  auto bases = trait_bases_of(trait_void);
-  if (bases.empty())
-    return {trait_void};
+// Sections walk is resident in the type domain: sections_t<Trait<void>>
+// (grid-merge order, self last), one instantiation per Trait<void>.
 
-  auto result = sections_only_of(bases[0]);
-  for (std::size_t i = 1; i < bases.size(); ++i) {
-    for (auto x : sections_only_of(bases[i])) {
-      if (!contains_info(result, x))
-        result.push_back(x);
-    }
+
+template <typename S, bool Rvalue>
+consteval bool section_has_dyn_construct_as() {
+  for (auto m : dyn_methods_vec<S>()) {
+    if (!std::meta::has_identifier(m) ||
+        !is_special_op_name(std::meta::identifier_of(m),
+                            special_op::construct))
+      continue;
+    if (is_rvalue_self_method(m) == Rvalue)
+      return true;
   }
-  result.push_back(trait_void);
-  return result;
+  return false;
 }
 
+template <bool Rvalue, typename... Ss>
+consteval bool chain_construct_fold_t(tlist<Ss...>) {
+  return (section_has_dyn_construct_as<Ss, Rvalue>() || ...);
+}
 
 template <template <class> class Trait, bool Rvalue>
 consteval bool chain_has_dyn_construct_as() {
-  for (auto s : sections_only_of(^^Trait<void>)) {
-    for (auto m : dyn_methods(s)) {
-      if (!std::meta::has_identifier(m) ||
-          !is_special_op_name(std::meta::identifier_of(m),
-                              special_op::construct))
-        continue;
-      if (is_rvalue_self_method(m) == Rvalue)
-        return true;
-    }
-  }
-  return false;
+  return chain_construct_fold_t<Rvalue>(sections_t<Trait<void>>{});
 }
 template <template <class> class Trait>
 consteval bool chain_has_dyn_copy_construct() {
@@ -683,13 +846,14 @@ consteval bool chain_has_dyn_move_construct() {
 // Grid-merge: sections(B0) then new from Bi... then self.
 template <template <class> class Trait>
 consteval std::vector<std::meta::info> sections_only() {
-  return sections_only_of(^^Trait<void>);
+  return sections_vec<Trait<void>>();
 }
 
 // True if sections[I] (not self) is Parent<As> final.
 template <template <class> class Trait, typename T, std::size_t I>
 consteval bool final_trait_parent_at() {
-  constexpr auto sec = sections_only_of(^^Trait<void>)[I];
+  constexpr auto sec = std::meta::dealias(
+      ^^tlist_at<sections_t<Trait<void>>, I>);
   if constexpr (sec == ^^Trait<void>)
     return false;
   else {
@@ -708,7 +872,7 @@ consteval bool has_final_trait_parent_pack(std::index_sequence<I...>) {
 // True if any ancestor section (not self) is Parent<As> final.
 template <template <class> class Trait, typename T>
 consteval bool has_final_trait_parent() {
-  constexpr auto n = sections_only_of(^^Trait<void>).size();
+  constexpr auto n = sections_t<Trait<void>>::size;
   return has_final_trait_parent_pack<Trait, T>(std::make_index_sequence<n>{});
 }
 
@@ -719,22 +883,8 @@ consteval void assert_no_final_trait_parent() {
                 "derived Trait under a final parent");
 }
 
-consteval bool is_section_prefix_lists(const std::vector<std::meta::info>& a,
-                                       const std::vector<std::meta::info>& b) {
-  if (a.size() > b.size())
-    return false;
-  for (std::size_t i = 0; i < a.size(); ++i) {
-    if (a[i] != b[i])
-      return false;
-  }
-  return true;
-}
-
-consteval bool is_section_prefix(std::meta::info prefix,
-                                 std::meta::info full) {
-  return is_section_prefix_lists(sections_only_of(prefix),
-                                 sections_only_of(full));
-}
+// Section-prefix comparison lives in the type domain now:
+// tlist_prefix<sections_t<A>, sections_t<B>>.
 
 // truncate / truncated layout cuts (MULTI_VT Redirect pruning). Not methods.
 consteval bool has_ann_tag(std::meta::info entity, std::meta::info tag) {
@@ -748,6 +898,53 @@ consteval bool trait_has_truncate(std::meta::info trait_void) {
 
 consteval bool trait_has_truncated(std::meta::info trait_void) {
   return has_ann_tag(trait_void, ^^ann::truncated_tag);
+}
+
+// --- Upcast-reachability residency -----------------------------------------
+// One live-edge DAG walk per Trait<void>; the result is a sections-style
+// tlist with self FIRST (dyn_upcast_reachable_of order).
+template <typename T, std::size_t I>
+consteval bool live_base_at() {
+  constexpr auto b = std::meta::bases_of(^^T, unchecked())[I];
+  auto base = std::meta::type_of(b);
+  return !has_ann_tag(b, ^^ann::truncate_tag) && !trait_has_truncated(base);
+}
+
+template <typename T>
+struct reachable_resident;
+
+template <typename T, typename Acc, std::size_t... I>
+struct reachable_merge {
+  using type = Acc;
+};
+template <typename T, typename Acc, std::size_t I0, std::size_t... Is>
+struct reachable_merge<T, Acc, I0, Is...> {
+  using with = typename tlist_concat_unique<
+      Acc, typename reachable_resident<base_t<T, I0>>::type>::type;
+  using next = std::conditional_t<live_base_at<T, I0>(), with, Acc>;
+  using type = typename reachable_merge<T, next, Is...>::type;
+};
+
+template <typename T, typename ISq>
+struct reachable_resident_impl;
+template <typename T, std::size_t... I>
+struct reachable_resident_impl<T, std::index_sequence<I...>> {
+  using merged = typename reachable_merge<T, tlist<T>, I...>::type;
+  using type = std::conditional_t<trait_has_truncate(^^T), tlist<T>, merged>;
+};
+
+template <typename T>
+struct reachable_resident
+    : reachable_resident_impl<T,
+                              std::make_index_sequence<n_direct_bases<T>()>> {
+};
+
+template <typename T>
+using reachable_t = typename reachable_resident<T>::type;
+
+template <typename T>
+consteval std::vector<std::meta::info> reachable_vec() {
+  return reachable_t<T>::vec();
 }
 
 // Direct bases that still participate in dyn upcast (same cut rules as
@@ -765,17 +962,14 @@ consteval std::size_t live_dyn_base_count(std::meta::info trait_void) {
 }
 
 // True if any section has more than one *live* (non-truncate) Trait base.
-consteval bool trait_has_multi_inherit(std::meta::info trait_void) {
-  for (auto s : sections_only_of(trait_void)) {
-    if (live_dyn_base_count(s) > 1)
-      return true;
-  }
-  return false;
+template <typename... Ss>
+consteval bool any_section_multi_inherit(tlist<Ss...>) {
+  return ((live_dyn_base_count(^^Ss) > 1) || ...);
 }
 
 template <template <class> class Trait>
 consteval bool trait_has_multi_inherit() {
-  return trait_has_multi_inherit(^^Trait<void>);
+  return any_section_multi_inherit(sections_t<Trait<void>>{});
 }
 
 // ASF_HAS_DYN_SINGLE_INHERIT: dyn generation requires SI among live edges;
@@ -790,150 +984,264 @@ consteval void assert_single_inherit() {
   }
 }
 
-// Storeable dyn upcast targets from T (includes T). Honors:
+// Storeable dyn upcast targets from T (includes T) live in reachable_t<T>:
 //   [[=truncate]] on T -> stop (no proper bases)
 //   [[=truncate]] on base-specifier T:B -> skip that branch
 //   [[=truncated]] on B -> inheriting B is a truncate edge (skip B)
 // Ancestor [[=truncate]] still applies when reached via a live edge.
-consteval std::vector<std::meta::info> dyn_upcast_reachable_of(
-    std::meta::info trait_void) {
-  std::vector<std::meta::info> result;
-  result.push_back(trait_void);
-  if (trait_has_truncate(trait_void))
-    return result;
 
-  for (auto b : std::meta::bases_of(trait_void, unchecked())) {
-    auto base = std::meta::type_of(b);
-    if (has_ann_tag(b, ^^ann::truncate_tag) || trait_has_truncated(base))
-      continue;
-    for (auto s : dyn_upcast_reachable_of(base)) {
-      if (!contains_info(result, s))
-        result.push_back(s);
-    }
-  }
-  return result;
-}
+// --- Resident layout (type domain) ------------------------------------------
+// Layout entry tags: the type-domain mirror of layout_entry. All recursion
+// below instantiates once per Trait<void>; cover/prefix/redirect queries then
+// read tlists (no reflection).
+template <typename S>
+struct section_entry {
+  using trait = S;
+};
+template <typename C>
+struct redirect_entry {
+  using trait = C;
+};
 
-consteval bool is_dyn_upcast_reachable(std::meta::info base,
-                                       std::meta::info derived) {
-  return contains_info(dyn_upcast_reachable_of(derived), base);
-}
+template <typename E>
+struct is_redirect_entry : std::false_type {};
+template <typename C>
+struct is_redirect_entry<redirect_entry<C>> : std::true_type {};
+template <typename E>
+inline constexpr bool is_redirect_entry_v = is_redirect_entry<E>::value;
 
-// Cover table for non-prefix base B under T: largest *reachable* M in Anc(T)
-// whose sections are a prefix-superset of B's; at least B itself (as-if-final).
-// Unreachable covers (truncate / truncated paths) are skipped so MULTI_VT
-// does not instantiate extra tables for cut branches.
-consteval std::meta::info redirect_cover_for(std::meta::info B,
-                                             std::meta::info T) {
-  auto b_list = sections_only_of(B);
-  auto reachable = dyn_upcast_reachable_of(T);
-  std::meta::info best = B;
-  std::size_t best_size = b_list.size();
-  for (auto M : sections_only_of(T)) {
-    if (!contains_info(reachable, M))
-      continue;
-    auto m_list = sections_only_of(M);
-    if (!is_section_prefix_lists(b_list, m_list))
-      continue;
-    if (m_list.size() > best_size) {
-      best = M;
-      best_size = m_list.size();
-    }
-  }
-  return best;
-}
+// Cover table for non-prefix base B under T: largest *reachable* M in
+// sections of T whose sections are a prefix-superset of B's; at least B
+// itself (as-if-final). Unreachable covers (truncate / truncated paths) are
+// skipped so MULTI_VT does not instantiate extra tables for cut branches.
+template <typename B, typename ReachableT, typename Rest, typename Best>
+struct cover_for_impl {
+  using type = Best;
+};
+template <typename B, typename ReachableT, typename M0, typename... Ms,
+          typename Best>
+struct cover_for_impl<B, ReachableT, tlist<M0, Ms...>, Best> {
+  static constexpr bool ok =
+      tlist_has<ReachableT, M0>::value &&
+      tlist_prefix<sections_t<B>, sections_t<M0>>::value;
+  using next_best =
+      std::conditional_t<(sections_t<M0>::size > sections_t<Best>::size), M0,
+                         Best>;
+  using type = typename cover_for_impl<
+      B, ReachableT, tlist<Ms...>,
+      std::conditional_t<ok, next_best, Best>>::type;
+};
+
+template <typename B, typename T>
+using cover_for_t =
+    typename cover_for_impl<B, reachable_t<T>, sections_t<T>, B>::type;
 
 // Sections in grid-merge order. With ASF_HAS_DYN_MULTI_VT: after each
 // non-prefix *reachable* section S, Redirect to the as-if-final cover of S
 // (diagram: I1,I2,I3,to I3,I4,I5,I6,to I6,I7). Without: sections only.
 // truncate/truncated prune Redirects (and thus cover vt instances).
-consteval std::vector<layout_entry> primary_layout_of(
-    std::meta::info trait_void) {
-  std::vector<layout_entry> result;
-  std::vector<std::meta::info> emitted_redirects;
-#if ASF_HAS_DYN_MULTI_VT
-  auto reachable = dyn_upcast_reachable_of(trait_void);
-#endif
-  for (auto s : sections_only_of(trait_void)) {
-    result.push_back(layout_entry{layout_kind::section, s});
-#if ASF_HAS_DYN_MULTI_VT
-    if (s == trait_void || is_section_prefix(s, trait_void))
-      continue;
-    if (!contains_info(reachable, s))
-      continue;
-    auto cover = redirect_cover_for(s, trait_void);
-    if (contains_info(emitted_redirects, cover))
-      continue;
-    emitted_redirects.push_back(cover);
-    result.push_back(layout_entry{layout_kind::redirect, cover});
-#else
-    (void)emitted_redirects;
-#endif
+template <typename T, typename Rest, typename Acc, typename Emitted>
+struct layout_build {
+  using type = Acc;
+};
+template <typename T, typename S0, typename... Ss, typename Acc,
+          typename Emitted>
+struct layout_build<T, tlist<S0, Ss...>, Acc, Emitted> {
+  using acc1 =
+      typename tlist_concat_plain<Acc, tlist<section_entry<S0>>>::type;
+  static constexpr bool skip_redirect =
+      !dyn_multi_vt_v || std::is_same_v<S0, T> ||
+      tlist_prefix<sections_t<S0>, sections_t<T>>::value ||
+      !tlist_has<reachable_t<T>, S0>::value;
+  using cover = cover_for_t<S0, T>;
+  static constexpr bool emit =
+      !skip_redirect && !tlist_has<Emitted, cover>::value;
+  using acc2 =
+      std::conditional_t<emit,
+                         typename tlist_concat_plain<
+                             acc1, tlist<redirect_entry<cover>>>::type,
+                         acc1>;
+  using emitted2 =
+      std::conditional_t<emit,
+                         typename tlist_append_unique<Emitted, cover>::type,
+                         Emitted>;
+  using type = typename layout_build<T, tlist<Ss...>, acc2, emitted2>::type;
+};
+
+template <typename T>
+struct layout_resident {
+  using type = typename layout_build<T, sections_t<T>, tlist<>, tlist<>>::type;
+};
+
+template <typename T>
+using layout_t = typename layout_resident<T>::type;
+
+template <typename E>
+struct layout_entry_of;
+template <typename S>
+struct layout_entry_of<section_entry<S>> {
+  static consteval layout_entry value() {
+    return layout_entry{layout_kind::section, ^^S};
   }
-  return result;
+};
+template <typename C>
+struct layout_entry_of<redirect_entry<C>> {
+  static consteval layout_entry value() {
+    return layout_entry{layout_kind::redirect, ^^C};
+  }
+};
+
+template <typename T, std::size_t... I>
+consteval std::vector<layout_entry> layout_vec_impl(std::index_sequence<I...>) {
+  return {layout_entry_of<tlist_at<layout_t<T>, I>>::value()...};
+}
+
+template <typename T>
+consteval std::vector<layout_entry> layout_vec() {
+  return layout_vec_impl<T>(std::make_index_sequence<layout_t<T>::size>{});
 }
 
 template <template <class> class Trait>
 consteval std::vector<layout_entry> primary_layout() {
-  return primary_layout_of(^^Trait<void>);
+  return layout_vec<Trait<void>>();
 }
 
 // Distinct Redirect cover identities in T's layout (for vt instance collect).
-consteval std::vector<std::meta::info> redirect_targets_of(
-    std::meta::info trait_void) {
-  std::vector<std::meta::info> targets;
-  for (auto const& e : primary_layout_of(trait_void)) {
-    if (e.kind == layout_kind::redirect && !contains_info(targets, e.trait_void))
-      targets.push_back(e.trait_void);
+template <typename Acc, typename Rest>
+struct redirect_collect {
+  using type = Acc;
+};
+template <typename Acc, typename E0, typename... Es>
+struct redirect_collect<Acc, tlist<E0, Es...>> {
+  using next =
+      std::conditional_t<is_redirect_entry_v<E0>,
+                         typename tlist_append_unique<Acc,
+                                                      typename E0::trait>::type,
+                         Acc>;
+  using type = typename redirect_collect<next, tlist<Es...>>::type;
+};
+
+template <typename T>
+struct redirect_targets_resident {
+  using type = typename redirect_collect<tlist<>, layout_t<T>>::type;
+};
+
+template <typename T>
+using redirect_targets_t = typename redirect_targets_resident<T>::type;
+
+template <typename T>
+consteval std::vector<std::meta::info> redirect_targets_vec() {
+  return redirect_targets_t<T>::vec();
+}
+
+// --- Resident flat layout ----------------------------------------------------
+template <typename S, std::size_t I>
+struct flat_method {
+  using trait = S;
+  static constexpr std::size_t method_index = I;
+};
+template <typename C>
+struct flat_redirect {
+  using trait = C;
+};
+
+template <typename E>
+struct is_flat_method : std::false_type {};
+template <typename S, std::size_t I>
+struct is_flat_method<flat_method<S, I>> : std::true_type {};
+template <typename E>
+inline constexpr bool is_flat_method_v = is_flat_method<E>::value;
+
+template <typename E>
+struct is_flat_redirect : std::false_type {};
+template <typename C>
+struct is_flat_redirect<flat_redirect<C>> : std::true_type {};
+template <typename E>
+inline constexpr bool is_flat_redirect_v = is_flat_redirect<E>::value;
+
+template <typename E>
+struct flat_expand;
+template <typename S>
+struct flat_expand<section_entry<S>> {
+  template <typename ISq>
+  struct go;
+  template <std::size_t... I>
+  struct go<std::index_sequence<I...>> {
+    using type = tlist<flat_method<S, I>...>;
+  };
+  using type =
+      typename go<std::make_index_sequence<dyn_methods_t<S>::size>>::type;
+};
+template <typename C>
+struct flat_expand<redirect_entry<C>> {
+  using type = tlist<flat_redirect<C>>;
+};
+
+template <typename LayoutList>
+struct flat_from_layout;
+template <typename... Es>
+struct flat_from_layout<tlist<Es...>> {
+  using type =
+      typename tlist_concat_plain<typename flat_expand<Es>::type...>::type;
+};
+
+template <typename T>
+struct flat_resident {
+  using type = typename flat_from_layout<layout_t<T>>::type;
+};
+
+template <typename T>
+using flat_t = typename flat_resident<T>::type;
+
+template <typename E>
+struct flat_slot_of;
+template <typename S, std::size_t I>
+struct flat_slot_of<flat_method<S, I>> {
+  static consteval flat_slot value() {
+    return flat_slot{slot_kind::method, ^^S, I};
   }
-  return targets;
+};
+template <typename C>
+struct flat_slot_of<flat_redirect<C>> {
+  static consteval flat_slot value() {
+    return flat_slot{slot_kind::redirect, ^^C, 0};
+  }
+};
+
+template <typename T, std::size_t... I>
+consteval std::vector<flat_slot> flat_vec_impl(std::index_sequence<I...>) {
+  return {flat_slot_of<tlist_at<flat_t<T>, I>>::value()...};
+}
+
+template <typename T>
+consteval std::vector<flat_slot> flat_vec() {
+  return flat_vec_impl<T>(std::make_index_sequence<flat_t<T>::size>{});
 }
 
 // Layout flatten (no lifetime gate). Prefer flatten_layout<Trait>(), which
 // ensures the per-Trait instantiation cache before building slots.
-consteval std::vector<flat_slot> flatten_layout(std::meta::info trait_void) {
-  std::vector<flat_slot> out;
-  for (auto const& entry : primary_layout_of(trait_void)) {
-    if (entry.kind == layout_kind::section) {
-      auto methods = dyn_methods(entry.trait_void);
-      for (std::size_t i = 0; i < methods.size(); ++i)
-        out.push_back(flat_slot{slot_kind::method, entry.trait_void, i});
-    } else {
-      out.push_back(flat_slot{slot_kind::redirect, entry.trait_void, 0});
-    }
-  }
-  return out;
-}
-
 template <template <class> class Trait>
 consteval std::vector<flat_slot> flatten_layout() {
   ensure_lifetime_not_mirror<Trait>();
-  return flatten_layout(^^Trait<void>);
+  return flat_vec<Trait<void>>();
 }
 
 // Section-prefix: same physical table can serve the prefix interface.
-consteval bool layout_is_prefix_of(std::meta::info prefix,
-                                   std::meta::info full) {
-  return is_section_prefix(prefix, full);
-}
-
-consteval bool is_trait_base_of_info(std::meta::info base,
-                                     std::meta::info derived) {
-  if (base == derived)
-    return true;
-  return contains_info(sections_only_of(derived), base);
-}
+template <typename P, typename F>
+inline constexpr bool sections_prefix_v =
+    tlist_prefix<sections_t<P>, sections_t<F>>::value;
 
 template <template <class> class Base, template <class> class Derived>
 consteval bool is_trait_base_of() {
-  return is_trait_base_of_info(^^Base<void>, ^^Derived<void>);
+  return std::is_same_v<Base<void>, Derived<void>> ||
+         tlist_has<sections_t<Derived<void>>, Base<void>>::value;
 }
 
 // Same physical table: Base's sections are a prefix of Derived's (or equal).
 template <template <class> class Base, template <class> class Derived>
 consteval bool is_section_prefix_of() {
-  return (^^Base<void>) == (^^Derived<void>) ||
-         is_section_prefix(^^Base<void>, ^^Derived<void>);
+  return std::is_same_v<Base<void>, Derived<void>> ||
+         sections_prefix_v<Base<void>, Derived<void>>;
 }
 
 // MULTI_VT: Trait-base upcast along truncate/truncated-reachable paths
@@ -942,7 +1250,7 @@ consteval bool is_section_prefix_of() {
 // this (an SI live DAG makes reachable bases prefixes).
 template <template <class> class Base, template <class> class Derived>
 consteval bool can_dyn_upcast() {
-  if (!is_dyn_upcast_reachable(^^Base<void>, ^^Derived<void>))
+  if constexpr (!tlist_has<reachable_t<Derived<void>>, Base<void>>::value)
     return false;
   if constexpr (dyn_multi_vt_v)
     return true;
@@ -967,9 +1275,6 @@ template <template <class> class To, template <class> class From>
 consteval bool can_dyn_downcast() {
   return is_trait_base_of<From, To>();
 }
-
-consteval std::size_t find_redirect_slot(std::meta::info from,
-                                         std::meta::info to);
 
 #if ASF_HAS_DYN_RTTI
 
@@ -1107,92 +1412,158 @@ inline std::size_t align_log_from_destroy(vt_destroy_fn tagged) {
   return bits & dyn_align_tag_mask;
 }
 
-// Single-hop: exact Redirect(to), or Redirect(cover) with to => cover (sections).
-consteval std::size_t find_redirect_slot(std::meta::info from,
-                                         std::meta::info to) {
-  auto flat = flatten_layout(from);
-  for (std::size_t i = 0; i < flat.size(); ++i) {
-    if (flat[i].kind == slot_kind::redirect && flat[i].trait_void == to)
-      return i;
-  }
-  for (std::size_t i = 0; i < flat.size(); ++i) {
-    if (flat[i].kind == slot_kind::redirect &&
-        is_section_prefix(to, flat[i].trait_void))
-      return i;
-  }
-  return static_cast<std::size_t>(-1);
-}
+// Single-hop redirect lookup over flat_t<FromT>: exact Redirect(to) first,
+// then Redirect(cover) whose sections have ToT's as a prefix.
+template <typename ToT, typename Flat, std::size_t I>
+struct find_redirect_exact {
+  static constexpr std::size_t value = static_cast<std::size_t>(-1);
+};
+template <typename ToT, std::size_t I>
+struct find_redirect_exact<ToT, tlist<>, I> {
+  static constexpr std::size_t value = static_cast<std::size_t>(-1);
+};
+template <typename ToT, typename E0, typename... Es, std::size_t I>
+struct find_redirect_exact<ToT, tlist<E0, Es...>, I> {
+  static constexpr std::size_t value =
+      (is_flat_redirect_v<E0> && std::is_same_v<typename E0::trait, ToT>)
+          ? I
+          : find_redirect_exact<ToT, tlist<Es...>, I + 1>::value;
+};
 
-// Cover table identity for From->To (From if section-prefix, else Redirect target).
-consteval std::meta::info convert_cover_of(std::meta::info from,
-                                           std::meta::info to) {
-  if (from == to || is_section_prefix(to, from))
-    return from;
-  auto idx = find_redirect_slot(from, to);
-  if (idx == static_cast<std::size_t>(-1))
+template <typename ToT, typename Flat, std::size_t I>
+struct find_redirect_prefix {
+  static constexpr std::size_t value = static_cast<std::size_t>(-1);
+};
+template <typename ToT, std::size_t I>
+struct find_redirect_prefix<ToT, tlist<>, I> {
+  static constexpr std::size_t value = static_cast<std::size_t>(-1);
+};
+template <typename ToT, typename E0, typename... Es, std::size_t I>
+struct find_redirect_prefix<ToT, tlist<E0, Es...>, I> {
+  static constexpr std::size_t value =
+      (is_flat_redirect_v<E0> && sections_prefix_v<ToT, typename E0::trait>)
+          ? I
+          : find_redirect_prefix<ToT, tlist<Es...>, I + 1>::value;
+};
+
+template <typename FromT, typename ToT>
+inline constexpr std::size_t find_redirect_slot_v =
+    find_redirect_exact<ToT, flat_t<FromT>, 0>::value !=
+            static_cast<std::size_t>(-1)
+        ? find_redirect_exact<ToT, flat_t<FromT>, 0>::value
+        : find_redirect_prefix<ToT, flat_t<FromT>, 0>::value;
+
+// Cover table for From->To as a type: From if section-prefix, else the
+// Redirect target; void when there is no single-hop cover.
+template <typename FromT, typename ToT,
+          bool Prefix =
+              std::is_same_v<FromT, ToT> ||
+              sections_prefix_v<ToT, FromT>>
+struct convert_cover_type {
+  using type = FromT;
+};
+template <typename FromT, typename ToT>
+struct convert_cover_type<FromT, ToT, false> {
+  static constexpr std::size_t idx = find_redirect_slot_v<FromT, ToT>;
+  using type = std::conditional_t<
+      idx == static_cast<std::size_t>(-1), void,
+      typename tlist_at<flat_t<FromT>, (idx == static_cast<std::size_t>(-1))
+                                           ? 0
+                                           : idx>::trait>;
+};
+
+template <typename FromT, typename ToT>
+using convert_cover_t = typename convert_cover_type<FromT, ToT>::type;
+
+// Cover table identity for From->To (From if section-prefix, else Redirect
+// target; info{} when none).
+template <typename FromT, typename ToT>
+consteval std::meta::info convert_cover_info() {
+  if constexpr (std::is_void_v<convert_cover_t<FromT, ToT>>)
     return std::meta::info{};
-  return flatten_layout(from)[idx].trait_void;
+  else
+    return std::meta::dealias(^^convert_cover_t<FromT, ToT>);
 }
 
 template <template <class> class From, template <class> class To>
 consteval std::meta::info convert_cover_of() {
-  return convert_cover_of(^^From<void>, ^^To<void>);
+  return convert_cover_info<From<void>, To<void>>();
 }
 
-consteval void collect_vtable_traits(std::meta::info trait,
-                                     std::vector<std::meta::info>& out) {
-  if (contains_info(out, trait))
-    return;
-  out.push_back(trait);
-  for (auto r : redirect_targets_of(trait))
-    collect_vtable_traits(r, out);
-}
+// Distinct physical table Trait identities (leaf + recursive cover
+// Redirects), DFS pre-order like the old collect_vtable_traits walk.
+template <typename Acc, typename Work>
+struct vt_collect_list {
+  using type = Acc;
+};
+template <typename Acc, typename T0, typename... Ts>
+struct vt_collect_list<Acc, tlist<T0, Ts...>> {
+  using acc1 = typename tlist_append_unique<Acc, T0>::type;
+  using acc2 =
+      std::conditional_t<tlist_has<Acc, T0>::value, Acc,
+                         typename vt_collect_list<acc1, redirect_targets_t<T0>>::type>;
+  using type = typename vt_collect_list<acc2, tlist<Ts...>>::type;
+};
 
-// Distinct physical table Trait identities (leaf + recursive cover Redirects).
-consteval std::vector<std::meta::info> vtable_traits_of(
-    std::meta::info trait_void) {
-  std::vector<std::meta::info> out;
-  collect_vtable_traits(trait_void, out);
-  return out;
+template <typename T>
+struct vtable_traits_resident {
+  using type = typename vt_collect_list<tlist<>, tlist<T>>::type;
+};
+
+template <typename T>
+using vtable_traits_t = typename vtable_traits_resident<T>::type;
+
+template <typename T>
+consteval std::vector<std::meta::info> vtable_traits_vec() {
+  return vtable_traits_t<T>::vec();
 }
 
 // Distinct tables for Trait (root + recursive cover Redirects). Shared once.
 template <template <class> class Trait>
 consteval std::size_t vtable_instance_count() {
-  return vtable_traits_of(^^Trait<void>).size();
+  return vtable_traits_t<Trait<void>>::size;
 }
 
 #if ASF_HAS_DYN_RTTI
-// trait_id switch targets: Final first, then each dyn-upcast-reachable section
-// that has a cover under Final. find returns one of the x distinct tables
-// (vtable_traits_of), not a per-target slot.
-consteval std::vector<std::meta::info> rtti_targets_of(
-    std::meta::info final_void) {
-  std::vector<std::meta::info> result;
-  result.push_back(final_void);
-  auto reachable = dyn_upcast_reachable_of(final_void);
-  for (auto s : sections_only_of(final_void)) {
-    if (s == final_void)
-      continue;
-    if (!contains_info(reachable, s))
-      continue;
-    if (convert_cover_of(final_void, s) == std::meta::info{})
-      continue;
-    result.push_back(s);
-  }
-  return result;
+// trait_id switch targets: Final first, then each dyn-upcast-reachable
+// section that has a cover under Final. find returns one of the x distinct
+// tables (vtable_traits_t), not a per-target slot.
+template <typename F, typename Acc, typename Rest>
+struct rtti_collect {
+  using type = Acc;
+};
+template <typename F, typename Acc, typename S0, typename... Ss>
+struct rtti_collect<F, Acc, tlist<S0, Ss...>> {
+  static constexpr bool keep =
+      !std::is_same_v<F, S0> && tlist_has<reachable_t<F>, S0>::value &&
+      !std::is_void_v<convert_cover_t<F, S0>>;
+  using next =
+      std::conditional_t<keep, typename tlist_append_unique<Acc, S0>::type,
+                         Acc>;
+  using type = typename rtti_collect<F, next, tlist<Ss...>>::type;
+};
+
+template <typename T>
+struct rtti_targets_resident {
+  using type = typename rtti_collect<T, tlist<T>, sections_t<T>>::type;
+};
+
+template <typename T>
+using rtti_targets_t = typename rtti_targets_resident<T>::type;
+
+template <typename T>
+consteval std::vector<std::meta::info> rtti_targets_vec() {
+  return rtti_targets_t<T>::vec();
 }
 
-// Index of convert_cover(Final, target) within vtable_traits_of(Final).
-consteval std::size_t rtti_table_index_of(std::meta::info final_void,
-                                          std::meta::info target) {
-  auto cover = convert_cover_of(final_void, target);
-  auto tables = vtable_traits_of(final_void);
-  for (std::size_t i = 0; i < tables.size(); ++i) {
-    if (tables[i] == cover)
-      return i;
-  }
-  return static_cast<std::size_t>(-1);
+// Index of convert_cover(Final, target) within vtable_traits_t<Final>.
+template <typename F, typename Target>
+consteval std::size_t rtti_table_index_t() {
+  using C = convert_cover_t<F, Target>;
+  if constexpr (std::is_void_v<C>)
+    return static_cast<std::size_t>(-1);
+  else
+    return tlist_index_of<vtable_traits_t<F>, C>;
 }
 #endif
 
@@ -1485,7 +1856,7 @@ template <std::meta::info Cls, std::size_t I>
 consteval std::meta::info find_method_named_at(std::string_view name,
                                                std::size_t self_idx,
                                                int const_self) {
-  constexpr auto m = trait_methods(Cls)[I];
+  constexpr auto m = trait_methods_t<typename [:Cls:]>::template at<I>();
   if (!std::meta::has_identifier(m) || std::meta::identifier_of(m) != name)
     return std::meta::info{};
   if (self_param_index(m) != self_idx)
@@ -1500,7 +1871,7 @@ template <std::meta::info Cls, std::size_t I, class... Args>
 consteval std::meta::info find_method_hit(std::string_view name,
                                           std::size_t self_idx,
                                           int const_self) {
-  constexpr auto m = trait_methods(Cls)[I];
+  constexpr auto m = trait_methods_t<typename [:Cls:]>::template at<I>();
   if (!std::meta::has_identifier(m) || std::meta::identifier_of(m) != name)
     return std::meta::info{};
   if (self_param_index(m) != self_idx)
@@ -1548,7 +1919,7 @@ consteval std::meta::info find_method_unrolled(std::string_view name,
 template <std::meta::info Cls, class... Args>
 consteval std::meta::info find_method_for_args_on(
     std::string_view name, std::size_t self_idx = 0, int const_self = -1) {
-  constexpr auto n = trait_methods(Cls).size();
+  constexpr auto n = trait_methods_t<typename [:Cls:]>::size;
   if constexpr (n == 0)
     return std::meta::info{};
   else
@@ -1621,7 +1992,7 @@ consteval std::meta::info special_op_key_type(std::meta::info inst,
 // 0 = none, 1 = concrete Key, 2 = imple/auto wildcard.
 template <std::meta::info Cls, class Key, special_op Kind, std::size_t I>
 consteval int find_special_op_kind() {
-  constexpr auto member = trait_methods(Cls)[I];
+  constexpr auto member = trait_methods_t<typename [:Cls:]>::template at<I>();
   if (!std::meta::has_identifier(member) ||
       !is_special_op_name(std::meta::identifier_of(member), Kind))
     return 0;
@@ -1645,7 +2016,7 @@ consteval int find_special_op_kind() {
 template <std::meta::info Cls, class Key, special_op Kind, std::size_t... I>
 consteval std::meta::info find_special_op_unrolled(std::index_sequence<I...>) {
   int kinds[] = {find_special_op_kind<Cls, Key, Kind, I>()...};
-  std::meta::info members[] = {trait_methods(Cls)[I]...};
+  std::meta::info members[] = {trait_methods_t<typename [:Cls:]>::template at<I>()...};
   std::meta::info concrete{};
   std::meta::info wildcard{};
   int nc = 0;
@@ -1668,7 +2039,7 @@ consteval std::meta::info find_special_op_unrolled(std::index_sequence<I...>) {
 
 template <std::meta::info Cls, class Key, special_op Kind>
 consteval std::meta::info find_special_op_method_on() {
-  constexpr auto n = trait_methods(Cls).size();
+  constexpr auto n = trait_methods_t<typename [:Cls:]>::size;
   if constexpr (n == 0)
     return std::meta::info{};
   else
@@ -1714,7 +2085,7 @@ consteval bool special_op_allow_impl() {
 // Key from the declaration probe (written return). No dummy instantiate.
 template <std::meta::info Cls, special_op Op, convert_kind Kind, std::size_t I>
 consteval std::meta::info special_op_entry_key() {
-  constexpr auto member = trait_methods(Cls)[I];
+  constexpr auto member = trait_methods_t<typename [:Cls:]>::template at<I>();
   if (!std::meta::has_identifier(member) ||
       !is_special_op_name(std::meta::identifier_of(member), Op))
     return std::meta::info{};
@@ -1740,9 +2111,9 @@ consteval std::meta::info special_op_entry_member() {
   if (Op == special_op::convert && key == ^^imple_t)
     return std::meta::info{};
   if (Op == special_op::assign &&
-      (key == ^^imple_t || method_prefers_imple(trait_methods(Cls)[I])))
+      (key == ^^imple_t || method_prefers_imple(trait_methods_t<typename [:Cls:]>::template at<I>())))
     return std::meta::info{};
-  return trait_methods(Cls)[I];
+  return trait_methods_t<typename [:Cls:]>::template at<I>();
 }
 
 template <std::meta::info Cls, special_op Op, convert_kind Kind,
@@ -1775,7 +2146,7 @@ collect_for_kind_unrolled(std::index_sequence<I...>) {
 
 template <std::meta::info Cls, special_op Op, convert_kind Kind>
 consteval std::vector<std::meta::info> collect_for_kind_on() {
-  constexpr auto n = trait_methods(Cls).size();
+  constexpr auto n = trait_methods_t<typename [:Cls:]>::size;
   if constexpr (n == 0)
     return {};
   else
@@ -1954,8 +2325,9 @@ consteval bool ann_enabled(std::meta::info method, std::meta::info yes_tag,
 // Method mirror/no_mirror overrides the Trait tag. Default is no_mirror.
 // op_construct is not part of that agreement (it never follows the Trait
 // tag). A section with only those methods follows the Trait tag.
-consteval bool section_allows_mirror_source(std::meta::info section) {
-  auto methods = trait_methods(section);
+template <typename S>
+consteval bool section_allows_mirror_source() {
+  auto methods = trait_methods_vec<S>();
   bool saw = false;
   for (auto method : methods) {
     if (std::meta::has_identifier(method) &&
@@ -1966,34 +2338,36 @@ consteval bool section_allows_mirror_source(std::meta::info section) {
       return false;
   }
   if (!saw)
-    return ann_choice_of(section, ^^ann::mirror_tag, ^^ann::no_mirror_tag) ==
+    return ann_choice_of(^^S, ^^ann::mirror_tag, ^^ann::no_mirror_tag) ==
            ann_choice::yes;
   return true;
 }
 
+template <typename... Ss>
+consteval bool all_sections_allow_mirror(tlist<Ss...>) {
+  return (section_allows_mirror_source<Ss>() && ...);
+}
+
+template <typename... Ss>
+consteval bool any_section_allows_mirror(tlist<Ss...>) {
+  return (section_allows_mirror_source<Ss>() || ...);
+}
+
 // User mirror with no Src -> dyn/iface: every Trait in the inheritance
-// layout (sections_only_of) must allow mirror source. Empty layout does not
+// layout (sections_t) must allow mirror source. Empty layout does not
 // allow. Sourced mirror bind does not use this gate (see dyn_bind_mirror_*).
 template <template <class> class Trait>
 consteval bool layout_allows_unsourced_mirror() {
-  auto sections = sections_only_of(^^Trait<void>);
-  if (sections.empty())
+  if constexpr (sections_t<Trait<void>>::size == 0)
     return false;
-  for (auto section : sections) {
-    if (!section_allows_mirror_source(section))
-      return false;
-  }
-  return true;
+  else
+    return all_sections_allow_mirror(sections_t<Trait<void>>{});
 }
 
 // Any layout section opts into mirror Self (user mirror / view As = T).
 template <template <class> class Trait>
 consteval bool any_section_allows_mirror_source() {
-  for (auto section : sections_only_of(^^Trait<void>)) {
-    if (section_allows_mirror_source(section))
-      return true;
-  }
-  return false;
+  return any_section_allows_mirror(sections_t<Trait<void>>{});
 }
 
 // Method-level [[=mirror]] on op_construct is ill-formed.
@@ -2001,7 +2375,7 @@ consteval bool any_section_allows_mirror_source() {
 template <template <class> class Trait>
 struct lifetime_not_mirror_gate {
   static consteval void check_own() {
-    for (auto m : trait_methods(^^Trait<void>)) {
+    for (auto m : trait_methods_vec<Trait<void>>()) {
       if (!std::meta::has_identifier(m) ||
           !is_lifetime_dyn_op_name(std::meta::identifier_of(m)))
         continue;
@@ -2323,7 +2697,7 @@ template <template <class> class Trait, typename T>
 consteval std::meta::info impl_self_info() {
   int rank = 0;
   if constexpr (std::meta::is_complete_type(^^Trait<T>)) {
-    for (auto method : trait_methods(^^Trait<T>)) {
+    for (auto method : trait_methods_vec<Trait<T>>()) {
       if (std::meta::is_function_template(method))
         continue;
       auto params = std::meta::parameters_of(method);
@@ -2356,7 +2730,7 @@ consteval bool section_allows_mirror_source_as() {
   constexpr auto section = ^^Trait<void>;
   auto on_trait =
       ann_choice_of(section, ^^ann::mirror_tag, ^^ann::no_mirror_tag);
-  auto methods = trait_methods(section);
+  auto methods = trait_methods_vec<Trait<void>>();
   bool saw = false;
   for (auto method : methods) {
     if (std::meta::has_identifier(method) &&
@@ -2387,7 +2761,8 @@ consteval bool section_allows_mirror_source_as() {
 // where the concrete type is at hand).
 template <template <class> class Trait, typename As, std::size_t I>
 consteval bool section_allows_mirror_source_at() {
-  constexpr auto sec = sections_only_of(^^Trait<void>)[I];
+  constexpr auto sec = std::meta::dealias(
+      ^^tlist_at<sections_t<Trait<void>>, I>);
   constexpr auto tmpl = std::meta::template_of(sec);
   constexpr auto check =
       std::meta::substitute(^^section_allows_mirror_source_as, {tmpl, ^^As});
@@ -2401,7 +2776,7 @@ consteval bool layout_allows_mirror_source_as_pack(std::index_sequence<I...>) {
 
 template <template <class> class Trait, typename As>
 consteval bool layout_allows_mirror_source_as() {
-  constexpr std::size_t n = sections_only_of(^^Trait<void>).size();
+  constexpr std::size_t n = sections_t<Trait<void>>::size;
   if constexpr (n == 0)
     return false;
   else
@@ -2639,7 +3014,7 @@ consteval bool extras_decl_match() {
 template <template <class> class Trait, typename As, std::meta::info Method,
           std::size_t I>
 consteval std::meta::info trait_impl_hit() {
-  constexpr auto m = trait_methods(^^Trait<As>)[I];
+  constexpr auto m = trait_methods_vec<Trait<As>>()[I];
   if (!std::meta::has_identifier(m) ||
       std::meta::identifier_of(m) != std::meta::identifier_of(Method))
     return std::meta::info{};
@@ -2677,7 +3052,7 @@ consteval std::meta::info trait_impl_of() {
     else
       return std::meta::info{};
   } else {
-    constexpr auto n = trait_methods(^^Trait<As>).size();
+    constexpr auto n = trait_methods_vec<Trait<As>>().size();
     if constexpr (n == 0)
       return std::meta::info{};
     else
@@ -3196,25 +3571,37 @@ constexpr decltype(auto) as_construct_self(auto&& x) {
 // GCC mangles std::meta::info of same-named overloads as one NTTP. An
 // integer index among the declaring Trait's methods splits assembler symbols
 // (same pattern as Kind on invoke_imple_op).
-consteval std::size_t method_ord(std::meta::info method) {
-  if (method == std::meta::info{})
+template <std::meta::info Method, typename List, std::size_t I>
+consteval std::size_t method_ord_in() {
+  if constexpr (I >= List::size) {
     return static_cast<std::size_t>(-1);
-  auto parent = std::meta::parent_of(method);
-  if (parent == std::meta::info{})
-    return static_cast<std::size_t>(-1);
-  auto ms = trait_methods(parent);
-  for (std::size_t i = 0; i < ms.size(); ++i) {
-    if (ms[i] == method)
-      return i;
+  } else if constexpr (List::template at<I>() == Method) {
+    return I;
+  } else {
+    return method_ord_in<Method, List, I + 1>();
   }
-  return static_cast<std::size_t>(-1);
+}
+
+template <std::meta::info Method>
+consteval std::size_t method_ord_v() {
+  if constexpr (Method == std::meta::info{}) {
+    return static_cast<std::size_t>(-1);
+  } else {
+    constexpr auto parent = std::meta::parent_of(Method);
+    if constexpr (parent == std::meta::info{}) {
+      return static_cast<std::size_t>(-1);
+    } else {
+      return method_ord_in<Method, trait_methods_t<typename [:parent:]>,
+                           0>();
+    }
+  }
 }
 
 // Impl / SrcImpl are wired at proxy/vtable build (trait_impl_of / src_impl_of).
 // Non-op imple uses that member. op_* goes through invoke_imple_op.
 template <template <class> class Trait, typename As, std::meta::info Method,
           std::meta::info Impl, std::meta::info SrcImpl = std::meta::info{},
-          bool AsMove = false, std::size_t Overload = method_ord(Method)>
+          bool AsMove = false, std::size_t Overload = method_ord_v<Method>()>
 decltype(auto) invoke_resolved(auto&& self, auto&&... args) {
   (void)Overload;
   using Self = std::remove_cvref_t<decltype(self)>;
@@ -3284,7 +3671,7 @@ decltype(auto) invoke_resolved(auto&& self, auto&&... args) {
 
 template <template <class> class Trait, typename As, std::meta::info Method,
           std::meta::info Impl, std::meta::info SrcImpl = std::meta::info{},
-          bool AsMove = false, std::size_t Overload = method_ord(Method)>
+          bool AsMove = false, std::size_t Overload = method_ord_v<Method>()>
 decltype(auto) invoke_method(auto&& self, auto&&... args) {
   // Const was erased on the reused impl/ptr. The const surface (c_iface /
   // As = const T) must reject non-const methods here, before the thunk.
@@ -3308,7 +3695,7 @@ decltype(auto) invoke_method(auto&& self, auto&&... args) {
 
 template <template <class> class Trait, typename As, typename Src,
           std::meta::info Method, bool AsMove = false,
-          std::size_t Overload = method_ord(Method)>
+          std::size_t Overload = method_ord_v<Method>()>
 decltype(auto) invoke_wired(auto&& self, auto&&... args) {
   constexpr auto impl = trait_impl_of<Trait, As, Method>();
   // imple members are looked up on the object: Src for sourced binds, else As.
@@ -3328,7 +3715,7 @@ R erased_fn<R, Args...>::call(void* ptr, vt_ptr vt, Args... args) {
   using Self = [:impl_self_info<Trait, As>():];
   using IdentityView = identity_mirror<As>;
 
-  constexpr auto method = dyn_methods(^^Trait<void>)[I];
+  constexpr auto method = dyn_methods_vec<Trait<void>>()[I];
   // op_construct does not follow Trait [[=mirror]]: self is the object
   // (or Src of a sourced mirror), never a mirror.
   constexpr bool lifetime_op =
@@ -3372,7 +3759,7 @@ R erased_fn<R, Args...>::call(void* ptr, vt_ptr vt, Args... args) {
 
 template <template <class> class Trait>
 consteval std::size_t dyn_count() {
-  return dyn_methods(^^Trait<void>).size();
+  return dyn_methods_vec<Trait<void>>().size();
 }
 
 // First flat index of Trait's own method section inside Final's layout
@@ -3407,7 +3794,7 @@ consteval bool can_sub_slice() {
 // Index of Method within Trait's own dyn_methods (section-local, not full flat).
 template <template <class> class Trait>
 consteval std::size_t own_dyn_method_index(std::meta::info method) {
-  auto methods = dyn_methods(^^Trait<void>);
+  auto methods = dyn_methods_vec<Trait<void>>();
   for (std::size_t i = 0; i < methods.size(); ++i) {
     if (methods[i] == method)
       return i;
@@ -3417,67 +3804,66 @@ consteval std::size_t own_dyn_method_index(std::meta::info method) {
 
 template <template <class> class Trait>
 consteval std::size_t flat_slot_count() {
-  return flatten_layout<Trait>().size();
+  return flat_t<Trait<void>>::size;
+}
+
+// Resident flat lookups: walk flat_t<LayoutT> for a flat_method entry of
+// section Self (type match) whose resident method equals / names the query.
+template <typename Self, typename Flat, std::size_t I>
+consteval std::size_t flat_find_own_named(std::string_view name) {
+  if constexpr (I >= Flat::size) {
+    return static_cast<std::size_t>(-1);
+  } else {
+    using E = tlist_at<Flat, I>;
+    if constexpr (is_flat_method_v<E> &&
+                  std::is_same_v<typename E::trait, Self>) {
+      constexpr auto m =
+          dyn_methods_t<typename E::trait>::template at<E::method_index>();
+      if (std::meta::identifier_of(m) == name)
+        return I;
+    }
+    return flat_find_own_named<Self, Flat, I + 1>(name);
+  }
+}
+
+template <typename Self, typename Flat, std::size_t I>
+consteval std::size_t flat_find_own_method(std::meta::info method) {
+  if constexpr (I >= Flat::size) {
+    return static_cast<std::size_t>(-1);
+  } else {
+    using E = tlist_at<Flat, I>;
+    if constexpr (is_flat_method_v<E> &&
+                  std::is_same_v<typename E::trait, Self>) {
+      if (dyn_methods_t<typename E::trait>::template at<
+              E::method_index>() == method)
+        return I;
+    }
+    return flat_find_own_method<Self, Flat, I + 1>(method);
+  }
 }
 
 template <template <class> class Trait>
 consteval std::size_t dyn_index(std::string_view name) {
   // Own section only -- same name on a base must not steal the slot.
-  auto flat = flatten_layout<Trait>();
-  constexpr auto self = ^^Trait<void>;
-  for (std::size_t i = 0; i < flat.size(); ++i) {
-    if (flat[i].kind != slot_kind::method || flat[i].trait_void != self)
-      continue;
-    auto methods = dyn_methods(flat[i].trait_void);
-    if (std::meta::identifier_of(methods[flat[i].method_index]) == name)
-      return i;
-  }
-  return static_cast<std::size_t>(-1);
+  return flat_find_own_named<Trait<void>, flat_t<Trait<void>>, 0>(name);
 }
 
 // Slot of View's own method `name` inside Layout's flat table (no vt switch).
 template <template <class> class Layout, template <class> class View>
 consteval std::size_t dyn_index_in_layout(std::string_view name) {
-  auto flat = flatten_layout<Layout>();
-  constexpr auto view = ^^View<void>;
-  for (std::size_t i = 0; i < flat.size(); ++i) {
-    if (flat[i].kind != slot_kind::method || flat[i].trait_void != view)
-      continue;
-    auto methods = dyn_methods(flat[i].trait_void);
-    if (std::meta::identifier_of(methods[flat[i].method_index]) == name)
-      return i;
-  }
-  return static_cast<std::size_t>(-1);
+  return flat_find_own_named<View<void>, flat_t<Layout<void>>, 0>(name);
 }
 
 // Slot of a specific View method reflection inside Layout's flat table.
 template <template <class> class Layout, template <class> class View>
 consteval std::size_t dyn_index_of_method_in_layout(std::meta::info method) {
-  auto flat = flatten_layout<Layout>();
-  constexpr auto view = ^^View<void>;
-  for (std::size_t i = 0; i < flat.size(); ++i) {
-    if (flat[i].kind != slot_kind::method || flat[i].trait_void != view)
-      continue;
-    auto methods = dyn_methods(flat[i].trait_void);
-    if (methods[flat[i].method_index] == method)
-      return i;
-  }
-  return static_cast<std::size_t>(-1);
+  return flat_find_own_method<View<void>, flat_t<Layout<void>>, 0>(method);
 }
 
 // Flat index of a specific method reflection (same name overloads need this).
 template <template <class> class Trait>
 consteval std::size_t dyn_index_of_method(std::meta::info method) {
-  auto flat = flatten_layout<Trait>();
-  constexpr auto self = ^^Trait<void>;
-  for (std::size_t i = 0; i < flat.size(); ++i) {
-    if (flat[i].kind != slot_kind::method || flat[i].trait_void != self)
-      continue;
-    auto methods = dyn_methods(flat[i].trait_void);
-    if (methods[flat[i].method_index] == method)
-      return i;
-  }
-  return static_cast<std::size_t>(-1);
+  return flat_find_own_method<Trait<void>, flat_t<Trait<void>>, 0>(method);
 }
 
 template <template <class> class Trait, typename To, special_op Op>
@@ -3495,7 +3881,7 @@ consteval std::size_t dyn_convert_index() {
 
 template <template <class> class Trait>
 consteval bool trait_has_dyn_construct() {
-  for (auto m : dyn_methods(^^Trait<void>)) {
+  for (auto m : dyn_methods_vec<Trait<void>>()) {
     if (std::meta::has_identifier(m) &&
         is_special_op_name(std::meta::identifier_of(m), special_op::construct))
       return true;
@@ -3506,7 +3892,7 @@ consteval bool trait_has_dyn_construct() {
 // Exact self category for cache_ops matching Trait; no fallback to the other.
 template <template <class> class Trait, bool Rvalue>
 consteval bool trait_has_dyn_construct_as() {
-  for (auto m : dyn_methods(^^Trait<void>)) {
+  for (auto m : dyn_methods_vec<Trait<void>>()) {
     if (!std::meta::has_identifier(m) ||
         !is_special_op_name(std::meta::identifier_of(m), special_op::construct))
       continue;
@@ -3552,7 +3938,7 @@ consteval std::meta::info dyn_construct_scan(std::meta::info fallback = {}) {
   if constexpr (I >= n)
     return fallback;
   else {
-    constexpr auto m = dyn_methods(^^Trait<void>)[I];
+    constexpr auto m = dyn_methods_vec<Trait<void>>()[I];
     if constexpr (std::meta::has_identifier(m) &&
                   is_special_op_name(std::meta::identifier_of(m),
                                      special_op::construct) &&
@@ -3623,23 +4009,33 @@ consteval bool c_dyn_has_construct() {
 
 template <template <class> class Trait, std::size_t I>
 consteval slot_kind flat_kind_at() {
-  return flatten_layout<Trait>()[I].kind;
+  return is_flat_method_v<tlist_at<flat_t<Trait<void>>, I>>
+             ? slot_kind::method
+             : slot_kind::redirect;
 }
+
+template <typename E>
+using flat_entry_trait_t = typename E::trait;
 
 template <template <class> class Trait, std::size_t I>
 consteval std::meta::info flat_trait_at() {
-  return flatten_layout<Trait>()[I].trait_void;
+  return std::meta::dealias(
+      ^^flat_entry_trait_t<tlist_at<flat_t<Trait<void>>, I>>);
 }
 
 template <template <class> class Trait, std::size_t I>
 consteval std::size_t flat_method_index_at() {
-  return flatten_layout<Trait>()[I].method_index;
+  if constexpr (is_flat_method_v<tlist_at<flat_t<Trait<void>>, I>>)
+    return tlist_at<flat_t<Trait<void>>, I>::method_index;
+  else
+    return 0;
 }
 
 template <template <class> class Trait, std::size_t I>
 consteval std::meta::info flat_method_at() {
-  auto flat = flatten_layout<Trait>();
-  return dyn_methods(flat[I].trait_void)[flat[I].method_index];
+  using E = tlist_at<flat_t<Trait<void>>, I>;
+  static_assert(is_flat_method_v<E>, "flat slot is not a method");
+  return dyn_methods_t<typename E::trait>::template at<E::method_index>();
 }
 
 template <template <class> class Trait, std::size_t Index>
@@ -3660,7 +4056,7 @@ template <template <class> class Trait, typename Storage, typename As,
           std::size_t I, bool AsMove, class... Extra>
 void erased_construct_into(void* ptr, vt_ptr vt, void* dst, Extra... extra) {
   (void)vt;
-  constexpr auto method = dyn_methods(^^Trait<void>)[I];
+  constexpr auto method = dyn_methods_vec<Trait<void>>()[I];
   using Obj = std::remove_reference_t<As>;
   using Src = std::conditional_t<is_sourced_mirror_v<Storage>,
                                  mirror_src_t<Storage>, Storage>;
@@ -3862,7 +4258,7 @@ inline void dyn_construct_into(vt_ptr vt, void* ptr, void* dst,
 template <template <class> class Trait, typename Storage, typename As,
           std::size_t I>
 vt_fn make_slot() {
-  constexpr auto method = dyn_methods(^^Trait<void>)[I];
+  constexpr auto method = dyn_methods_vec<Trait<void>>()[I];
   // Construct (ann::imple or custom Trait default): always void(dst) ->
   // placement-new Storage from invoke result. Size is a separate vt slot.
   if constexpr (is_special_op_name(std::meta::identifier_of(method),
@@ -3907,7 +4303,7 @@ template <bool MaskNonConst, template <class> class Trait, typename Storage,
           typename As, std::size_t I>
 vt_fn make_slot_ptr() {
   if constexpr (MaskNonConst) {
-    constexpr auto method = dyn_methods(^^Trait<void>)[I];
+    constexpr auto method = dyn_methods_vec<Trait<void>>()[I];
     if constexpr (!is_const_self_method(method)) {
       if constexpr (is_special_op_name(std::meta::identifier_of(method),
                                        special_op::construct)) {
@@ -3959,7 +4355,7 @@ vt_fn make_flat_slot() {
     constexpr auto section = flat_trait_at<Trait, I>();
     constexpr auto tmpl = std::meta::template_of(section);
     constexpr auto mi = flat_method_index_at<Trait, I>();
-    constexpr auto life_method = dyn_methods(section)[mi];
+    constexpr auto life_method = dyn_methods_vec<typename [:section:]>()[mi];
     constexpr bool lifetime_slot =
         std::meta::has_identifier(life_method) &&
         is_lifetime_dyn_op_name(std::meta::identifier_of(life_method));
