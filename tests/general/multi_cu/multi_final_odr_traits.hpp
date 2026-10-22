@@ -1,6 +1,6 @@
 #pragma once
 
-#include "cast.hpp"
+#include "test_bind.hpp"
 
 #include <string>
 
@@ -12,21 +12,24 @@
 template <typename T = void>
 struct I1;
 template <>
-struct I1<void> {
+struct ASF_TEST_TRAIT_MIRROR
+I1<void> {
   void m1(auto& self) { (void)self; }
 };
 
 template <typename T = void>
 struct I2;
 template <>
-struct I2<void> : I1<void> {
+struct ASF_TEST_TRAIT_MIRROR
+I2<void> : I1<void> {
   void m2(auto& self) { (void)self; }
 };
 
 template <typename T = void>
 struct I3;
 template <>
-struct I3<void> : I1<void> {
+struct ASF_TEST_TRAIT_MIRROR
+I3<void> : I1<void> {
   void m3(auto& self) { (void)self; }
 };
 
@@ -36,17 +39,17 @@ struct Person {
 
 template <>
 struct I1<Person> {
-  static void m1(const Person& self) { (void)self; }
+  static void m1(ASF_TEST_M(Person) self) { (void)self; }
 };
 
 template <>
 struct I2<Person> final {
-  static void m2(const Person& self) { (void)self; }
+  static void m2(ASF_TEST_M(Person) self) { (void)self; }
 };
 
 template <>
 struct I3<Person> final {
-  static void m3(const Person& self) { (void)self; }
+  static void m3(ASF_TEST_M(Person) self) { (void)self; }
 };
 
 // TU-A (I2 only)

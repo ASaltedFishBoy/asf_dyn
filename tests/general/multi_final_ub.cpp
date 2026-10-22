@@ -1,5 +1,6 @@
 #include "asf_check.hpp"
 #include "cast.hpp"
+#include "test_bind.hpp"
 
 #include <cstdint>
 #include <print>
@@ -14,21 +15,24 @@
 template <typename T = void>
 struct I1;
 template <>
-struct I1<void> {
+struct ASF_TEST_TRAIT_MIRROR
+I1<void> {
   void m1(auto& self) { (void)self; }
 };
 
 template <typename T = void>
 struct I2;
 template <>
-struct I2<void> : I1<void> {
+struct ASF_TEST_TRAIT_MIRROR
+I2<void> : I1<void> {
   void m2(auto& self) { (void)self; }
 };
 
 template <typename T = void>
 struct I3;
 template <>
-struct I3<void> : I1<void> {
+struct ASF_TEST_TRAIT_MIRROR
+I3<void> : I1<void> {
   void m3(auto& self) { (void)self; }
 };
 
@@ -38,21 +42,21 @@ struct Person {
 
 template <>
 struct I1<Person> {
-  static void m1(const Person& self) {
+  static void m1(ASF_TEST_M(Person) self) {
     std::println("I1<Person>::m1 {}", self.name);
   }
 };
 
 template <>
 struct I2<Person> final {
-  static void m2(const Person& self) {
+  static void m2(ASF_TEST_M(Person) self) {
     std::println("I2<Person>::m2 {}", self.name);
   }
 };
 
 template <>
 struct I3<Person> final {
-  static void m3(const Person& self) {
+  static void m3(ASF_TEST_M(Person) self) {
     std::println("I3<Person>::m3 {}", self.name);
   }
 };
@@ -76,8 +80,8 @@ static_assert(asf::detail::is_section_prefix_of<I1, I3>());
 int main() {
   Person person{asf_test::no_sso("Ada")};
 
-  auto d2 = asf::to_dyn<I2>(&person);
-  auto d3 = asf::to_dyn<I3>(&person);
+  auto d2 = asf_test::to_dyn<I2>(person);
+  auto d3 = asf_test::to_dyn<I3>(person);
   auto d1_from_i2 = asf::trait_cast<I1>(d2);
   auto d1_from_i3 = asf::trait_cast<I1>(d3);
   asf::dyn<I1> d1_imp = d2;
@@ -106,7 +110,7 @@ int main() {
   d1_imp->m1();
 
 #if ASF_HAS_DYN_INTERMEDIATE
-  auto d1 = asf::to_dyn<I1>(&person);
+  auto d1 = asf_test::to_dyn<I1>(person);
   auto* vt1 = asf::detail::vt_of(d1);
   std::println("vt I1 direct (ADL)         {:#x} eq_I2={} (STM first final)",
                reinterpret_cast<std::uintptr_t>(vt1), vt1 == vt2);

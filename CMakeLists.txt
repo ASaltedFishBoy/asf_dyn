@@ -88,8 +88,22 @@ function(asf_test dir name)
   set(ASF_LAST_TEST_TGT ${tgt} PARENT_SCOPE)
 endfunction()
 
+# Dual-pass suite: one shared source under tests/general/ compiles twice.
+# The mirror_<name> target recompiles it with ASF_TEST_VIA_MIRROR=1, which
+# switches the asf_test::to_* observer binds in test_bind.hpp to the mirror
+# path. Every merged suite always builds both passes.
+function(asf_dual_test name)
+  asf_test(general ${name} ${ARGN})
+  set(tgt mirror_${name})
+  add_executable(${tgt} tests/general/${name}.cpp)
+  target_include_directories(${tgt} PRIVATE include tests)
+  target_compile_definitions(${tgt} PRIVATE ASF_TEST_VIA_MIRROR=1)
+  asf_target_defs(${tgt} ${ARGN})
+  set(ASF_LAST_TEST_TGT ${tgt} PARENT_SCOPE)
+endfunction()
+
 # --- general ---
-asf_test(general iface_inherit)
+asf_dual_test(iface_inherit)
 asf_test(general iface_truncate)
 asf_test(general iface_single_inherit)
 # Optional compile-fail: live MI under SINGLE_INHERIT (configure build-si).
@@ -102,46 +116,49 @@ if(ASF_HAS_DYN_SINGLE_INHERIT)
     EXCLUDE_FROM_ALL TRUE EXCLUDE_FROM_DEFAULT_BUILD TRUE)
 endif()
 # Multi-final + intermediate ADL (same-TU STMP / cross-TU ODR).
-asf_test(general multi_final_ub)
-asf_test(general iface_final_vt)
+asf_dual_test(multi_final_ub)
+asf_dual_test(iface_final_vt)
 # NxN diamond MI (I1..I9 shape).
-asf_test(general iface_grid_vt)
+asf_dual_test(iface_grid_vt)
 
-asf_test(general dyn_integration_tests)
-asf_test(general dyn_invocation_tests)
-asf_test(general dyn_view_tests)
-asf_test(general dyn_lifetime_tests)
-asf_test(general dyn_creation_tests)
-asf_test(general dyn_dispatch_tests)
+asf_dual_test(dyn_integration_tests)
+asf_dual_test(dyn_invocation_tests)
+asf_dual_test(dyn_view_tests)
+asf_dual_test(dyn_lifetime_tests)
+asf_dual_test(dyn_creation_tests)
+asf_dual_test(dyn_dispatch_tests)
 # RTTI suite always enables meta header / dyn_cast (independent of global option).
-asf_test(general dyn_rtti_tests)
+asf_dual_test(dyn_rtti_tests)
 target_compile_definitions(dyn_rtti_tests PRIVATE ASF_HAS_DYN_RTTI=1)
+target_compile_definitions(mirror_dyn_rtti_tests PRIVATE ASF_HAS_DYN_RTTI=1)
 
 # --- mirror (full suites; may construct from user mirrors where applicable) ---
 asf_test(mirror design_probe)
 asf_test(mirror mirror_base_spec)
-asf_test(mirror iface_inherit)
-asf_test(mirror multi_final_ub)
-asf_test(mirror iface_final_vt)
-asf_test(mirror iface_grid_vt)
-asf_test(mirror dyn_integration_tests)
-asf_test(mirror dyn_invocation_tests)
-asf_test(mirror dyn_view_tests)
-asf_test(mirror dyn_lifetime_tests)
-asf_test(mirror dyn_creation_tests)
-asf_test(mirror dyn_dispatch_tests)
-asf_test(mirror dyn_rtti_tests)
-target_compile_definitions(mirror_dyn_rtti_tests PRIVATE ASF_HAS_DYN_RTTI=1)
 
 # Compile-fail (EXCLUDE_FROM_ALL): const-self impl wrote T& / mirror<T>.
 set(ASF_COMPILE_FAIL_TGTS)
+
+# Dual-pass compile-fail: the same const-self impl mistake in both spellings
+# (T& on the general pass, mirror<T> on the mirror pass), one shared source.
+foreach(name IN ITEMS cref_wrong_impl_dyn cref_wrong_impl_iface)
+  add_executable(${name} tests/general/compile_fail/${name}.cpp)
+  target_include_directories(${name} PRIVATE include tests)
+  asf_target_defs(${name})
+  set_target_properties(${name} PROPERTIES
+    EXCLUDE_FROM_ALL TRUE EXCLUDE_FROM_DEFAULT_BUILD TRUE)
+  add_executable(mirror_${name} tests/general/compile_fail/${name}.cpp)
+  target_include_directories(mirror_${name} PRIVATE include tests)
+  target_compile_definitions(mirror_${name} PRIVATE ASF_TEST_VIA_MIRROR=1)
+  asf_target_defs(mirror_${name})
+  set_target_properties(mirror_${name} PROPERTIES
+    EXCLUDE_FROM_ALL TRUE EXCLUDE_FROM_DEFAULT_BUILD TRUE)
+  list(APPEND ASF_COMPILE_FAIL_TGTS ${name} mirror_${name})
+endforeach()
+
 foreach(dir_name IN ITEMS
-    "general|cref_wrong_impl_dyn"
-    "general|cref_wrong_impl_iface"
     "general|static_method_on_dyn"
     "general|identity_mirror_self_bind"
-    "mirror|cref_wrong_impl_dyn"
-    "mirror|cref_wrong_impl_iface"
     "mirror|explicit_mirror_copy_init"
     "mirror|unsourced_mirror_dyn")
   string(REPLACE "|" ";" dir_name_list ${dir_name})
@@ -182,10 +199,11 @@ target_include_directories(multi_final_odr PRIVATE include tests tests/general/m
 asf_target_defs(multi_final_odr)
 
 add_executable(mirror_multi_final_odr
-  tests/mirror/multi_cu/multi_final_odr_main.cpp
-  tests/mirror/multi_cu/multi_final_odr_tu_i2.cpp
-  tests/mirror/multi_cu/multi_final_odr_tu_i3.cpp)
-target_include_directories(mirror_multi_final_odr PRIVATE include tests tests/mirror/multi_cu)
+  tests/general/multi_cu/multi_final_odr_main.cpp
+  tests/general/multi_cu/multi_final_odr_tu_i2.cpp
+  tests/general/multi_cu/multi_final_odr_tu_i3.cpp)
+target_include_directories(mirror_multi_final_odr PRIVATE include tests tests/general/multi_cu)
+target_compile_definitions(mirror_multi_final_odr PRIVATE ASF_TEST_VIA_MIRROR=1)
 asf_target_defs(mirror_multi_final_odr)
 
 # INTERMEDIATE=OFF copies of the multi-final tests: final bind + upcast only.
@@ -194,8 +212,9 @@ if(ASF_HAS_DYN_INTERMEDIATE)
   target_include_directories(multi_final_off PRIVATE include tests)
   asf_target_defs(multi_final_off INTERMEDIATE 0)
 
-  add_executable(mirror_multi_final_off tests/mirror/multi_final_ub.cpp)
+  add_executable(mirror_multi_final_off tests/general/multi_final_ub.cpp)
   target_include_directories(mirror_multi_final_off PRIVATE include tests)
+  target_compile_definitions(mirror_multi_final_off PRIVATE ASF_TEST_VIA_MIRROR=1)
   asf_target_defs(mirror_multi_final_off INTERMEDIATE 0)
 
   add_executable(multi_final_odr_off
@@ -207,11 +226,12 @@ if(ASF_HAS_DYN_INTERMEDIATE)
   asf_target_defs(multi_final_odr_off INTERMEDIATE 0)
 
   add_executable(mirror_multi_final_odr_off
-    tests/mirror/multi_cu/multi_final_odr_main.cpp
-    tests/mirror/multi_cu/multi_final_odr_tu_i2.cpp
-    tests/mirror/multi_cu/multi_final_odr_tu_i3.cpp)
+    tests/general/multi_cu/multi_final_odr_main.cpp
+    tests/general/multi_cu/multi_final_odr_tu_i2.cpp
+    tests/general/multi_cu/multi_final_odr_tu_i3.cpp)
   target_include_directories(mirror_multi_final_odr_off PRIVATE
-    include tests tests/mirror/multi_cu)
+    include tests tests/general/multi_cu)
+  target_compile_definitions(mirror_multi_final_odr_off PRIVATE ASF_TEST_VIA_MIRROR=1)
   asf_target_defs(mirror_multi_final_odr_off INTERMEDIATE 0)
 endif()
 

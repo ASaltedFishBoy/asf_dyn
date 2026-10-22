@@ -1,6 +1,7 @@
 // Handle lifetime for asf::dyn (void* / uptr). Skips SBO/inplace value poly.
 
 #include "asf_check.hpp"
+#include "test_bind.hpp"
 #include "cast.hpp"
 
 #include <memory>
@@ -26,7 +27,8 @@ template <typename T = void>
 struct Stringable;
 
 template <>
-struct Stringable<void> {
+struct ASF_TEST_TRAIT_MIRROR
+Stringable<void> {
   std::string to_string(auto const& self);
   [[=asf_ann::imple]] auto op_construct(auto const& self) -> std::remove_cvref_t<decltype(self)>  { return self; }
 };
@@ -41,21 +43,18 @@ struct Session {
 
 template <>
 struct Stringable<Session> final {
-  static std::string to_string(const Session& self) {
+  static std::string to_string(ASF_TEST_CM(Session) self) {
     return self.label + " " + self.id;
   }
 };
 
-// Default Trait<void> bodies may use members. Probe must not dummy-instantiate
-// tag; construct vtable is the erased thunk, real instantiate uses Src.
 template <typename T = void>
 struct Labeled;
 template <>
-struct Labeled<void> {
+struct ASF_TEST_TRAIT_MIRROR
+Labeled<void> {
   auto tag(auto const& self) -> std::string { return self.label; }
-  [[=asf_ann::imple]] auto op_construct(auto const& self)
-      
-      -> std::remove_cvref_t<decltype(self)> {
+  [[=asf_ann::imple]] auto op_construct(auto const& self) -> std::remove_cvref_t<decltype(self)>  {
     (void)self.label;
     return self;
   }
@@ -63,8 +62,11 @@ struct Labeled<void> {
 template <>
 struct Labeled<Session> final {};
 
+#if !ASF_TEST_VIA_MIRROR
 // Trailing return is remove_cvref(self). Dummy signature probe does not
 // instantiate the body; extras are real types. Body may use members.
+// (general pass only: the mirror-self op_construct form is covered in
+// dyn_creation_tests.)
 template <typename T = void>
 struct RelabelByParts;
 template <>
@@ -73,7 +75,7 @@ struct RelabelByParts<void> {
     return self.label + " " + self.id;
   }
   auto op_construct(auto const& self)
-      
+
       -> std::remove_cvref_t<decltype(self)> {
     Session out{0, "x"};
     out.id = self.id;
@@ -81,7 +83,7 @@ struct RelabelByParts<void> {
     return out;
   }
   auto op_construct(auto const& self, std::string extra)
-      
+
       -> std::remove_cvref_t<decltype(self)> {
     Session out{0, "x"};
     out.id = self.id;
@@ -89,7 +91,7 @@ struct RelabelByParts<void> {
     return out;
   }
   auto op_construct(auto const& self, int n)
-      
+
       -> std::remove_cvref_t<decltype(self)> {
     Session out{n, "x"};
     out.id = asf_test::no_sso(std::to_string(n));
@@ -97,7 +99,7 @@ struct RelabelByParts<void> {
     return out;
   }
   auto op_construct(auto const& self, int n, std::string extra)
-      
+
       -> std::remove_cvref_t<decltype(self)> {
     Session out{n, "x"};
     out.id = asf_test::no_sso(std::to_string(n));
@@ -107,6 +109,7 @@ struct RelabelByParts<void> {
 };
 template <>
 struct RelabelByParts<Session> final {};
+#endif
 
 template <typename T = void>
 struct NoCtor;
@@ -141,9 +144,10 @@ void TestDefaultBodyUsesMembers() {
   ASF_CHECK_EQ(q->tag(), asf_test::no_sso("lab"));
 }
 
+#if !ASF_TEST_VIA_MIRROR
 void TestConstructExtrasUseMembers() {
   Session s{1, "lab"};
-  auto p = asf::to_dyn<RelabelByParts>(&s);
+  auto p = asf_test::to_dyn<RelabelByParts>(s);
   ASF_CHECK_EQ(p->tag(), asf_test::session_text("lab", 1));
   auto by_str = asf::construct(*p, asf_test::no_sso("pre"));
   ASF_CHECK_EQ(by_str->tag(), asf_test::session_text("pre", 1));
@@ -156,6 +160,7 @@ void TestConstructExtrasUseMembers() {
   ASF_CHECK_EQ(owned->tag(), asf_test::session_text("own", 8));
   ASF_CHECK_EQ(p->tag(), asf_test::session_text("lab", 1));
 }
+#endif
 
 void TestDefaultConstruction() {
   asf::dyn<Stringable> p;
@@ -169,14 +174,14 @@ void TestNullConstruction_Nullptr() {
 
 void TestPolyConstruction_FromValue_NonOwning() {
   Session s{2, "Session"};
-  auto p = asf::to_dyn<Stringable>(&s);
+  auto p = asf_test::to_dyn<Stringable>(s);
   ASF_CHECK(static_cast<bool>(p));
   ASF_CHECK_EQ(p->to_string(), asf_test::session_text("Session", 2));
 }
 
 void TestCopyConstruction_FromValue() {
   Session s{2, "Session"};
-  auto p1 = asf::to_dyn<Stringable>(&s);
+  auto p1 = asf_test::to_dyn<Stringable>(s);
   auto p2 = p1;
   ASF_CHECK(static_cast<bool>(p1));
   ASF_CHECK(static_cast<bool>(p2));
@@ -193,7 +198,7 @@ void TestCopyConstruction_FromNull() {
 
 void TestMoveConstruction_FromValue() {
   Session s{2, "Session"};
-  auto p1 = asf::to_dyn<Stringable>(&s);
+  auto p1 = asf_test::to_dyn<Stringable>(s);
   auto p2 = std::move(p1);
   ASF_CHECK(static_cast<bool>(p2));
   ASF_CHECK_EQ(p2->to_string(), asf_test::session_text("Session", 2));
@@ -207,7 +212,7 @@ void TestMoveConstruction_FromNull() {
 
 void TestNullAssignment_FromNullptr_ToValue() {
   Session s{2, "Session"};
-  auto p = asf::to_dyn<Stringable>(&s);
+  auto p = asf_test::to_dyn<Stringable>(s);
   ASF_CHECK(static_cast<bool>(p));
   p = nullptr;
   ASF_CHECK(!p);
@@ -222,8 +227,8 @@ void TestNullAssignment_ToNull() {
 void TestCopyAssignment_FromValue_ToValue() {
   Session a{1, "A"};
   Session b{2, "B"};
-  auto p1 = asf::to_dyn<Stringable>(&a);
-  auto p2 = asf::to_dyn<Stringable>(&b);
+  auto p1 = asf_test::to_dyn<Stringable>(a);
+  auto p2 = asf_test::to_dyn<Stringable>(b);
   p2 = p1;
   ASF_CHECK(p1 == p2);
   ASF_CHECK_EQ(p2->to_string(), asf_test::session_text("A", 1));
@@ -231,7 +236,7 @@ void TestCopyAssignment_FromValue_ToValue() {
 
 void TestCopyAssignment_FromValue_ToNull() {
   Session a{1, "A"};
-  auto p1 = asf::to_dyn<Stringable>(&a);
+  auto p1 = asf_test::to_dyn<Stringable>(a);
   asf::dyn<Stringable> p2;
   p2 = p1;
   ASF_CHECK(p1 == p2);
@@ -240,7 +245,7 @@ void TestCopyAssignment_FromValue_ToNull() {
 
 void TestCopyAssignment_FromNull_ToValue() {
   Session a{1, "A"};
-  auto p1 = asf::to_dyn<Stringable>(&a);
+  auto p1 = asf_test::to_dyn<Stringable>(a);
   asf::dyn<Stringable> p2;
   p1 = p2;
   ASF_CHECK(!p1);
@@ -248,7 +253,7 @@ void TestCopyAssignment_FromNull_ToValue() {
 
 void TestCopyAssignment_FromValue_ToSelf() {
   Session a{1, "A"};
-  auto p = asf::to_dyn<Stringable>(&a);
+  auto p = asf_test::to_dyn<Stringable>(a);
   p = p;
   ASF_CHECK(static_cast<bool>(p));
   ASF_CHECK_EQ(p->to_string(), asf_test::session_text("A", 1));
@@ -256,7 +261,7 @@ void TestCopyAssignment_FromValue_ToSelf() {
 
 void TestMoveAssignment_FromValue_ToSelf() {
   Session a{1, "A"};
-  auto p = asf::to_dyn<Stringable>(&a);
+  auto p = asf_test::to_dyn<Stringable>(a);
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wself-move"
   p = std::move(p);
@@ -284,8 +289,8 @@ void TestMoveAssignment_FromNull_ToNull() {
 void TestMoveAssignment_FromValue_ToValue() {
   Session a{1, "A"};
   Session b{2, "B"};
-  auto p1 = asf::to_dyn<Stringable>(&a);
-  auto p2 = asf::to_dyn<Stringable>(&b);
+  auto p1 = asf_test::to_dyn<Stringable>(a);
+  auto p2 = asf_test::to_dyn<Stringable>(b);
   p2 = std::move(p1);
   ASF_CHECK(static_cast<bool>(p2));
   ASF_CHECK_EQ(p2->to_string(), asf_test::session_text("A", 1));
@@ -293,7 +298,7 @@ void TestMoveAssignment_FromValue_ToValue() {
 
 void TestMoveAssignment_FromValue_ToNull() {
   Session a{1, "A"};
-  auto p1 = asf::to_dyn<Stringable>(&a);
+  auto p1 = asf_test::to_dyn<Stringable>(a);
   asf::dyn<Stringable> p2;
   p2 = std::move(p1);
   ASF_CHECK(static_cast<bool>(p2));
@@ -304,7 +309,7 @@ void TestOperatorBool() {
   asf::dyn<Stringable> empty;
   ASF_CHECK(!empty);
   Session s{1, "S"};
-  auto p = asf::to_dyn<Stringable>(&s);
+  auto p = asf_test::to_dyn<Stringable>(s);
   ASF_CHECK(static_cast<bool>(p));
 }
 
@@ -313,14 +318,14 @@ void TestEqualsToNullptr() {
   ASF_CHECK(empty == nullptr);
   ASF_CHECK(nullptr == empty);
   Session s{1, "S"};
-  auto p = asf::to_dyn<Stringable>(&s);
+  auto p = asf_test::to_dyn<Stringable>(s);
   ASF_CHECK(p != nullptr);
   ASF_CHECK(nullptr != p);
 }
 
 void TestReset_FromValue() {
   Session s{1, "S"};
-  auto p = asf::to_dyn<Stringable>(&s);
+  auto p = asf_test::to_dyn<Stringable>(s);
   p.reset();
   ASF_CHECK(!p);
 }
@@ -334,8 +339,8 @@ void TestReset_FromNull() {
 void TestSwap_Value_Value() {
   Session a{1, "A"};
   Session b{2, "B"};
-  auto p1 = asf::to_dyn<Stringable>(&a);
-  auto p2 = asf::to_dyn<Stringable>(&b);
+  auto p1 = asf_test::to_dyn<Stringable>(a);
+  auto p2 = asf_test::to_dyn<Stringable>(b);
   using std::swap;
   swap(p1, p2);
   ASF_CHECK_EQ(p1->to_string(), asf_test::session_text("B", 2));
@@ -344,7 +349,7 @@ void TestSwap_Value_Value() {
 
 void TestSwap_Value_Null() {
   Session a{1, "A"};
-  auto p1 = asf::to_dyn<Stringable>(&a);
+  auto p1 = asf_test::to_dyn<Stringable>(a);
   asf::dyn<Stringable> p2;
   using std::swap;
   swap(p1, p2);
@@ -354,7 +359,7 @@ void TestSwap_Value_Null() {
 
 void TestSwap_Value_Self() {
   Session a{1, "A"};
-  auto p = asf::to_dyn<Stringable>(&a);
+  auto p = asf_test::to_dyn<Stringable>(a);
   using std::swap;
   swap(p, p);
   ASF_CHECK(static_cast<bool>(p));
@@ -364,7 +369,7 @@ void TestSwap_Value_Self() {
 void TestSwap_Null_Value() {
   Session a{1, "A"};
   asf::dyn<Stringable> p1;
-  auto p2 = asf::to_dyn<Stringable>(&a);
+  auto p2 = asf_test::to_dyn<Stringable>(a);
   using std::swap;
   swap(p1, p2);
   ASF_CHECK(!p2);
@@ -384,7 +389,7 @@ void TestHasValue() {
   asf::dyn<Stringable> empty;
   ASF_CHECK(!static_cast<bool>(empty));
   Session s{1, "S"};
-  auto p = asf::to_dyn<Stringable>(&s);
+  auto p = asf_test::to_dyn<Stringable>(s);
   ASF_CHECK(static_cast<bool>(p));
 }
 
@@ -393,7 +398,7 @@ void TestSizeAlign() {
   ASF_CHECK_EQ(empty.size(), 0);
   ASF_CHECK_EQ(empty.align(), 0);
   Session s{1, "S"};
-  auto p = asf::to_dyn<Stringable>(&s);
+  auto p = asf_test::to_dyn<Stringable>(s);
   ASF_CHECK_EQ(p.size(), sizeof(Session));
   ASF_CHECK_EQ(p.align(), alignof(Session));
   asf::c_dyn<Stringable> cp{p};
@@ -403,7 +408,8 @@ void TestSizeAlign() {
 
 void TestOwnedMove_Unique() {
   Session s{7, "Owned"};
-  asf::dyn<Stringable> obs{&s};
+  auto _m_s = asf::to_mirror(s);
+  asf::dyn<Stringable> obs{_m_s};
   auto p1 = asf::construct<std::unique_ptr>(*obs);
   ASF_CHECK_EQ(p1->to_string(), asf_test::session_text("Owned", 7));
   auto p2 = std::move(p1);
@@ -414,7 +420,8 @@ void TestOwnedMove_Unique() {
 
 void TestOwnedMove_Shared() {
   Session s{8, "SharedOwned"};
-  asf::dyn<Stringable> obs{&s};
+  auto _m_s = asf::to_mirror(s);
+  asf::dyn<Stringable> obs{_m_s};
   auto p1 = asf::construct<std::shared_ptr>(*obs);
   ASF_CHECK_EQ(p1->to_string(), asf_test::session_text("SharedOwned", 8));
   auto p2 = std::move(p1);
@@ -440,7 +447,9 @@ void TestOwnedMove_Cache() {
 int main() {
   std::fprintf(stdout, "dyn_lifetime_tests\n");
   ASF_RUN(dyn_lifetime_tests_detail::TestDefaultBodyUsesMembers);
+#if !ASF_TEST_VIA_MIRROR
   ASF_RUN(dyn_lifetime_tests_detail::TestConstructExtrasUseMembers);
+#endif
   ASF_RUN(dyn_lifetime_tests_detail::TestDefaultConstruction);
   ASF_RUN(dyn_lifetime_tests_detail::TestNullConstruction_Nullptr);
   ASF_RUN(dyn_lifetime_tests_detail::TestPolyConstruction_FromValue_NonOwning);

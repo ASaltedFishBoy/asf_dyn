@@ -1,5 +1,6 @@
 
 #include "asf_check.hpp"
+#include "test_bind.hpp"
 #include "cast.hpp"
 
 #include <memory>
@@ -13,7 +14,8 @@ template <typename T = void>
 struct Callable;
 
 template <>
-struct Callable<void> {
+struct ASF_TEST_TRAIT_MIRROR
+Callable<void> {
   int op_call(auto& self, std::string s, std::vector<int> v);
 };
 
@@ -25,7 +27,7 @@ struct ForwardFn {
 
 template <>
 struct Callable<ForwardFn> final {
-  static int op_call(const ForwardFn& self, std::string s,
+  static int op_call(ASF_TEST_M(ForwardFn) self, std::string s,
                      std::vector<int> v) {
     *self.arg1_received = std::move(s);
     *self.arg2_received = std::move(v);
@@ -37,7 +39,8 @@ template <typename T = void>
 struct VoidCallable;
 
 template <>
-struct VoidCallable<void> {
+struct ASF_TEST_TRAIT_MIRROR
+VoidCallable<void> {
   void op_call(auto& self);
 };
 
@@ -47,7 +50,7 @@ struct ThrowFn {
 
 template <>
 struct VoidCallable<ThrowFn> final {
-  static void op_call(const ThrowFn& self) {
+  static void op_call(ASF_TEST_M(ThrowFn) self) {
     throw std::runtime_error{self.msg};
   }
 };
@@ -56,7 +59,8 @@ template <typename T = void>
 struct Iterable;
 
 template <>
-struct Iterable<void> {
+struct ASF_TEST_TRAIT_MIRROR
+Iterable<void> {
   std::size_t size(auto const& self);
   void for_each(auto& self, void (*fn)(int&));
 };
@@ -67,10 +71,10 @@ struct IntList {
 
 template <>
 struct Iterable<IntList> final {
-  static std::size_t size(const IntList& self) {
+  static std::size_t size(ASF_TEST_CM(IntList) self) {
     return self.data.size();
   }
-  static void for_each(IntList& self, void (*fn)(int&)) {
+  static void for_each(ASF_TEST_M(IntList) self, void (*fn)(int&)) {
     for (int& x : self.data)
       fn(x);
   }
@@ -80,7 +84,8 @@ template <typename T = void>
 struct AtDict;
 
 template <>
-struct AtDict<void> {
+struct ASF_TEST_TRAIT_MIRROR
+AtDict<void> {
   std::string at(auto const& self, int i);
 };
 
@@ -90,7 +95,7 @@ struct StrVec {
 
 template <>
 struct AtDict<StrVec> final {
-  static std::string at(const StrVec& self, int i) {
+  static std::string at(ASF_TEST_CM(StrVec) self, int i) {
     return self.data.at(static_cast<std::size_t>(i));
   }
 };
@@ -103,7 +108,7 @@ void TestArgumentForwarding() {
   std::vector<int> arg2_received;
   int expected_result = 456;
   ForwardFn f{&arg1_received, &arg2_received, expected_result};
-  auto p = asf::to_dyn<Callable>(&f);
+  auto p = asf_test::to_dyn<Callable>(f);
   int result = (*p)(arg1, std::move(arg2));
   ASF_CHECK(static_cast<bool>(p));
   ASF_CHECK_EQ(arg1_received, arg1);
@@ -115,7 +120,7 @@ void TestArgumentForwarding() {
 void TestThrow() {
   const char* expected_error_message = "My exception";
   ThrowFn f{expected_error_message};
-  auto p = asf::to_dyn<VoidCallable>(&f);
+  auto p = asf_test::to_dyn<VoidCallable>(f);
   bool exception_thrown = false;
   try {
     (*p)();
@@ -129,7 +134,7 @@ void TestThrow() {
 
 void TestMultipleDispatches_Unique() {
   IntList l{{1, 2, 3}};
-  auto p = asf::to_dyn<Iterable>(&l);
+  auto p = asf_test::to_dyn<Iterable>(l);
   ASF_CHECK_EQ(p->size(), std::size_t{3});
   static int sum;
   sum = 0;
@@ -140,7 +145,7 @@ void TestMultipleDispatches_Unique() {
 void TestMemberDispatch() {
   StrVec container1{{asf_test::no_sso("hello"), asf_test::no_sso("world"),
                      asf_test::no_sso("!")}};
-  auto p = asf::to_dyn<AtDict>(&container1);
+  auto p = asf_test::to_dyn<AtDict>(container1);
   ASF_CHECK_EQ(p->at(0), asf_test::no_sso("hello"));
 }
 
@@ -156,7 +161,8 @@ template <typename T = void>
 struct OverloadCallable;
 
 template <>
-struct OverloadCallable<void> {
+struct ASF_TEST_TRAIT_MIRROR
+OverloadCallable<void> {
   void op_call(auto& self, int x);
   void op_call(auto& self, double x);
   void op_call(auto& self, const char* s);
@@ -166,23 +172,23 @@ struct OverloadCallable<void> {
 
 template <>
 struct OverloadCallable<OverloadRecorder> final {
-  static void op_call(OverloadRecorder& self, int x) {
+  static void op_call(ASF_TEST_M(OverloadRecorder) self, int x) {
     self.last_tag = 1;
     self.last_i = x;
   }
-  static void op_call(OverloadRecorder& self, double x) {
+  static void op_call(ASF_TEST_M(OverloadRecorder) self, double x) {
     self.last_tag = 2;
     self.last_d = x;
   }
-  static void op_call(OverloadRecorder& self, const char* s) {
+  static void op_call(ASF_TEST_M(OverloadRecorder) self, const char* s) {
     self.last_tag = 3;
     self.last_s = s;
   }
-  static void op_call(OverloadRecorder& self, char* s) {
+  static void op_call(ASF_TEST_M(OverloadRecorder) self, char* s) {
     self.last_tag = 4;
     self.last_s = s ? s : "";
   }
-  static void op_call(OverloadRecorder& self, std::string s, int n) {
+  static void op_call(ASF_TEST_M(OverloadRecorder) self, std::string s, int n) {
     self.last_tag = 5;
     self.last_owned = std::move(s);
     self.last_i = n;
@@ -191,7 +197,7 @@ struct OverloadCallable<OverloadRecorder> final {
 
 void TestOverloadResolution_Member() {
   OverloadRecorder rec{};
-  auto p = asf::to_dyn<OverloadCallable>(&rec);
+  auto p = asf_test::to_dyn<OverloadCallable>(rec);
   (*p)(42);
   ASF_CHECK_EQ(rec.last_tag, 1);
   ASF_CHECK_EQ(rec.last_i, 42);
@@ -214,7 +220,7 @@ void TestOverloadResolution_Member() {
 void TestMultipleDispatches_Duplicated() {
   // trait_methods dedups same name; Iterable still exposes size + for_each once.
   IntList l{{4, 5, 6}};
-  auto p = asf::to_dyn<Iterable>(&l);
+  auto p = asf_test::to_dyn<Iterable>(l);
   ASF_CHECK_EQ(p->size(), std::size_t{3});
   static int sum;
   sum = 0;
@@ -231,14 +237,15 @@ template <typename T = void>
 struct IntStringable;
 
 template <>
-struct IntStringable<void> {
+struct ASF_TEST_TRAIT_MIRROR
+IntStringable<void> {
   std::string to_string(auto const& self);
-  [[=asf_ann::imple]] auto op_construct(auto const& self) -> std::remove_cvref_t<decltype(self)> { return self; }
+  [[=asf_ann::imple]] auto op_construct(auto const& self) -> std::remove_cvref_t<decltype(self)>  { return self; }
 };
 
 template <>
 struct IntStringable<IntBox> final {
-  static std::string to_string(const IntBox& self) {
+  static std::string to_string(ASF_TEST_CM(IntBox) self) {
     return "int:" + std::to_string(self.num);
   }
 };

@@ -1,6 +1,7 @@
 // (Drawable / Logger) onto asf::dyn.
 
 #include "asf_check.hpp"
+#include "test_bind.hpp"
 #include "cast.hpp"
 
 #include <cmath>
@@ -17,7 +18,8 @@ template <typename T = void>
 struct Drawable;
 
 template <>
-struct Drawable<void> {
+struct ASF_TEST_TRAIT_MIRROR
+Drawable<void> {
   void draw(auto const& self, std::ostream& out);
   double area(auto const& self);
 };
@@ -45,29 +47,29 @@ class Point {
 
 template <>
 struct Drawable<Rectangle> final {
-  static void draw(const Rectangle& self, std::ostream& out) {
+  static void draw(ASF_TEST_CM(Rectangle) self, std::ostream& out) {
     out << "{Rectangle: width = " << self.width_
         << ", height = " << self.height_ << "}";
   }
-  static double area(const Rectangle& self) {
+  static double area(ASF_TEST_CM(Rectangle) self) {
     return self.width_ * self.height_;
   }
 };
 
 template <>
 struct Drawable<Circle> final {
-  static void draw(const Circle& self, std::ostream& out) {
+  static void draw(ASF_TEST_CM(Circle) self, std::ostream& out) {
     out << "{Circle: radius = " << self.radius_ << "}";
   }
-  static double area(const Circle& self) {
+  static double area(ASF_TEST_CM(Circle) self) {
     return std::numbers::pi * self.radius_ * self.radius_;
   }
 };
 
 template <>
 struct Drawable<Point> final {
-  static void draw(const Point&, std::ostream& out) { out << "{Point}"; }
-  static double area(const Point&) { return 0; }
+  static void draw(asf::c_mirror<Point>, std::ostream& out) { out << "{Point}"; }
+  static double area(asf::c_mirror<Point>) { return 0; }
 };
 
 std::string PrintDrawableToString(asf::dyn<Drawable> p) {
@@ -104,18 +106,19 @@ template <typename T = void>
 struct OwnDrawable;
 
 template <>
-struct OwnDrawable<void> {
+struct ASF_TEST_TRAIT_MIRROR
+OwnDrawable<void> {
   void draw(auto const& self, std::ostream& out);
   double area(auto const& self);
-  [[=asf_ann::imple]] auto op_construct(auto const& self) -> std::remove_cvref_t<decltype(self)> { return self; }
+  [[=asf_ann::imple]] auto op_construct(auto const& self) -> std::remove_cvref_t<decltype(self)>  { return self; }
 };
 
 template <>
 struct OwnDrawable<Rectangle> final {
-  static void draw(const Rectangle& self, std::ostream& out) {
+  static void draw(ASF_TEST_CM(Rectangle) self, std::ostream& out) {
     Drawable<Rectangle>::draw(self, out);
   }
-  static double area(const Rectangle& self) {
+  static double area(ASF_TEST_CM(Rectangle) self) {
     return Drawable<Rectangle>::area(self);
   }
 };
@@ -124,7 +127,8 @@ asf::unique_dyn<OwnDrawable> MakeOwnedDrawable(const std::string& s) {
   std::vector<std::string> parsed = ParseCommand(s);
   if (!parsed.empty() && parsed[0u] == "Rectangle" && parsed.size() == 3u) {
     Rectangle tmp{std::stod(parsed[1u]), std::stod(parsed[2u])};
-    asf::dyn<OwnDrawable> obs{&tmp};
+    auto mtmp = asf::to_mirror(tmp);
+    asf::dyn<OwnDrawable> obs{mtmp};
     return asf::construct<std::unique_ptr>(*obs);
   }
   throw std::runtime_error{"Invalid command"};
@@ -136,16 +140,16 @@ asf::dyn<Drawable> MakeDrawableFromCommand(const std::string& s) {
     if (parsed[0u] == "Rectangle" && parsed.size() == 3u) {
       static Rectangle rect{0, 0};
       rect = Rectangle{std::stod(parsed[1u]), std::stod(parsed[2u])};
-      return asf::to_dyn<Drawable>(&rect);
+      return asf_test::to_dyn<Drawable>(rect);
     }
     if (parsed[0u] == "Circle" && parsed.size() == 2u) {
       static Circle circle{0};
       circle = Circle{std::stod(parsed[1u])};
-      return asf::to_dyn<Drawable>(&circle);
+      return asf_test::to_dyn<Drawable>(circle);
     }
     if (parsed[0u] == "Point" && parsed.size() == 1u) {
       static Point instance;
-      return asf::to_dyn<Drawable>(&instance);
+      return asf_test::to_dyn<Drawable>(instance);
     }
   }
   throw std::runtime_error{"Invalid command"};
@@ -156,7 +160,8 @@ template <typename T = void>
 struct Logger;
 
 template <>
-struct Logger<void> {
+struct ASF_TEST_TRAIT_MIRROR
+Logger<void> {
   void log(auto& self, const char* s) {
     if constexpr (requires { *self.out_; })
       *self.out_ << "[INFO] " << s << "\n";
@@ -212,7 +217,7 @@ void TestDrawable() {
 void TestLogger() {
   std::ostringstream out;
   StreamLogger logger{out};
-  auto p = asf::to_dyn<Logger>(&logger);
+  auto p = asf_test::to_dyn<Logger>(logger);
   p->log("hello");
   try {
     throw std::runtime_error{"runtime error!"};

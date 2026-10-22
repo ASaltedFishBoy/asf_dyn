@@ -1,5 +1,6 @@
 #include "asf_check.hpp"
 #include "multi_final_odr_traits.hpp"
+#include "test_bind.hpp"
 
 #include <cstdint>
 #include <cstring>
@@ -23,7 +24,7 @@ static int report(Person& person) {
   auto* leaf2 = odr_tu_i2_leaf(person);
   auto* leaf3 = odr_tu_i3_leaf(person);
 #if ASF_HAS_DYN_INTERMEDIATE
-  auto* i1 = asf::detail::vt_of(asf::to_dyn<I1>(&person));
+  auto* i1 = asf::detail::vt_of(asf_test::to_dyn<I1>(person));
 
   std::println("--- --report (I1 friend already linked) ---");
   dump("I2 leaf", leaf2);
@@ -74,7 +75,7 @@ static int run_ordered(Person& person, bool i2_first) {
   }
 
 #if ASF_HAS_DYN_INTERMEDIATE
-  auto* i1_m = asf::detail::vt_of(asf::to_dyn<I1>(&person));
+  auto* i1_m = asf::detail::vt_of(asf_test::to_dyn<I1>(person));
   dump("I2 leaf", leaf2);
   dump("I3 leaf", leaf3);
   dump("I1 after first CU", i1_a);

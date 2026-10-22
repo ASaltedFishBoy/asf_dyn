@@ -1,5 +1,6 @@
 #include "asf_check.hpp"
 #include "cast.hpp"
+#include "test_bind.hpp"
 
 #include <print>
 #include <string>
@@ -10,63 +11,72 @@
 template <typename T = void>
 struct I1;
 template <>
-struct I1<void> {
+struct ASF_TEST_TRAIT_MIRROR
+I1<void> {
   std::string m1(auto& self);
 };
 
 template <typename T = void>
 struct I2;
 template <>
-struct I2<void> : I1<void> {
+struct ASF_TEST_TRAIT_MIRROR
+I2<void> : I1<void> {
   std::string m2(auto& self);
 };
 
 template <typename T = void>
 struct I3;
 template <>
-struct I3<void> : I1<void> {
+struct ASF_TEST_TRAIT_MIRROR
+I3<void> : I1<void> {
   std::string m3(auto& self);
 };
 
 template <typename T = void>
 struct I4;
 template <>
-struct I4<void> : I2<void> {
+struct ASF_TEST_TRAIT_MIRROR
+I4<void> : I2<void> {
   std::string m4(auto& self);
 };
 
 template <typename T = void>
 struct I5;
 template <>
-struct I5<void> : I2<void>, I3<void> {
+struct ASF_TEST_TRAIT_MIRROR
+I5<void> : I2<void>, I3<void> {
   std::string m5(auto& self);
 };
 
 template <typename T = void>
 struct I6;
 template <>
-struct I6<void> : I3<void> {
+struct ASF_TEST_TRAIT_MIRROR
+I6<void> : I3<void> {
   std::string m6(auto& self);
 };
 
 template <typename T = void>
 struct I7;
 template <>
-struct I7<void> : I4<void>, I5<void> {
+struct ASF_TEST_TRAIT_MIRROR
+I7<void> : I4<void>, I5<void> {
   std::string m7(auto& self);
 };
 
 template <typename T = void>
 struct I8;
 template <>
-struct I8<void> : I5<void>, I6<void> {
+struct ASF_TEST_TRAIT_MIRROR
+I8<void> : I5<void>, I6<void> {
   std::string m8(auto& self);
 };
 
 template <typename T = void>
 struct I9;
 template <>
-struct I9<void> : I7<void>, I8<void> {
+struct ASF_TEST_TRAIT_MIRROR
+I9<void> : I7<void>, I8<void> {
   std::string m9(auto& self);
 };
 
@@ -74,21 +84,24 @@ struct I9<void> : I7<void>, I8<void> {
 template <typename T = void>
 struct SA;
 template <>
-struct SA<void> {
+struct ASF_TEST_TRAIT_MIRROR
+SA<void> {
   std::string foo(auto& self);
 };
 
 template <typename T = void>
 struct SB;
 template <>
-struct SB<void> {
+struct ASF_TEST_TRAIT_MIRROR
+SB<void> {
   std::string foo(auto& self);
 };
 
 template <typename T = void>
 struct SC;
 template <>
-struct SC<void> : SA<void>, SB<void> {
+struct ASF_TEST_TRAIT_MIRROR
+SC<void> : SA<void>, SB<void> {
   std::string bar(auto& self);
 };
 
@@ -96,14 +109,16 @@ struct SC<void> : SA<void>, SB<void> {
 template <typename T = void>
 struct OwnI1;
 template <>
-struct OwnI1<void> {
+struct ASF_TEST_TRAIT_MIRROR
+OwnI1<void> {
   std::string m1(auto& self);
 };
 
 template <typename T = void>
 struct OwnI2;
 template <>
-struct OwnI2<void> : OwnI1<void> {
+struct ASF_TEST_TRAIT_MIRROR
+OwnI2<void> : OwnI1<void> {
   [[=asf_ann::imple]] auto op_construct(auto const& self) -> std::remove_cvref_t<decltype(self)>  {
     return self;
   }
@@ -116,67 +131,67 @@ struct Person {
 
 template <>
 struct I1<Person> {
-  static std::string m1(const Person& self) { return self.name + "/m1"; }
+  static std::string m1(ASF_TEST_M(Person) self) { return self.name + "/m1"; }
 };
 template <>
 struct I2<Person> {
-  static std::string m2(const Person& self) { return self.name + "/m2"; }
+  static std::string m2(ASF_TEST_M(Person) self) { return self.name + "/m2"; }
 };
 template <>
 struct I3<Person> {
-  static std::string m3(const Person& self) { return self.name + "/m3"; }
+  static std::string m3(ASF_TEST_M(Person) self) { return self.name + "/m3"; }
 };
 template <>
 struct I4<Person> {
-  static std::string m4(const Person& self) { return self.name + "/m4"; }
+  static std::string m4(ASF_TEST_M(Person) self) { return self.name + "/m4"; }
 };
 template <>
 struct I5<Person> {
-  static std::string m5(const Person& self) { return self.name + "/m5"; }
+  static std::string m5(ASF_TEST_M(Person) self) { return self.name + "/m5"; }
 };
 template <>
 struct I6<Person> {
-  static std::string m6(const Person& self) { return self.name + "/m6"; }
+  static std::string m6(ASF_TEST_M(Person) self) { return self.name + "/m6"; }
 };
 template <>
 struct I7<Person> {
-  static std::string m7(const Person& self) { return self.name + "/m7"; }
+  static std::string m7(ASF_TEST_M(Person) self) { return self.name + "/m7"; }
 };
 // I8 must not be final when I9 is: assert_no_final_trait_parent.
 template <>
 struct I8<Person> {
-  static std::string m8(const Person& self) { return self.name + "/m8"; }
+  static std::string m8(ASF_TEST_M(Person) self) { return self.name + "/m8"; }
 };
 template <>
 struct I9<Person> final {
-  static std::string m9(const Person& self) { return self.name + "/m9"; }
+  static std::string m9(ASF_TEST_M(Person) self) { return self.name + "/m9"; }
 };
 template <>
 struct SA<Person> {
-  static std::string foo(const Person& self) {
+  static std::string foo(ASF_TEST_M(Person) self) {
     return self.name + "/SA";
   }
 };
 template <>
 struct SB<Person> {
-  static std::string foo(const Person& self) {
+  static std::string foo(ASF_TEST_M(Person) self) {
     return self.name + "/SB";
   }
 };
 template <>
 struct SC<Person> final {
-  static std::string bar(const Person& self) {
+  static std::string bar(ASF_TEST_M(Person) self) {
     return self.name + "/bar";
   }
 };
 
 template <>
 struct OwnI1<Person> {
-  static std::string m1(const Person& self) { return self.name + "/m1"; }
+  static std::string m1(ASF_TEST_M(Person) self) { return self.name + "/m1"; }
 };
 template <>
 struct OwnI2<Person> final {
-  static std::string m2(const Person& self) { return self.name + "/m2"; }
+  static std::string m2(ASF_TEST_M(Person) self) { return self.name + "/m2"; }
 };
 
 static_assert(asf::detail::is_trait_final<I9, Person>());
@@ -220,7 +235,7 @@ static_assert(!asf::detail::is_section_prefix_of<I5, I9>());
 static_assert(asf::detail::is_section_prefix_of<SA, SC>());
 static_assert(!asf::detail::is_section_prefix_of<SB, SC>());
 
-// dyn: Trait-base upcast only. iface: up/down when the second parameter converts.
+// dyn: Trait-base upcast only. iface: up/down when Self (mirror) converts.
 static_assert(std::is_convertible_v<asf::dyn<I9>, asf::dyn<I1>>);
 static_assert(!std::is_convertible_v<asf::dyn<I1>, asf::dyn<I9>>);
 static_assert(!std::is_constructible_v<asf::shared_dyn<I1>, asf::dyn<I9>&&>);
@@ -272,11 +287,11 @@ int main() {
   };
 
   Person other{asf_test::no_sso("Zed")};
-  auto d9 = asf::to_dyn<I9>(&person);
+  auto d9 = asf_test::to_dyn<I9>(person);
   if (!expect(d9->m9(), "m9"))
     return 1;
   auto d1 = asf::trait_cast<I1>(d9);
-  if (d9 != d1 || d9 == asf::to_dyn<I9>(&other))
+  if (d9 != d1 || d9 == asf_test::to_dyn<I9>(other))
     return 1;
   // Implicit dyn upcast (same as to_dyn / as).
   asf::dyn<I1> d1_imp = d9;
@@ -369,7 +384,7 @@ int main() {
   }
 
   // iface::as - same-object base view (Self rewrap).
-  auto i9 = asf::to_iface<I9>(person);
+  auto i9 = asf_test::to_iface<I9>(person);
   if (!expect(i9->m9(), "m9") || !expect(i9.as<I1>()->m1(), "m1") ||
       !expect(i9.as<I3>()->m3(), "m3") || !expect(i9.as<I6>()->m6(), "m6") ||
       !expect(i9.as<I8>()->m8(), "m8") ||
@@ -384,14 +399,35 @@ int main() {
   asf::iface<I9, Person> i9_back = i1_imp;  // implicit iface downcast
   if (!expect(i9_back->m9(), "m9"))
     return 1;
+
+#if ASF_TEST_VIA_MIRROR
+  // Sourced iface: same-object / Trait-base compare via Src ptr.
+  auto person_m = asf::to_mirror<Person>(person);
+  auto other_m = asf::to_mirror<Person>(other);
+  auto vi9 = asf::to_iface<I9>(person_m);
+  auto vi1 = asf::trait_cast<I1>(vi9);
+  if (vi9 != vi1 || vi9 == asf::to_iface<I9>(other_m))
+    return 1;
+  asf::iface<I1, asf::mirror<Person, Person>> vi1_imp = vi9;
+  if (vi1_imp != vi1)
+    return 1;
+  asf::iface<I9, asf::mirror<Person, Person>> vi9_back = vi1_imp;  // sourced downcast
+  if (vi9_back != vi9)
+    return 1;
+  if (&asf::src_of(vi9.get()) != &person)
+    return 1;
+  if (!expect(vi9.as<I4>()->m4(), "m4"))
+    return 1;
+#else
   Person& via_get = i9.get();
   if (&via_get != &person)
     return 1;
+#endif
 
   // default uptr: move-only implicit upcast
   {
     Person own_src{"Own"};
-    asf::dyn<OwnI2> own_obs{&own_src};
+    auto own_obs = asf_test::to_dyn<OwnI2>(own_src);
     auto owned = asf::construct<std::unique_ptr>(*own_obs);
     asf::unique_dyn<OwnI1> base = std::move(owned);
     if (!base)
@@ -400,7 +436,7 @@ int main() {
       return 1;
   }
 
-  auto sc = asf::to_dyn<SC>(&person);
+  auto sc = asf_test::to_dyn<SC>(person);
   if (!expect(sc->bar(), "bar") || !expect(sc.as<SA>()->foo(), "SA"))
     return 1;  // SA is primary / section-prefix of SC
 #if ASF_HAS_DYN_MULTI_VT
@@ -408,7 +444,7 @@ int main() {
     return 1;
 #endif
 
-  std::println("iface_inherit ok, vtables={} multi_vt={} rtti={}",
+  std::println("mirror/iface_inherit ok, vtables={} multi_vt={} rtti={}",
                asf::detail::vtable_instance_count<I9>(), asf::dyn_multi_vt_v,
                asf::dyn_rtti_v);
 }

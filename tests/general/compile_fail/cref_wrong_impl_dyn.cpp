@@ -1,28 +1,34 @@
-// Compile-fail: const-self impl wrote T& (needs const T&).
-// Declaration is auto const&; ptr is presented as const T&; T& does not
-// accept that. EXCLUDE_FROM_ALL (expect fail).
+// Compile-fail (dual-pass): const-self impl wrote the mutable self view.
+// Declaration is auto const&; general pass: impl wrote T& (needs const T&);
+// mirror pass: impl wrote mirror<T> (needs c_mirror<T>).
+// EXCLUDE_FROM_ALL (expect fail on both passes).
 
-#include "cast.hpp"
+#include "test_bind.hpp"
+
+#include <string>
 
 template <typename T = void>
-struct Cell;
+struct Named;
 
 template <>
-struct Cell<void> {
-  auto read(auto const& self) -> int;
+struct ASF_TEST_TRAIT_MIRROR
+Named<void> {
+  auto who(auto const& self) -> std::string const&;
 };
 
-struct Box {
-  int num{};
+struct Person {
+  std::string name;
 };
 
 template <>
-struct Cell<Box> final {
-  static auto read(Box& self) -> int { return self.num; }
+struct Named<Person> final {
+  static auto who(ASF_TEST_M_CREF(Person) self) -> std::string const& {
+    return self.name;
+  }
 };
 
 int main() {
-  Box box;
-  asf::dyn<Cell> d{&box};
-  (void)d->read();
+  Person p;
+  asf::dyn<Named> d{&p};
+  (void)d->who();
 }

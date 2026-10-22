@@ -1,6 +1,7 @@
 // Non-owning asf::dyn / view of owning unique_dyn.
 
 #include "asf_check.hpp"
+#include "test_bind.hpp"
 #include "cast.hpp"
 
 #include <string>
@@ -16,7 +17,8 @@ template <typename T = void>
 struct MutStringable;
 
 template <>
-struct MutStringable<void> {
+struct ASF_TEST_TRAIT_MIRROR
+MutStringable<void> {
   void op_iadd(auto& self, int n);
   std::string to_string(auto const& self);
   [[=asf_ann::imple]] auto op_construct(auto const& self) -> std::remove_cvref_t<decltype(self)>  { return self; }
@@ -24,8 +26,8 @@ struct MutStringable<void> {
 
 template <>
 struct MutStringable<IntBox> final {
-  static void op_iadd(IntBox& self, int n) { self.num += n; }
-  static std::string to_string(const IntBox& self) {
+  static void op_iadd(ASF_TEST_M(IntBox) self, int n) { self.num += n; }
+  static std::string to_string(ASF_TEST_CM(IntBox) self) {
     return std::to_string(self.num);
   }
 };
@@ -42,7 +44,8 @@ struct CallImpl {
 };
 
 template <>
-struct CallMut<void> {
+struct ASF_TEST_TRAIT_MIRROR
+CallMut<void> {
   int op_call(auto& self) {
     if constexpr (requires { self.num; })
       return 0;
@@ -51,7 +54,8 @@ struct CallMut<void> {
   }
 };
 template <>
-struct CallConst<void> {
+struct ASF_TEST_TRAIT_MIRROR
+CallConst<void> {
   int op_call(auto const& self) {
     if constexpr (requires { self.extra; })
       return 1;
@@ -69,7 +73,8 @@ template <typename T = void>
 struct BaseToString;
 
 template <>
-struct BaseToString<void> {
+struct ASF_TEST_TRAIT_MIRROR
+BaseToString<void> {
   std::string to_string(auto const& self) {
     if constexpr (requires {
                     { self.num + 0 } -> std::convertible_to<int>;
@@ -86,7 +91,8 @@ template <typename T = void>
 struct DerivedMut;
 
 template <>
-struct DerivedMut<void> : BaseToString<void> {
+struct ASF_TEST_TRAIT_MIRROR
+DerivedMut<void> : BaseToString<void> {
   void op_iadd(auto& self, int n) {
     if constexpr (requires { self.num += 0; })
       self.num += n;
@@ -106,7 +112,7 @@ void TestViewOfNull() {
 
 void TestViewIndependentUse() {
   IntBox a{123};
-  auto p = asf::to_dyn<MutStringable>(&a);
+  auto p = asf_test::to_dyn<MutStringable>(a);
   (*p) += 3;
   ASF_CHECK_EQ(p->to_string(), "126");
   ASF_CHECK_EQ(a.num, 126);
@@ -114,7 +120,7 @@ void TestViewIndependentUse() {
 
 void TestViewOfOwning() {
   IntBox src{123};
-  asf::dyn<MutStringable> obs{&src};
+  auto obs = asf_test::to_dyn<MutStringable>(src);
   auto p1 = asf::construct<std::unique_ptr>(*obs);
   asf::dyn<MutStringable> p2 =
       asf::to_dyn<MutStringable>(static_cast<IntBox*>(p1.ptr()));
@@ -127,7 +133,7 @@ void TestViewOfOwning() {
 
 void TestViewOfNonOwning() {
   IntBox a{123};
-  auto p1 = asf::to_dyn<MutStringable>(&a);
+  auto p1 = asf_test::to_dyn<MutStringable>(a);
   auto p2 = p1;
   ASF_CHECK(static_cast<bool>(p1));
   ASF_CHECK(static_cast<bool>(p2));
@@ -140,8 +146,8 @@ void TestViewOfNonOwning() {
 
 void TestOverloadShadowing() {
   CallImpl impl{};
-  auto p1 = asf::to_dyn<CallMut>(&impl);
-  auto p2 = asf::to_c_dyn<CallConst>(&impl);
+  auto p1 = asf_test::to_dyn<CallMut>(impl);
+  auto p2 = asf_test::to_c_dyn<CallConst>(impl);
   ASF_CHECK_EQ((*p1)(), 0);
   ASF_CHECK_EQ((*p2)(), 1);
 }
@@ -155,7 +161,7 @@ void TestSubstitution_FromNull() {
 
 void TestSubstitution_FromValue() {
   IntBox v{123};
-  auto p1 = asf::to_dyn<DerivedMut>(&v);
+  auto p1 = asf_test::to_dyn<DerivedMut>(v);
   asf::dyn<BaseToString> p3 = p1;
   ASF_CHECK_EQ(p1.as<BaseToString>()->to_string(), "123");
   ASF_CHECK_EQ(p3->to_string(), "123");

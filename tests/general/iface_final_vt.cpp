@@ -1,5 +1,6 @@
 #include "asf_check.hpp"
 #include "cast.hpp"
+#include "test_bind.hpp"
 
 #include <algorithm>
 #include <print>
@@ -24,70 +25,80 @@
 template <typename T = void>
 struct I1;
 template <>
-struct I1<void> {
+struct ASF_TEST_TRAIT_MIRROR
+I1<void> {
   int m1(auto& self);
 };
 
 template <typename T = void>
 struct I2;
 template <>
-struct I2<void> : I1<void> {
+struct ASF_TEST_TRAIT_MIRROR
+I2<void> : I1<void> {
   int m2(auto& self);
 };
 
 template <typename T = void>
 struct I3;
 template <>
-struct I3<void> : I1<void> {
+struct ASF_TEST_TRAIT_MIRROR
+I3<void> : I1<void> {
   int m3(auto& self);
 };
 
 template <typename T = void>
 struct I4;
 template <>
-struct I4<void> : I2<void>, I3<void> {
+struct ASF_TEST_TRAIT_MIRROR
+I4<void> : I2<void>, I3<void> {
   int m4(auto& self);
 };
 
 template <typename T = void>
 struct I5;
 template <>
-struct I5<void> : I4<void> {
+struct ASF_TEST_TRAIT_MIRROR
+I5<void> : I4<void> {
   int m5(auto& self);
 };
 
 template <typename T = void>
 struct I6;
 template <>
-struct I6<void> : I4<void> {
+struct ASF_TEST_TRAIT_MIRROR
+I6<void> : I4<void> {
   int m6(auto& self);
 };
 
 template <typename T = void>
 struct I7;
 template <>
-struct I7<void> : I5<void>, I6<void> {
+struct ASF_TEST_TRAIT_MIRROR
+I7<void> : I5<void>, I6<void> {
   int m7(auto& self);
 };
 
 template <typename T = void>
 struct I8;
 template <>
-struct I8<void> : I7<void> {
+struct ASF_TEST_TRAIT_MIRROR
+I8<void> : I7<void> {
   int m8(auto& self);
 };
 
 template <typename T = void>
 struct I9;
 template <>
-struct I9<void> : I7<void> {
+struct ASF_TEST_TRAIT_MIRROR
+I9<void> : I7<void> {
   int m9(auto& self);
 };
 
 template <typename T = void>
 struct I10;
 template <>
-struct I10<void> : I8<void>, I9<void> {
+struct ASF_TEST_TRAIT_MIRROR
+I10<void> : I8<void>, I9<void> {
   int m10(auto& self);
 };
 
@@ -103,70 +114,70 @@ constexpr int src_tag(Person const& p, int id) {
 
 template <>
 struct I1<Person> {
-  static int m1(Person& self) {
+  static int m1(ASF_TEST_M(Person) self) {
     ++self.hits;
     return static_cast<int>(self.name.size()) * 100 + 1;
   }
 };
 template <>
 struct I2<Person> {
-  static int m2(Person& self) {
+  static int m2(ASF_TEST_M(Person) self) {
     ++self.hits;
     return static_cast<int>(self.name.size()) * 100 + 2;
   }
 };
 template <>
 struct I3<Person> {
-  static int m3(Person& self) {
+  static int m3(ASF_TEST_M(Person) self) {
     ++self.hits;
     return static_cast<int>(self.name.size()) * 100 + 3;
   }
 };
 template <>
 struct I4<Person> {
-  static int m4(Person& self) {
+  static int m4(ASF_TEST_M(Person) self) {
     ++self.hits;
     return static_cast<int>(self.name.size()) * 100 + 4;
   }
 };
 template <>
 struct I5<Person> {
-  static int m5(Person& self) {
+  static int m5(ASF_TEST_M(Person) self) {
     ++self.hits;
     return static_cast<int>(self.name.size()) * 100 + 5;
   }
 };
 template <>
 struct I6<Person> {
-  static int m6(Person& self) {
+  static int m6(ASF_TEST_M(Person) self) {
     ++self.hits;
     return static_cast<int>(self.name.size()) * 100 + 6;
   }
 };
 template <>
 struct I7<Person> {
-  static int m7(Person& self) {
+  static int m7(ASF_TEST_M(Person) self) {
     ++self.hits;
     return static_cast<int>(self.name.size()) * 100 + 7;
   }
 };
 template <>
 struct I8<Person> {
-  static int m8(Person& self) {
+  static int m8(ASF_TEST_M(Person) self) {
     ++self.hits;
     return static_cast<int>(self.name.size()) * 100 + 8;
   }
 };
 template <>
 struct I9<Person> {
-  static int m9(Person& self) {
+  static int m9(ASF_TEST_M(Person) self) {
     ++self.hits;
     return static_cast<int>(self.name.size()) * 100 + 9;
   }
 };
 template <>
 struct I10<Person> final {
-  static int m10(Person& self) {
+  static int m10(ASF_TEST_M(Person) self) {
     ++self.hits;
     return static_cast<int>(self.name.size()) * 100 + 10;
   }
@@ -310,7 +321,7 @@ int main() {
   return 0;
 #else
   Person person{asf_test::no_sso("Ada")};
-  auto root = asf::to_dyn<I10>(&person);
+  auto root = asf_test::to_dyn<I10>(person);
 
   // Leaf �?every ancestor via get (same vt); each return depends on Src.name.
   if (root.as<I1>()->m1() != src_tag(person, 1) ||

@@ -1,5 +1,6 @@
 #include "asf_check.hpp"
 #include "cast.hpp"
+#include "test_bind.hpp"
 
 #include <print>
 #include <unordered_set>
@@ -29,97 +30,113 @@
 template <typename T = void>
 struct G0_0;
 template <>
-struct G0_0<void> {
+struct ASF_TEST_TRAIT_MIRROR
+G0_0<void> {
   int m_0_0(auto& self);
 };
 template <typename T = void>
 struct G1_0;
 template <>
-struct G1_0<void> : G0_0<void> {
+struct ASF_TEST_TRAIT_MIRROR
+G1_0<void> : G0_0<void> {
   int m_1_0(auto& self);
 };
 template <typename T = void>
 struct G1_1;
 template <>
-struct G1_1<void> : G0_0<void> {
+struct ASF_TEST_TRAIT_MIRROR
+G1_1<void> : G0_0<void> {
   int m_1_1(auto& self);
 };
 template <typename T = void>
 struct G2_0;
 template <>
-struct G2_0<void> : G1_0<void> {
+struct ASF_TEST_TRAIT_MIRROR
+G2_0<void> : G1_0<void> {
   int m_2_0(auto& self);
 };
 template <typename T = void>
 struct G2_1;
 template <>
-struct G2_1<void> : G1_0<void>, G1_1<void> {
+struct ASF_TEST_TRAIT_MIRROR
+G2_1<void> : G1_0<void>, G1_1<void> {
   int m_2_1(auto& self);
 };
 template <typename T = void>
 struct G2_2;
 template <>
-struct G2_2<void> : G1_1<void> {
+struct ASF_TEST_TRAIT_MIRROR
+G2_2<void> : G1_1<void> {
   int m_2_2(auto& self);
 };
 template <typename T = void>
 struct G3_0;
 template <>
-struct G3_0<void> : G2_0<void> {
+struct ASF_TEST_TRAIT_MIRROR
+G3_0<void> : G2_0<void> {
   int m_3_0(auto& self);
 };
 template <typename T = void>
 struct G3_1;
 template <>
-struct G3_1<void> : G2_0<void>, G2_1<void> {
+struct ASF_TEST_TRAIT_MIRROR
+G3_1<void> : G2_0<void>, G2_1<void> {
   int m_3_1(auto& self);
 };
 template <typename T = void>
 struct G3_2;
 template <>
-struct G3_2<void> : G2_1<void>, G2_2<void> {
+struct ASF_TEST_TRAIT_MIRROR
+G3_2<void> : G2_1<void>, G2_2<void> {
   int m_3_2(auto& self);
 };
 template <typename T = void>
 struct G3_3;
 template <>
-struct G3_3<void> : G2_2<void> {
+struct ASF_TEST_TRAIT_MIRROR
+G3_3<void> : G2_2<void> {
   int m_3_3(auto& self);
 };
 template <typename T = void>
 struct G4_0;
 template <>
-struct G4_0<void> : G3_0<void>, G3_1<void> {
+struct ASF_TEST_TRAIT_MIRROR
+G4_0<void> : G3_0<void>, G3_1<void> {
   int m_4_0(auto& self);
 };
 template <typename T = void>
 struct G4_1;
 template <>
-struct G4_1<void> : G3_1<void>, G3_2<void> {
+struct ASF_TEST_TRAIT_MIRROR
+G4_1<void> : G3_1<void>, G3_2<void> {
   int m_4_1(auto& self);
 };
 template <typename T = void>
 struct G4_2;
 template <>
-struct G4_2<void> : G3_2<void>, G3_3<void> {
+struct ASF_TEST_TRAIT_MIRROR
+G4_2<void> : G3_2<void>, G3_3<void> {
   int m_4_2(auto& self);
 };
 template <typename T = void>
 struct G5_0;
 template <>
-struct G5_0<void> : G4_0<void>, G4_1<void> {
+struct ASF_TEST_TRAIT_MIRROR
+G5_0<void> : G4_0<void>, G4_1<void> {
   int m_5_0(auto& self);
 };
 template <typename T = void>
 struct G5_1;
 template <>
-struct G5_1<void> : G4_1<void>, G4_2<void> {
+struct ASF_TEST_TRAIT_MIRROR
+G5_1<void> : G4_1<void>, G4_2<void> {
   int m_5_1(auto& self);
 };
 template <typename T = void>
 struct Leaf;
 template <>
-struct Leaf<void> : G5_0<void>, G5_1<void> {
+struct ASF_TEST_TRAIT_MIRROR
+Leaf<void> : G5_0<void>, G5_1<void> {
   int m_leaf(auto& self);
 };
 
@@ -130,112 +147,112 @@ struct Person {
 
 template <>
 struct G0_0<Person> {
-  static int m_0_0(Person& self) {
+  static int m_0_0(ASF_TEST_M(Person) self) {
     ++self.id;
     return self.id * 100 + 0;
   }
 };
 template <>
 struct G1_0<Person> {
-  static int m_1_0(Person& self) {
+  static int m_1_0(ASF_TEST_M(Person) self) {
     ++self.id;
     return self.id * 100 + 10;
   }
 };
 template <>
 struct G1_1<Person> {
-  static int m_1_1(Person& self) {
+  static int m_1_1(ASF_TEST_M(Person) self) {
     ++self.id;
     return self.id * 100 + 11;
   }
 };
 template <>
 struct G2_0<Person> {
-  static int m_2_0(Person& self) {
+  static int m_2_0(ASF_TEST_M(Person) self) {
     ++self.id;
     return self.id * 100 + 20;
   }
 };
 template <>
 struct G2_1<Person> {
-  static int m_2_1(Person& self) {
+  static int m_2_1(ASF_TEST_M(Person) self) {
     ++self.id;
     return self.id * 100 + 21;
   }
 };
 template <>
 struct G2_2<Person> {
-  static int m_2_2(Person& self) {
+  static int m_2_2(ASF_TEST_M(Person) self) {
     ++self.id;
     return self.id * 100 + 22;
   }
 };
 template <>
 struct G3_0<Person> {
-  static int m_3_0(Person& self) {
+  static int m_3_0(ASF_TEST_M(Person) self) {
     ++self.id;
     return self.id * 100 + 30;
   }
 };
 template <>
 struct G3_1<Person> {
-  static int m_3_1(Person& self) {
+  static int m_3_1(ASF_TEST_M(Person) self) {
     ++self.id;
     return self.id * 100 + 31;
   }
 };
 template <>
 struct G3_2<Person> {
-  static int m_3_2(Person& self) {
+  static int m_3_2(ASF_TEST_M(Person) self) {
     ++self.id;
     return self.id * 100 + 32;
   }
 };
 template <>
 struct G3_3<Person> {
-  static int m_3_3(Person& self) {
+  static int m_3_3(ASF_TEST_M(Person) self) {
     ++self.id;
     return self.id * 100 + 33;
   }
 };
 template <>
 struct G4_0<Person> {
-  static int m_4_0(Person& self) {
+  static int m_4_0(ASF_TEST_M(Person) self) {
     ++self.id;
     return self.id * 100 + 40;
   }
 };
 template <>
 struct G4_1<Person> {
-  static int m_4_1(Person& self) {
+  static int m_4_1(ASF_TEST_M(Person) self) {
     ++self.id;
     return self.id * 100 + 41;
   }
 };
 template <>
 struct G4_2<Person> {
-  static int m_4_2(Person& self) {
+  static int m_4_2(ASF_TEST_M(Person) self) {
     ++self.id;
     return self.id * 100 + 42;
   }
 };
 template <>
 struct G5_0<Person> {
-  static int m_5_0(Person& self) {
+  static int m_5_0(ASF_TEST_M(Person) self) {
     ++self.id;
     return self.id * 100 + 50;
   }
 };
 template <>
 struct G5_1<Person> {
-  static int m_5_1(Person& self) {
+  static int m_5_1(ASF_TEST_M(Person) self) {
     ++self.id;
     return self.id * 100 + 51;
   }
 };
 template <>
 struct Leaf<Person> final {
-  static int m_leaf(Person& self) {
+  static int m_leaf(ASF_TEST_M(Person) self) {
     ++self.id;
     return self.id * 100 + 99;
   }
@@ -430,7 +447,7 @@ constexpr std::size_t expected_upcast_channels = 100;
 
 int run() {
   Person person{.id = 7};
-  auto root = asf::to_dyn<Leaf>(&person);
+  auto root = asf_test::to_dyn<Leaf>(person);
   // Src-dependent: bump id and encode prior id into the return.
   if (root->m_leaf() != 8 * 100 + 99 || person.id != 8)
     return 3;

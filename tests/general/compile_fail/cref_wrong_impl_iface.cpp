@@ -1,27 +1,32 @@
-// Compile-fail: same wrong impl as cref_wrong_impl_dyn, through iface.
-// EXCLUDE_FROM_ALL (expect fail).
+// Compile-fail (dual-pass): same wrong impl as cref_wrong_impl_dyn, through
+// iface. EXCLUDE_FROM_ALL (expect fail on both passes).
 
-#include "cast.hpp"
+#include "test_bind.hpp"
+
+#include <string>
 
 template <typename T = void>
-struct Cell;
+struct Named;
 
 template <>
-struct Cell<void> {
-  auto read(auto const& self) -> int;
+struct ASF_TEST_TRAIT_MIRROR
+Named<void> {
+  auto who(auto const& self) -> std::string const&;
 };
 
-struct Box {
-  int num{};
+struct Person {
+  std::string name;
 };
 
 template <>
-struct Cell<Box> final {
-  static auto read(Box& self) -> int { return self.num; }
+struct Named<Person> final {
+  static auto who(ASF_TEST_M_CREF(Person) self) -> std::string const& {
+    return self.name;
+  }
 };
 
 int main() {
-  Box box;
-  asf::iface<Cell, Box> i{box};
-  (void)i->read();
+  Person p;
+  asf::iface<Named, Person> i{p};
+  (void)i->who();
 }
