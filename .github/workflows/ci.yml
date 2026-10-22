@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    name: GCC 16 (${{ matrix.config.name }})
+    runs-on: ubuntu-latest
+    container: gcc:16
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - name: default
+            flags: ""
+          - name: single-inherit
+            flags: "-DASF_HAS_DYN_MULTI_VT=OFF -DASF_HAS_DYN_SINGLE_INHERIT=ON"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain (cmake from Kitware; distro cmake is too old)
+        run: |
+          g++ --version
+          apt-get update -qq
+          apt-get install -y -qq ninja-build curl ca-certificates
+          curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.30.5/cmake-3.30.5-linux-x86_64.tar.gz \
+            | tar xz -C /usr/local --strip-components=1
+          cmake --version
+          ninja --version
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja ${{ matrix.config.flags }}
+
+      - name: Build
+        run: cmake --build build -j"$(nproc)"
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure -j"$(nproc)"

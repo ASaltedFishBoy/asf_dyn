@@ -1,5 +1,7 @@
 # ASF: Trait / iface / dyn
 
+[![CI](https://github.com/ASaltedFishBoy/asf_dyn/actions/workflows/ci.yml/badge.svg)](https://github.com/ASaltedFishBoy/asf_dyn/actions/workflows/ci.yml)
+
 **Chinese:** [README.zh.md](README.zh.md)
 
 C++26 reflection-based **Trait** polymorphism: static handle **iface**, erased handle **dyn**, and optional field view **mirror**.

@@ -1,5 +1,7 @@
 # ASF: Trait / iface / dyn
 
+[![CI](https://github.com/ASaltedFishBoy/asf_dyn/actions/workflows/ci.yml/badge.svg)](https://github.com/ASaltedFishBoy/asf_dyn/actions/workflows/ci.yml)
+
 **English:** [README.md](README.md)
 
 基于 C++26 反射的 **Trait** 多态：静态句柄 **iface**、擦除句柄 **dyn**，以及可选的字段视图 **mirror**（可跳过）。
