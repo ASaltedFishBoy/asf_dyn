@@ -98,8 +98,8 @@ static_assert(!asf::detail::trait_has_multi_inherit<Linear>());
 static_assert(asf::detail::trait_has_multi_inherit<LiveMI>());
 static_assert(!asf::detail::trait_has_multi_inherit<TruncEdge>());
 static_assert(!asf::detail::trait_has_multi_inherit<TruncPassive>());
-static_assert(asf::detail::live_dyn_base_count(^^TruncEdge<void>) == 1);
-static_assert(asf::detail::live_dyn_base_count(^^LiveMI<void>) == 2);
+static_assert(asf::detail::live_dyn_base_count<TruncEdge<void>>() == 1);
+static_assert(asf::detail::live_dyn_base_count<LiveMI<void>>() == 2);
 
 #if ASF_HAS_DYN_SINGLE_INHERIT
 static_assert(asf::dyn_single_inherit_v);

@@ -48,6 +48,10 @@ struct [[=asf_ann::truncated]] B<void> { /* ... */ };
 struct D<void> : A<void>, B<void> {};  // 等同于边上写 truncate；D→B 否
 ```
 
+### 冗余直接基（自动截断）
+
+直接基已是另一直接基的祖先时——如 `T final : A, B` 且 `B : A`——直接边 `T→A` 与活路径 `T→B→…→A` 重复。库发出**编译期警告**（`[[deprecated]]` 标记；GCC 按声明去重，每个 TU 一条），并把该边**视为截断**：直接边不是活边——不计入 `ASF_HAS_DYN_SINGLE_INHERIT` 的基类数，也不产生自己的上行路径。该基仍经占支配地位的活路径可达（且可上行），sections、cover 与分发均不变。`truncate` / `truncated` 边不能支配；唯一活路径须经过这类边的基不被支配。链式（`A⊂B⊂C`）、菱形（`A⊂B` 与 `A⊂D`）与混合情形同理；见 `tests/general/iface_dominant_base.cpp`。
+
 见 [multi_vt.md](multi_vt.md)、[features.md](features.md)#asf_has_dyn_multi_vt、`tests/general/iface_truncate.cpp`。
 
 ## op_construct 要点

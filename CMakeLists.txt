@@ -106,6 +106,7 @@ endfunction()
 asf_dual_test(iface_inherit)
 asf_test(general iface_truncate)
 asf_test(general iface_single_inherit)
+asf_test(general iface_dominant_base)
 # Optional compile-fail: live MI under SINGLE_INHERIT (configure build-si).
 if(ASF_HAS_DYN_SINGLE_INHERIT)
   add_executable(iface_single_inherit_mi_fail
@@ -237,7 +238,7 @@ endif()
 
 enable_testing()
 foreach(t IN ITEMS
-    iface_inherit iface_truncate iface_single_inherit
+    iface_inherit iface_truncate iface_single_inherit iface_dominant_base
     multi_final_ub iface_final_vt iface_grid_vt
     dyn_integration_tests dyn_invocation_tests dyn_view_tests
     dyn_lifetime_tests dyn_creation_tests dyn_dispatch_tests

@@ -904,10 +904,29 @@ consteval bool trait_has_truncated(std::meta::info trait_void) {
 // One live-edge DAG walk per Trait<void>; the result is a sections-style
 // tlist with self FIRST (dyn_upcast_reachable_of order).
 template <typename T, std::size_t I>
-consteval bool live_base_at() {
+consteval bool edge_tag_live() {
   constexpr auto b = std::meta::bases_of(^^T, unchecked())[I];
   auto base = std::meta::type_of(b);
   return !has_ann_tag(b, ^^ann::truncate_tag) && !trait_has_truncated(base);
+}
+
+// Defined after reachable_t: direct base I is an ancestor of another
+// direct base, making the edge redundant.
+template <typename T, std::size_t I>
+consteval bool direct_base_dominated();
+
+// Defined after reachable_t: warning marker for dominated edges.
+template <typename T>
+struct [[deprecated(
+    "redundant direct Trait base (ancestor of another direct base): the "
+    "edge is treated as truncate")]] redundant_edge_marker;
+
+template <typename T, std::size_t I>
+consteval std::size_t warn_if_dominated_edge();
+
+template <typename T, std::size_t I>
+consteval bool live_base_at() {
+  return edge_tag_live<T, I>() && !direct_base_dominated<T, I>();
 }
 
 template <typename T>
@@ -919,8 +938,14 @@ struct reachable_merge {
 };
 template <typename T, typename Acc, std::size_t I0, std::size_t... Is>
 struct reachable_merge<T, Acc, I0, Is...> {
-  using with = typename tlist_concat_unique<
-      Acc, typename reachable_resident<base_t<T, I0>>::type>::type;
+  // Cut edges (truncate / truncated / dominated) are not recursed into at
+  // all: their bases are not analyzed (and cannot warn).
+  struct empty_sub {
+    using type = tlist<>;
+  };
+  using sub = std::conditional_t<live_base_at<T, I0>(),
+                                 reachable_resident<base_t<T, I0>>, empty_sub>;
+  using with = typename tlist_concat_unique<Acc, typename sub::type>::type;
   using next = std::conditional_t<live_base_at<T, I0>(), with, Acc>;
   using type = typename reachable_merge<T, next, Is...>::type;
 };
@@ -947,24 +972,91 @@ consteval std::vector<std::meta::info> reachable_vec() {
   return reachable_t<T>::vec();
 }
 
+// --- Redundant direct base (edge domination) --------------------------------
+// Resident: one instantiation per T computes the tlist of dominated direct
+// base types (a direct base that is an ancestor of another direct base).
+// The edge is treated as truncate (not a live dyn-upcast edge, not an SI
+// base) and the resident warns once per dominated edge.
+
+template <typename T, std::size_t I, std::size_t J>
+consteval bool direct_base_dominates_at() {
+  if constexpr (I == J || !edge_tag_live<T, I>() || !edge_tag_live<T, J>())
+    return false;
+  else
+    return tlist_has<reachable_t<base_t<T, J>>, base_t<T, I>>::value;
+}
+
+template <typename T, std::size_t I, std::size_t... J>
+consteval bool dominated_edge_fold(std::index_sequence<J...>) {
+  return (direct_base_dominates_at<T, I, J>() || ...);
+}
+
+template <typename T, std::size_t I>
+consteval std::size_t warn_if_dominated_edge() {
+  if constexpr (edge_tag_live<T, I>() &&
+                dominated_edge_fold<T, I>(
+                    std::make_index_sequence<n_direct_bases<T>()>{}))
+    return sizeof(redundant_edge_marker<T>);
+  else
+    return 0;
+}
+
+template <typename T, typename Acc, std::size_t... I>
+struct dominated_merge {
+  using type = Acc;
+};
+template <typename T, typename Acc, std::size_t I0, std::size_t... Is>
+struct dominated_merge<T, Acc, I0, Is...> {
+  using next = std::conditional_t<
+      dominated_edge_fold<T, I0>(
+          std::make_index_sequence<n_direct_bases<T>()>{}),
+      typename tlist_append_unique<Acc, base_t<T, I0>>::type, Acc>;
+  using type = typename dominated_merge<T, next, Is...>::type;
+};
+
+template <typename T, typename ISq>
+struct dominated_resident_impl;
+template <typename T, std::size_t... I>
+struct dominated_resident_impl<T, std::index_sequence<I...>> {
+  // Referenced in `type` so dominated edges warn exactly once per T.
+  static constexpr std::size_t edge_warn_ =
+      (warn_if_dominated_edge<T, I>() + ... + 0);
+  using type = typename dominated_merge<T, tlist<>, I...>::type;
+};
+
+template <typename T>
+struct dominated_resident
+    : dominated_resident_impl<T,
+                              std::make_index_sequence<n_direct_bases<T>()>> {
+};
+
+template <typename T>
+using dominated_t = typename dominated_resident<T>::type;
+
+template <typename T, std::size_t I>
+consteval bool direct_base_dominated() {
+  return tlist_has<dominated_t<T>, base_t<T, I>>::value;
+}
+
 // Direct bases that still participate in dyn upcast (same cut rules as
-// dyn_upcast_reachable_of). truncate / truncated edges are allowed under
-// ASF_HAS_DYN_SINGLE_INHERIT and do not count as multi-inherit.
-consteval std::size_t live_dyn_base_count(std::meta::info trait_void) {
-  std::size_t n = 0;
-  for (auto b : std::meta::bases_of(trait_void, unchecked())) {
-    auto base = std::meta::type_of(b);
-    if (has_ann_tag(b, ^^ann::truncate_tag) || trait_has_truncated(base))
-      continue;
-    ++n;
-  }
-  return n;
+// dyn_upcast_reachable_of). truncate / truncated / dominated edges are
+// allowed under ASF_HAS_DYN_SINGLE_INHERIT and do not count as
+// multi-inherit.
+template <typename T, std::size_t... I>
+consteval std::size_t live_dyn_base_count_pack(std::index_sequence<I...>) {
+  return (std::size_t{0} + ... + (live_base_at<T, I>() ? 1 : 0));
+}
+
+template <typename T>
+consteval std::size_t live_dyn_base_count() {
+  return live_dyn_base_count_pack<T>(
+      std::make_index_sequence<n_direct_bases<T>()>{});
 }
 
 // True if any section has more than one *live* (non-truncate) Trait base.
 template <typename... Ss>
 consteval bool any_section_multi_inherit(tlist<Ss...>) {
-  return ((live_dyn_base_count(^^Ss) > 1) || ...);
+  return ((live_dyn_base_count<Ss>() > 1) || ...);
 }
 
 template <template <class> class Trait>
