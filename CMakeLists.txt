@@ -261,3 +261,8 @@ if(ASF_HAS_DYN_INTERMEDIATE)
   add_test(NAME multi_final_odr_off COMMAND multi_final_odr_off --report)
   add_test(NAME mirror_multi_final_odr_off COMMAND mirror_multi_final_odr_off --report)
 endif()
+
+option(ASF_BENCH "Fetch microsoft/proxy and build the comparison benchmark" OFF)
+if(ASF_BENCH)
+  add_subdirectory(bench)
+endif()

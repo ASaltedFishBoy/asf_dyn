@@ -150,33 +150,24 @@ cmake -S . -B build -G Ninja -DCMAKE_CXX_COMPILER=g++ \
   -DASF_HAS_DYN_SINGLE_INHERIT=ON
 ```
 
-### 关闭（默认）
+### 与 microsoft/proxy 对照
 
-Trait 多重继承对 dyn 允许（非 prefix 上行仍受 `ASF_HAS_DYN_MULTI_VT` 约束）。
+`bench/` 的对照基准复刻 proxy 的 operation benchmark。基线钉在 `main` @ `dc3d95c`（2026-01-29）。GCC 16.2 MinGW，-O2 `-static`，100 类型系列 x 20 万对象，搬迁 x25 轮，逐格 10 轮中位数。句柄：proxy 24 B（两种尺寸同壳，Large 为壳内堆指针），cache_dyn 24 B / 56 B，unique_dyn / observer / proxy_view 16 B：
 
----
-
-## 成本模型
-
-暂未附带基准；以下为各主要行为的结构性成本。
-
-| 行为 | 成本 | 说明 |
-| --- | --- | --- |
-| `iface` 调用方法 | 静态绑定、可内联（大体无成本） | 直接调 impl / 默认体；编译期类型完整，通常与手写直调一致 |
-| `dyn` 调用方法 | 一次虚表间接跳转 | `vt[i]` 取槽 + 间接 call，与虚函数同级；擦除后基本不可内联 |
-| `dyn` 指针绑定（`T*` / mirror 观察） | 零分配、零拷贝 | 只存指针与 vt 地址；虚表是编译期静态表 |
-| `to_dyn` 拥有值 | 一次分配 + 构造 | `::operator new` / Alloc；`cache_dyn` 零分配（值搬进随行缓冲） |
-| 上行视图（`as<To>`） | 纯类型级重包，同一 vt（无成本） | 绝不切换 vt 指针 |
-| 上行转换（`trait_cast`） | 编译期索引，至多一次 vt 指针切换 | 无 typeid / 字符串查找；MULTI_VT 的 Redirect 表也是静态地址 |
-| `dyn_cast`（RTTI 开） | `meta.find`：x 个编译期 `trait_id` 地址比较（可能编成 switch），命中后 `tables[k]` 直接索引 | 实验特性 |
-| 析构 | `vt[-1]` 一次间接调用 | 删除器种再加一次 `Free`（默认即 `::operator delete`） |
-| proxy（`h->` / `*h`） | 包指针的小对象 | 内联后零成本 |
-| `mirror` 构造 / 字段访问 | 字段即引用 | 构造是指针打包；只有 `value_of` 逐字段拷贝 |
-| 虚表静态体积 | 每（Mask, Final, Trait, Storage, As）键一份 | MULTI_VT 的 cover 表是主要来源；SINGLE_INHERIT 或关 MULTI_VT 削减 |
-
-可被静态局部优化掉的一半：`iface` 上的全部、dyn 的 proxy 包装、上行索引——这些在编译期就近消除（大体无成本）。不可消除的一半：每次 `dyn` 调用与析构的一次间接跳转，以及拥有型分配。
+| 行 | Small invoke | Small relocate | Large invoke | Large relocate |
+| --- | ---: | ---: | ---: | ---: |
+| pro::proxy (owning) | 1.24 | 1.08 | 6.38 | 1.07 |
+| asf unique_dyn (owning) | 1.69 | 1.06 | 6.57 | 1.10 |
+| asf cache_dyn (in-handle) | 1.31 | 1.02 | 2.27 | 2.78 |
+| asf::dyn (observer) | 1.15 | 0.62 | 2.77 | 0.63 |
+| pro::proxy_view | 1.35 | 0.64 | 2.69 | 0.62 |
+| virtual (unique_ptr) | 2.34 | 0.51 | 4.21 | 0.53 |
+| virtual (raw ptr) | 2.76 | — | 4.66 | — |
+| std::any | — | 1.85 | — | 2.06 |
+| direct / asf::iface | 0.00 | — | 0.00 | — |
 
 ---
+
 ## CMake 示例
 
 ```bash
