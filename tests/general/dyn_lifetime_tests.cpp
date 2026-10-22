@@ -971,6 +971,13 @@ void TestDeleterHandoff_DefaultNotForwarded() {
 
 // Flavor copy/move shape at the type level. uptr: move only. sptr: shared
 // shallow copy. cache: copy/move may be stripped (destroy may not).
+// Observer (void*): trivially move-assignable -- vector relocate is plain
+// memberwise stores, the same class as pro::proxy_view. (The move ctor is
+// not formally trivial: the RAII dtor must run before member teardown, so
+// it stays user-provided.)
+static_assert(
+    std::is_trivially_assignable_v<asf::dyn<ProbeView>&,
+                                   asf::dyn<ProbeView>&&>);
 static_assert(!std::is_copy_constructible_v<asf::unique_dyn<ProbeMake>>);
 static_assert(std::is_move_constructible_v<asf::unique_dyn<ProbeMake>>);
 static_assert(std::is_copy_constructible_v<asf::shared_dyn<ProbeMake>>);

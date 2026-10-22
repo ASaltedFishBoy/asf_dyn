@@ -2136,9 +2136,17 @@ class dyn_ptr_core
              !cache_ptr_copy_via_trait_v<Ptr>)
   = delete;
 
-  dyn_ptr_core(dyn_ptr_core&& o) noexcept
+  // Move construction frees nothing (a pure handoff), so it defaults for
+  // every non-cache Ptr. Move assignment defaults for non-vt_destroy Ptrs
+  // (observer, deleter kinds): the smart pointer's own move-assign runs the
+  // full teardown. Both keep those handles trivially assignable (vector
+  // relocate = plain memberwise stores, same class as proxy_view).
+  dyn_ptr_core(dyn_ptr_core&&) noexcept
     requires(!is_cache_ptr_v<Ptr>)
-      : obj_(std::move(o.obj_)), vt_(std::exchange(o.vt_, nullptr)) {}
+  = default;
+  dyn_ptr_core& operator=(dyn_ptr_core&&) noexcept
+    requires(!vt_destroys_on_dispose_v<Ptr>)
+  = default;
 
   dyn_ptr_core(dyn_ptr_core&& o) noexcept
     requires(is_cache_ptr_v<Ptr> && cache_ptr_move_live_v<Ptr> &&
@@ -2163,14 +2171,11 @@ class dyn_ptr_core
   = delete;
 
   dyn_ptr_core& operator=(dyn_ptr_core&& o)
-    requires(!is_cache_ptr_v<Ptr> && slice_proxy_ok()) {
+    requires(!is_cache_ptr_v<Ptr> && vt_destroys_on_dispose_v<Ptr> &&
+             slice_proxy_ok()) {
     if (this != &o) {
-      if constexpr (vt_destroys_on_dispose_v<Ptr>)
-        dispose_owned();
-      else {
-        ptr_reset(obj_);
-        vt_ = nullptr;
-      }
+      // vt[-1] must run before the pointer frees the storage.
+      dispose_owned();
       obj_ = std::move(o.obj_);
       vt_ = std::exchange(o.vt_, nullptr);
     }
