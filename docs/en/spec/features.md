@@ -16,7 +16,7 @@ asf::abi_namespace_name
 
 ## ABI version (`ASF_VERSION_*` / `ASF_ABI_NAMESPACE`)
 
-Currently **0.1.2**. The inline ABI namespace is `v0_1_2_b` + a **binary feature tag** (MSB→LSB: `RTTI`, `INTERMEDIATE`, `MULTI_VT`, `SINGLE_INHERIT`). Defaults (`0,1,1,0`) yield `v0_1_2_b0110`. Source still writes `asf::dyn` and the rest; mangling includes that segment so `.dll` / `.so` files built with different ASF versions **or option mixes** in one process do not silently merge COMDAT symbols for slots, static vtable data, and erased thunks. Bump `ASF_VERSION_*` (and the `vMAJOR_MINOR_PATCH` token in `iface_config.hpp`) when breaking the dyn/vtable symbol ABI. Override `ASF_ABI_NAMESPACE` only if you intentionally force a tag. Runtime: `asf::abi_namespace_name`, `asf::dyn_feature_bits`.
+Currently **0.1.3**. The inline ABI namespace is `v0_1_3_b` + a **binary feature tag** (MSB→LSB: `RTTI`, `INTERMEDIATE`, `MULTI_VT`, `SINGLE_INHERIT`). Defaults (`0,1,1,0`) yield `v0_1_3_b0110`. Source still writes `asf::dyn` and the rest; mangling includes that segment so `.dll` / `.so` files built with different ASF versions **or option mixes** in one process do not silently merge COMDAT symbols for slots, static vtable data, and erased thunks. Bump `ASF_VERSION_*` (and the `vMAJOR_MINOR_PATCH` token in `iface_config.hpp`) when breaking the dyn/vtable symbol ABI. Override `ASF_ABI_NAMESPACE` only if you intentionally force a tag. Runtime: `asf::abi_namespace_name`, `asf::dyn_feature_bits`.
 
 ---
 
