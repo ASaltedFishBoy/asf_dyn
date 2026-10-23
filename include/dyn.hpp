@@ -2685,7 +2685,7 @@ struct sub_dyn_fn_box {
   }
 };
 
-// Const-unified sub_* 主体 + 观察 (slice / proxy / lock). Public shells:
+// Const-unified sub_* body + views (slice / proxy / lock). Public shells:
 // sub_dyn / c_sub_dyn. SoftUptrDestroy kept true (SliceCall path).
 template <template <class> class Trait, bool Const, class Ptr, class Derived>
 class sub_dyn_body
@@ -3765,7 +3765,7 @@ struct dyn_factory_access {
       auto sp = make_dyn_sptr<Trait>(size, vt, alloc);
       do_construct(sp.get());
       dyn_shared_storage::from_payload(sp.get(), align)->destroy =
-          tag_destroy_align(dyn_vt_destroy(vt),
+          tag_destroy_align(*dyn_vt_destroy(vt),
                             dyn_storage_align_log<Trait>(vt));
       return Out::from_sptr(std::move(sp), vt);
     } else if constexpr (requires {

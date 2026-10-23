@@ -681,7 +681,7 @@ decltype(auto) handle_cast_special(void* ptr, vt_ptr vt,
   if constexpr (Op == special_op::construct) {
     using Erased = erased_fn<void, void*>;
     alignas(Key) std::byte buf[sizeof(Key)];
-    Erased::dispatch(vt[index], ptr, static_cast<void*>(buf));
+    Erased::dispatch(*vt[index], ptr, static_cast<void*>(buf));
     Key out{std::move(*reinterpret_cast<Key*>(buf))};
     std::destroy_at(reinterpret_cast<Key*>(buf));
     return out;
@@ -690,7 +690,7 @@ decltype(auto) handle_cast_special(void* ptr, vt_ptr vt,
     static_assert(inst != std::meta::info{},
                   "cannot determine dyn special-op signature");
     using Erased = [:erased_sig(inst):];
-    return Erased::dispatch(vt[index], ptr,
+    return Erased::dispatch(*vt[index], ptr,
                             std::forward<decltype(args)>(args)...);
   }
 }
@@ -714,7 +714,7 @@ decltype(auto) handle_call(void* ptr, vt_ptr vt,
   static_assert(inst != std::meta::info{},
                 "cannot determine dyn method signature");
   using Erased = [:erased_sig(inst):];
-  return Erased::dispatch(vt[index], ptr,
+  return Erased::dispatch(*vt[index], ptr,
                           std::forward<decltype(args)>(args)...);
 }
 
@@ -734,7 +734,7 @@ decltype(auto) handle_call_in(void* ptr, vt_ptr vt,
   static_assert(inst != std::meta::info{},
                 "cannot determine dyn method signature");
   using Erased = [:erased_sig(inst):];
-  return Erased::dispatch(vt[index], ptr,
+  return Erased::dispatch(*vt[index], ptr,
                           std::forward<decltype(args)>(args)...);
 }
 
@@ -754,7 +754,7 @@ decltype(auto) handle_call_own_slice(void* ptr, vt_ptr vt, auto&&... args) {
   static_assert(inst != std::meta::info{},
                 "cannot determine dyn method signature");
   using Erased = [:erased_sig(inst):];
-  return Erased::dispatch(vt[index], ptr,
+  return Erased::dispatch(*vt[index], ptr,
                           std::forward<decltype(args)>(args)...);
 }
 

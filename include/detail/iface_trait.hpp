@@ -71,9 +71,11 @@ consteval bool storage_derefs_to_as() {
     };
 }
 
+// Pass by function reference: slot builders never arm a null fn. Storage in
+// the vtable remains vt_fn (pointer).
 template <class Fp>
-constexpr vt_fn as_vt_fn(Fp* fp) noexcept {
-  return reinterpret_cast<vt_fn>(fp);
+constexpr vt_fn as_vt_fn(Fp& fp) noexcept {
+  return reinterpret_cast<vt_fn>(&fp);
 }
 
 template <class Fp>
@@ -423,9 +425,10 @@ struct erased_fn {
 
   static R stub(void*, Args...) { std::unreachable(); }
 
-  static R dispatch(vt_fn slot, void* ptr,
+  // Call sites pass *vt[i]: a live slot is never null.
+  static R dispatch(void (&slot)(), void* ptr,
                     std::type_identity_t<Args>... args) {
-    return from_vt_fn<R(void*, Args...)>(slot)(
+    return from_vt_fn<R(void*, Args...)>(&slot)(
         ptr, std::forward<Args>(args)...);
   }
 };
@@ -1034,24 +1037,21 @@ consteval std::vector<std::meta::info> reachable_vec() {
 
 // --- Edge omit / lift (main loop) ------------------------------------------
 // Structural facts from each base type (not T's masks):
-//   live_anc[j]: i in reachable_t<base_j>  — 链路活 (对方链路内 truncate 也裁)
-//   sec_anc[j]:  i in sections_t<base_j>   — 结构祖先 (不要求链路活)
+//   live_anc[j]: i in reachable_t<base_j>  — live chain (truncate cuts inside)
+//   sec_anc[j]:  i in sections_t<base_j>   — structural ancestor (no live req)
 //
-// 本身活基 → 对所有兄弟(含活)一律 live_anc。活对活并不天然链路可达：
-//   对方自己的基类链里也可能夹死边，sections 会虚报祖先；必须显式链路可达。
-// 本身死基 → 用 sec_anc（死对死不要求链路活）。
+// Live self → always live_anc vs any sibling (live-to-live is not automatic:
+//   the sibling's own chain may contain dead edges; sections would lie).
+// Dead self → sec_anc (dead-to-dead does not require a live chain).
 //
-//   主循环(每轮扫完所有基；每个基至多触发一次，omit/lift 后不再查该基):
-//     循环活基(tag-live|已 lift, 尚未 omit):
-//       若 live_anc 下为某兄弟祖先 → omit（不中断，继续下一基）
-//     循环死基(仍裁、未 lift):
-//       若 sec_anc ∩ omit ∩ tag 非空 → lift
-//     整轮无任何 omit/lift 才退出（A 不合并不能挡住后面的 B–C 合并）
-//   收尾(按本身活/死选祖先关系):
-//     contrib 的祖先再 omit — 活基用 live_anc, 死基用 sec_anc
+//   Each round scans every base (omit/lift once per base, then skip it):
+//     live (tag|lifted, not omit): omit if live_anc ancestor of a sibling
+//     dead (still cut, not lifted): lift if sec_anc ∩ omit ∩ tag nonempty
+//     exit only when a full round makes no progress (A failing must not
+//       skip a later B–C merge)
+//   Finale: omit ancestors of contrib — live_anc / sec_anc by self live/dead
 //
-// 强化前提: Dom 本身未裁。独有裁剪旁支(非 contrib 结构祖先)仍留同表槽。
-
+// Lift requires a non-truncated Dom. Unique truncate branches keep slots.
 template <typename T>
 struct edge_status_resident {
   static constexpr std::size_t N = n_direct_bases<T>();
@@ -1131,7 +1131,7 @@ struct edge_status_resident {
     for (std::size_t round = 0; round < N * 2 + 2; ++round) {
       bool progress = false;
 
-      // 循环活基: 对任意兄弟一律 live_anc；每个未 omit 的活基都查一遍。
+      // Live bases: live_anc vs any sibling; check each non-omitted once.
       for (std::size_t i = 0; i < N; ++i) {
         if (((tag | lifted) & bit(i)) == 0)
           continue;
@@ -1143,7 +1143,7 @@ struct edge_status_resident {
         }
       }
 
-      // 循环死基: 若已有本身未裁且 omit 的祖先 (sec_anc ∩ omit ∩ tag) → lift。
+      // Dead bases: lift if sec_anc intersects omit & tag.
       for (std::size_t i = 0; i < N; ++i) {
         if (tag & bit(i))
           continue;
@@ -1158,7 +1158,7 @@ struct edge_status_resident {
         break;
     }
 
-    // 收尾: contrib 祖先 omit — 本身活用 live_anc, 本身死用 sec_anc。
+    // Finale: omit ancestors of contrib (live_anc / sec_anc by self).
     std::uint64_t contrib = (tag | lifted) & ~omit;
     for (std::size_t i = 0; i < N; ++i) {
       if (omit & bit(i))
@@ -1691,8 +1691,11 @@ inline std::size_t storage_align_from_slot(vt_fn slot) {
 // destroy thunks carry aligned(dyn_max_align) so the low dyn_align_tag_bits
 // bits are always free. Not constexpr-checkable (addresses are runtime), so
 // assert at the point of tagging; any future tagged fn must be aligned too.
-inline vt_destroy_fn tag_destroy_align(vt_destroy_fn fn, std::size_t align_log) {
-  auto bits = reinterpret_cast<std::uintptr_t>(fn);
+// Parameter is a function reference (never null); tagged storage stays a
+// pointer (low bits hold the align log).
+inline vt_destroy_fn tag_destroy_align(void (&fn)(void*),
+                                       std::size_t align_log) {
+  auto bits = reinterpret_cast<std::uintptr_t>(&fn);
   assert((bits & dyn_align_tag_mask) == 0 &&
          "function pointer low bits not free for the align tag");
   return reinterpret_cast<vt_destroy_fn>(
@@ -2550,7 +2553,7 @@ consteval bool ann_enabled(std::meta::info method, std::meta::info yes_tag,
 // One layout section (Trait<void>): every non-lifetime method must allow a
 // user mirror (full-layout gate for sourced mirror / plain Self selection).
 // Method mirror/no_mirror overrides the Trait tag. Default is no_mirror.
-// op_construct is skipped here — it never follows the Trait tag. A section
+// op_construct is skipped here -- it never follows the Trait tag. A section
 // with only those methods follows the Trait tag.
 template <typename S>
 consteval bool section_allows_mirror_source() {
@@ -2687,7 +2690,7 @@ consteval std::meta::info ann_probe_self_for(std::meta::info method) {
 
 // [[=imple]] with As-aware method probe, then declaring Trait tag
 // (same fallback as ann_enabled / method_prefers_imple). Annotation
-// reading does not depend on const As — probe the unqualified As so a
+// reading does not depend on const As -- probe the unqualified As so a
 // mutating template body is not instantiated against mirror<const T>.
 template <template <class> class Trait, typename As>
 consteval bool method_prefers_imple_as(std::meta::info method) {
@@ -3107,9 +3110,9 @@ template <bool MaskNonConst, typename Storage>
 inline vt_fn vt_fixed_destroy_slot() {
   (void)sizeof(MaskNonConst);
   if constexpr (vt_destroy_is_nop<Storage>())
-    return as_vt_fn(static_cast<vt_destroy_fn>(&vt_destroy_nop));
+    return as_vt_fn(vt_destroy_nop);
   else
-    return as_vt_fn(static_cast<vt_destroy_fn>(&vt_src_destroy<Storage>));
+    return as_vt_fn(vt_src_destroy<Storage>);
 }
 
 template <typename Spec, std::meta::info Impl>
@@ -3215,7 +3218,7 @@ consteval bool trait_self_kind_match() {
   return ka == kb;
 }
 
-// Trait<void> Want ↔ Trait<T> Got: same self index; self via
+// Trait<void> Want vs Trait<T> Got: same self index; self via
 // trait_self_kind_match; other params match including cvref.
 template <std::meta::info Want, std::meta::info Got>
 consteval bool trait_impl_sig_match() {
@@ -3250,7 +3253,7 @@ consteval bool trait_impl_sig_match() {
   return ia == pa.size() && ib == pb.size();
 }
 
-// Trait self ↔ Src object parameter: const must match; lvalue self matches
+// Trait self vs Src object parameter: const must match; lvalue self matches
 // unqualified or `&`; rvalue self needs `&&`.
 template <std::meta::info Want>
 consteval bool src_object_self_matches(std::meta::info got) {
@@ -3266,7 +3269,7 @@ consteval bool src_object_self_matches(std::meta::info got) {
   return !std::meta::is_rvalue_reference_qualified(got);
 }
 
-// Trait Want ↔ Src Got: structural (no language overload set). Non-self
+// Trait Want vs Src Got: structural (no language overload set). Non-self
 // params match including cvref; object members also match const / ref-qual.
 template <std::meta::info Want>
 consteval bool src_imple_sig_match(std::meta::info got) {
@@ -3466,7 +3469,7 @@ consteval std::meta::info trait_impl_of_unused(std::meta::info method) {
 #endif
 
 // Trait<void> [[=asf_ann::imple]] non-op: same-name Src member with structural
-// match (same rule as Trait<T>). No hit → empty (invoke falls back to
+// match (same rule as Trait<T>). No hit -- empty (invoke falls back to
 // Trait<void>). op_* is empty here; invoke_imple_op does that lookup.
 template <template <class> class Trait, typename As, typename Src,
           std::meta::info Method>
@@ -3505,7 +3508,7 @@ decltype(auto) assign_src(Src&& dst, auto&& rhs) {
   return (std::forward<Src>(dst) = std::forward<decltype(rhs)>(rhs));
 }
 
-// imple op_construct: form Src(...) with self at SelfIdx (auto&& → rvalue).
+// imple op_construct: form Src(...) with self at SelfIdx (auto&& = rvalue).
 template <std::size_t SelfIdx, self_ref_kind Kind, class Src, class Self,
           class... Args>
 Src construct_like(Self&& self, Args&&... args) {
@@ -4436,9 +4439,9 @@ struct construct_erased_fn {
 
   static void stub(void*, void*, Extra...) { std::unreachable(); }
 
-  static void dispatch(vt_fn slot, void* ptr, void* dst,
+  static void dispatch(void (&slot)(), void* ptr, void* dst,
                        std::type_identity_t<Extra>... extra) {
-    from_vt_fn<void(void*, void*, Extra...)>(slot)(
+    from_vt_fn<void(void*, void*, Extra...)>(&slot)(
         ptr, dst, std::forward<Extra>(extra)...);
   }
 };
@@ -4576,10 +4579,10 @@ inline void dyn_construct_into(vt_ptr vt, void* ptr, void* dst,
   constexpr auto decl = signature_decl_of<method>();
   if constexpr (decl != std::meta::info{}) {
     using Ctor = [:construct_erased_sig(decl):];
-    Ctor::dispatch(vt[idx], ptr, dst, std::forward<Extra>(extra)...);
+    Ctor::dispatch(*vt[idx], ptr, dst, std::forward<Extra>(extra)...);
   } else {
     using Ctor = construct_erased_fn<Extra...>;
-    Ctor::dispatch(vt[idx], ptr, dst, std::forward<Extra>(extra)...);
+    Ctor::dispatch(*vt[idx], ptr, dst, std::forward<Extra>(extra)...);
   }
 }
 
@@ -4599,21 +4602,21 @@ vt_fn make_slot() {
     // leave the slot empty -- cache shallow ops already covered it away.
     constexpr bool nullary = method_nonself_arity(method) == 0;
     if constexpr (sourced_object_construct<Storage, method>())
-      return as_vt_fn(&Ctor::stub);
+      return as_vt_fn(Ctor::stub);
     else if constexpr (nullary && AsMove &&
                        !std::is_move_constructible_v<RawStorage>)
-      return as_vt_fn(&Ctor::stub);
+      return as_vt_fn(Ctor::stub);
     else if constexpr (nullary && !AsMove &&
                        !std::is_copy_constructible_v<RawStorage>)
-      return as_vt_fn(&Ctor::stub);
+      return as_vt_fn(Ctor::stub);
     else
-      return as_vt_fn(&Ctor::template call<Trait, Storage, As, I, AsMove>);
+      return as_vt_fn(Ctor::template call<Trait, Storage, As, I, AsMove>);
   } else if constexpr (method_prefers_imple(method)) {
     constexpr auto decl = signature_decl_of<method>();
     static_assert(decl != std::meta::info{},
                   "cannot determine dyn method signature");
     using Erased = [:erased_sig(decl):];
-    return as_vt_fn(&Erased::template call<Trait, Storage, As, I>);
+    return as_vt_fn(Erased::template call<Trait, Storage, As, I>);
   } else {
     constexpr auto impl_inst = []() consteval {
       constexpr auto impl = trait_impl_of<Trait, As, method>();
@@ -4631,7 +4634,7 @@ vt_fn make_slot() {
     static_assert(decl != std::meta::info{},
                   "cannot determine dyn method signature");
     using Erased = [:erased_sig(decl):];
-    return as_vt_fn(&Erased::template call<Trait, Storage, As, I>);
+    return as_vt_fn(Erased::template call<Trait, Storage, As, I>);
   }
 }
 
@@ -4647,13 +4650,13 @@ vt_fn make_slot_ptr() {
       if constexpr (is_special_op_name(std::meta::identifier_of(method),
                                        special_op::construct)) {
         using Ctor = [:construct_slot_sig<method>():];
-        return as_vt_fn(&Ctor::stub);
+        return as_vt_fn(Ctor::stub);
       } else {
         constexpr auto inst = signature_decl_of<method>();
         static_assert(inst != std::meta::info{},
                       "cannot hide a dyn method with an unknown signature");
         using Erased = [:erased_sig(inst):];
-        return as_vt_fn(&Erased::stub);
+        return as_vt_fn(Erased::stub);
       }
     } else {
       return make_slot<Trait, Storage, As, I>();

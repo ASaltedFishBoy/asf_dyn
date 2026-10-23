@@ -141,7 +141,7 @@ template <bool MaskNonConst, template <class> class Final,
 struct vtable_data<MaskNonConst, Final, Trait, Storage, As,
                    std::index_sequence<I...>, true> {
   static inline vt_fn const data[] = {
-      as_vt_fn(&vtable_meta_slot<MaskNonConst, Final, Trait, Storage, As>),
+      as_vt_fn(vtable_meta_slot<MaskNonConst, Final, Trait, Storage, As>),
       ASF_VT_DESTROY(),
       make_flat_slot<MaskNonConst, Final, Trait, Storage, As, I>()...
           ASF_VT_CONSTRUCT_TAIL()};
@@ -153,7 +153,7 @@ template <bool MaskNonConst, template <class> class Final,
 struct vtable_data<MaskNonConst, Final, Trait, Storage, As,
                    std::index_sequence<I...>, false> {
   static inline vt_fn const data[] = {
-      as_vt_fn(&vtable_meta_slot<MaskNonConst, Final, Trait, Storage, As>),
+      as_vt_fn(vtable_meta_slot<MaskNonConst, Final, Trait, Storage, As>),
       ASF_VT_DESTROY(),
       make_flat_slot<MaskNonConst, Final, Trait, Storage, As, I>()...};
   static inline vt_ptr const ptr = data + 2;
@@ -196,7 +196,7 @@ template <bool MaskNonConst, template <class> class Final,
           template <class> class Trait, typename Storage, typename As>
 struct vtable_empty<MaskNonConst, Final, Trait, Storage, As, true> {
   static inline vt_fn const data[] = {
-      as_vt_fn(&vtable_meta_slot<MaskNonConst, Final, Trait, Storage, As>),
+      as_vt_fn(vtable_meta_slot<MaskNonConst, Final, Trait, Storage, As>),
       vt_fixed_destroy_slot<MaskNonConst, Storage>(),
       storage_size_slot<Storage>()};
   static inline vt_ptr const ptr = data + 2;
@@ -205,7 +205,7 @@ template <bool MaskNonConst, template <class> class Final,
           template <class> class Trait, typename Storage, typename As>
 struct vtable_empty<MaskNonConst, Final, Trait, Storage, As, false> {
   static inline vt_fn const data[] = {
-      as_vt_fn(&vtable_meta_slot<MaskNonConst, Final, Trait, Storage, As>),
+      as_vt_fn(vtable_meta_slot<MaskNonConst, Final, Trait, Storage, As>),
       vt_fixed_destroy_slot<MaskNonConst, Storage>()};
   static inline vt_ptr const ptr = data + 2;
 };
@@ -249,7 +249,7 @@ vt_ptr redirect_cover() {
 template <bool MaskNonConst, template <class> class Final,
           template <class> class Trait, typename Storage, typename As>
 vt_fn redirect_slot_ptr() {
-  return as_vt_fn(&redirect_cover<MaskNonConst, Final, Trait, Storage, As>);
+  return as_vt_fn(redirect_cover<MaskNonConst, Final, Trait, Storage, As>);
 }
 
 // Object-bind sugar: Final == Trait.
