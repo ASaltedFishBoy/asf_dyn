@@ -156,11 +156,42 @@ struct cache_ops {
 
 不属于标签的槽值是由类型本身携带的可调用算子（原地调用，无每对象状态）。为 `cache_dyn` 擦除时，能用的算子同样随类型携带（仍不存函指）。
 
-请求的 op 只能弱化 `T` 能做的，或用 `op_unsupported` 剔掉（仅复制/移动）。
+虚表构造 / 析构槽只来自 Trait。`cache_ops` 只决定 Ptr 层浅路径用 Trait 槽（`op_from_trait`）、字节路径（`op_trivial` / `op_trivial_relocate`）、typed 可调用，还是留成不支持——需要不支持槽时是编译错误。
+
+### 弱化检查（copy / move / destroy 对 `T`）
+
+请求的 op 只能**弱化** `T` 能做的，或用 `op_unsupported` 剔掉（仅复制/移动）。Destroy 不能剔掉。两个赋值槽**不参与**此检查。
+
+copy / move / destroy 各自从 `T` 取自然档、从 `Ops` 槽取请求档。通过条件：`request == 0`（已剔）或 `request <= natural`。档 `4`（既不是已知标签也不能按 `void*` 签名调用）永远失败。
+
+| 档 | 自然（`T`） | 请求（`Ops` 槽） |
+| --- | --- | --- |
+| 3 | 特化可拷/特化可移/特化可析 | `op_trivial` |
+| 2 | 可拷/可移/可析（非特化） | `op_from_trait`；符合该槽 `void*` 签名的 typed 可调用；`op_trivial_relocate`（仅 move——与 typed move 同档，不比 trivial 更强） |
+| 0 | 不可构/不可析 | `op_unsupported` |
+
+`Ops` 的生命周期槽全是 `op_unset` 时，库填 `cache_ops_of<T>`：特化 → `op_trivial`；否则可构/可析 → `op_*_of<T>`（destroy 从不 unsupported）；否则 copy/move → `op_unsupported`。赋值另行默认：特化可赋 → `op_trivial`；可赋 → `op_assign_*_of<T>`；否则 `op_unset`。
+
+### 进入 `cache_dyn`：先校验，再擦除
+
+值（或 typed `cache_ptr`）放进 `cache_dyn` 时先对 `T` 做弱化检查，再把各槽擦成类型擦除形态：
+
+**Copy / move**
+
+1. 已是 `op_unsupported` → 保持剔掉。
+2. move 且显式 `op_trivial_relocate` → 留在 Ptr 层（不改写为 `op_from_trait`；VT 构造槽仍来自 Trait）。
+3. 否则若 Trait 继承链能做对应深构造（`op_construct` 拷/移） → `op_from_trait`。
+4. 否则 `op_trivial` 保留；可 wrap 的 typed 随类型携带；否则 → `op_unsupported`。
+
+**Destroy** — 链提供拆解（`vt[-1]`）时擦向 `op_from_trait`；否则 `op_trivial` 或 typed destroy 随类型携带。从不剔掉。
+
+**Assign** — 与 Trait 无关：`op_unset` / `op_from_trait` → `op_unset`；`op_trivial` / `op_trivial_relocate` 保留；其余随类型携带。
+
+Trait 链没有生命周期槽时，只要 `cache_ptr` 自己仍能拷/移/析，仍可进入。下行只在 `cache_ops` 不自持生命周期时检查 Trait 链。
+
+### 搬迁层次
 
 cache 载荷搬迁按层取第一个可用者：`op_trivial` / `op_trivial_relocate`（字节；relocate 仅 memcpy，源 vt 由 dyn 置空）、对已就位目的地的 typed 赋值算子，最后才是该槽自身的构造+析构。只有赋值有替身：赋值算子不活时，向已占用 cache 赋值就退化为析构再构造。
-
-放进 `cache_dyn` 时先校验 ops，再擦除：Trait 继承链能做的变成 `op_from_trait`；否则能用的 typed 算子随类型携带（仍不存函指），或保留 `op_trivial`。两个赋值槽的擦除与 Trait 无关：`op_unset` / `op_from_trait` 退化为 `op_unset`，`op_trivial` 保留，其余随类型携带。链上没有生命周期槽时，只要 `cache_ptr` 自己能复制、移动、析构仍可放入。下行只在 `cache_ops` 不自持生命周期时检查 Trait 链。
 
 自定义算子还可以按参与的公开句柄重载（任意 dyn 句柄形态，推导）。调用点只要存在完全成型的句柄，就先尝试句柄形式；`void*` 形式是每个算子必须提供的基线。构造算子只收到源句柄（目的地还是裸存储，不是句柄）；赋值算子两个都收到。析构在最终析构函数之外的各处都会收到活句柄（最终析构函数那里句柄已不存在）。只能以句柄调用的算子在存储层不活（层活性是存储层属性）；对赋值而言就是退化为析构+构造替身。
 

@@ -150,24 +150,7 @@ cmake -S . -B build -G Ninja -DCMAKE_CXX_COMPILER=g++ \
   -DASF_HAS_DYN_SINGLE_INHERIT=ON
 ```
 
-### 与 microsoft/proxy 对照
-
-`bench/` 的对照基准复刻 proxy 的 operation benchmark。基线钉在 `main` @ `dc3d95c`（2026-01-29）。GCC 16.2 MinGW，-O2 `-static`，100 类型系列 x 20 万对象，搬迁 x25 轮，逐格 30 轮中位数 (ns/call, ns/move)。句柄：proxy / asf sbo 24 B（两种尺寸同壳，Large 为壳内堆指针），cache_dyn 24 B / 56 B，unique_dyn / observer / proxy_view 16 B：
-
-| 行 | Small invoke | Small relocate | Large invoke | Large relocate |
-| --- | ---: | ---: | ---: | ---: |
-| pro::proxy (owning) | 1.73 | 1.14 | 6.84 | 1.15 |
-| asf unique_dyn (owning) | 1.86 | 1.19 | 6.18 | 1.19 |
-| asf cache_dyn (in-handle) | 1.35 | 1.13 | 2.48 | 3.08 |
-| asf sbo (cache/uptr-in-cache) | 1.39 | 1.12 | 6.89 | 1.11 |
-| asf::dyn (observer) | 1.23 | 0.68 | 2.80 | 0.67 |
-| pro::proxy_view | 1.28 | 0.69 | 2.80 | 0.68 |
-| virtual (unique_ptr) | 2.46 | 0.56 | 4.10 | 0.56 |
-| virtual (raw ptr) | 2.79 | — | 4.57 | — |
-| std::any | — | 2.02 | — | 2.21 |
-| direct / asf::iface | 0.00 | — | 0.00 | — |
-
----
+与 microsoft/proxy 的计时对照见 [bench/README.zh.md](../../bench/README.zh.md)。结构性成本说明见 [features.md 成本模型](../en/spec/features.md#cost-model)。
 
 ## CMake 示例
 
