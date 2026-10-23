@@ -7,21 +7,29 @@
 //   Trait. Pairs: dyn/no_dyn, expl/no_expl, imple/no_imple, mirror/no_mirror.
 //   Defaults: dyn, no_expl, no_imple, no_mirror. Both forms on one declaration
 //   are ill-formed. A dyn slot requires self as the first parameter and
-//   at most one deduced template parameter (self); a second cannot be a dyn slot.
+//   at most one deduced template parameter (self); a second cannot be a dyn
+//   slot. Return type must be written on the declaration (no undetermined
+//   auto / decltype(auto) return).
 //   Layout-only (not methods): truncate / truncated (same root).
 //   [[=asf_ann::truncate]]  active cut on Trait or base-specifier: dyn cannot
 //                   upcast further / that MI branch gets no MULTI_VT cover.
 //   [[=asf_ann::truncated]] passive on Trait: inheriting it is a truncate
 //                   edge (dyn cannot upcast to that Interface).
 //   static            on Trait<void>: iface-only (opt out of the dyn vtable)
-//   [[=asf_ann::mirror]]  allow dyn/iface from a user mirror (every method
-//                   in the layout must allow it)
+//   [[=asf_ann::mirror]]  chooses presented Self at each call. Mirror Arg
+//                   -> iface: bind ungated. Sourced: every method
+//                   callable; mark -> pass mirror, else Src. Unsourced:
+//                   only [[=mirror]] methods (iface only, no dyn).
+//                   Sourced -> dyn may mix mirror / Src sections.
 //   body            Trait<void> default impl
-//   [[=asf_ann::imple]]   skip the Trait body. Non-op: same-named member.
-//                   op_*: special lookup, not that name. op_construct:
-//                   constructor (declared self ref; auto&& is an rvalue).
-//                   op_assign: operator=. op_convert: conversion. Catalog
-//                   ops: the matching C++ operator. Object or sourced Self.
+//   [[=asf_ann::imple]]   between Trait<T> and Trait<void>: insert an
+//                   impl from T. Non-op: same structural match as Trait<T>
+//                   (name, params incl. cvref; self cvref kind — mirror
+//                   peels View/T vs the interface self; object members
+//                   also match const / ref-qual — lvalue self matches
+//                   unqualified or &). op_*: special lookup, not under that
+//                   name (ctor / = / convert / matching op; construct:
+//                   auto&& is an rvalue).
 //   Trait<T>        impl; first param is mirror<T> or mirror<T, T>
 //   mirror<T>         from implicit T& or user conversion; mirror-to-mirror cannot drop cv
 //   mirror<T, TT>     from TT if TT converts to mirror<T>
@@ -36,19 +44,18 @@
 //                   auto). Src/auto assign is never on the carrier (iface or
 //                   dyn *); only construct is the Src-related dyn-dispatch op.
 //   h2 = h1         handle/pointer assign (rebind); not (*h) value assign.
-//   op_construct    return remove_cvref(self) by value (no ref). Write
-//                   `-> std::remove_cvref_t<decltype(self)>` (or `T` when
-//                   self is `T`). Placeholder `auto` return is only for
-//                   0-extra copy/move; extras need the trailing return.
-//                   special lookup selects the constructor (declared self ref;
-//                   auto&& is an rvalue). Not a same-named member. Custom Trait
-//                   default: omit ann::imple, concrete return = key (body used).
-//                   Overloads are ordinary dyn slots (dispatch by args / self
-//                   value category); no separate construct_move marker / not
-//                   fixed at vt end. *dyn copy/move -> *dyn; proxy does not own
-//                   Storage. sub_dyn construct stays on the same slice (cannot
-//                   recover Final table top). Default void*; OutPtr customizable.
-//   unsourced iface: no construct; convert + concrete assign; reverse friends on *iface only
+//   op_construct    return must be remove_cvref of the first parameter
+//                   (e.g. `-> std::remove_cvref_t<decltype(self)>`); a
+//                   concrete type only if that impl targets that type alone.
+//                   Overloads are ordinary dyn slots (dispatch by args /
+//                   self value category). *dyn copy/move -> *dyn; proxy does
+//                   not own Storage. sub_dyn construct stays on the same
+//                   slice (cannot recover Final table top). Default void*;
+//                   OutPtr customizable.
+//   unsourced iface (plain / unsourced-mirror Arg): carrier is convert +
+//                   concrete assign only (construct is not a carrier op);
+//                   reverse friends on *iface only. Unsourced-mirror Arg
+//                   binds without a layout gate; only [[=mirror]] callable.
 //   iface<Trait, T>   concrete handle. T is the object or mirror<View, Src>
 //                         Src set => Self = mirror<T, Src>; else from impl
 //   to_mirror        object only (no mirror). <T> => mirror<T, Src>;

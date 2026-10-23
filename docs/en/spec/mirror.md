@@ -243,9 +243,9 @@ class asf::mirror<Widget> : public asf::mirror_base<Widget> {
 
 - `iface<Trait, T>`: Self comes from the implementation-side mirror (unsourced or sourced).
 - `iface<Trait, mirror<T, Src>>`: `Self = mirror<T, Src>`.
-- A user `mirror` with no Src binds to `iface` only (there is no `dyn` path for unsourced mirrors) and still needs `[[=mirror]]` on every method in the layout.
+- A user `mirror` with no Src binds to `iface` only (no `dyn` path). Mirror → `iface`: bind is ungated. **Sourced**: every method is callable; `[[=mirror]]` (method tag, else declaring Trait) chooses the presented Self — the mirror, or the object (`Src`). **Unsourced**: only `[[=mirror]]` methods are callable (no peel / materialize of View for non-mirror methods).
 - `dyn` from `mirror<T, Src>`: the whole layout need not opt into `mirror`. When view matches `Src`, Storage points at the object (mirror rebuilt per call); when view ≠ `Src` or `identity_mirror`, Storage points at that mirror (must outlive the dyn). Mirror sections use `Trait<T>`, non-mirror sections use `Trait<Src>`.
-- Construct is not mirror: `op_construct` does not follow the Trait `[[=mirror]]` tag. `self` is the object (`Src` when the mirror is sourced). Marking `op_construct` itself `[[=mirror]]` is ill-formed.
+- On `dyn`, `op_construct` is not a mirror method: it does not follow the Trait `[[=mirror]]` tag. `self` is the object (`Src` when the mirror is sourced). Marking `op_construct` itself `[[=mirror]]` is ill-formed.
 - Destroy is not a Trait method: every vtable has destroy at `vt[-1]` (`~Src`). A sourced mirror whose view differs from `Src` still uses ordinary `dyn`.
 
 ## See also

@@ -32,15 +32,15 @@ struct Obj {
 
 template <>
 struct A<Obj> {
-  static std::string a(const Obj& self) { return self.name + "/a"; }
+  static std::string a(Obj& self) { return self.name + "/a"; }
 };
 template <>
 struct B<Obj> {
-  static std::string b(const Obj& self) { return self.name + "/b"; }
+  static std::string b(Obj& self) { return self.name + "/b"; }
 };
 template <>
 struct LiveMI<Obj> final {
-  static std::string mi(const Obj& self) { return self.name + "/mi"; }
+  static std::string mi(Obj& self) { return self.name + "/mi"; }
 };
 
 int main() {

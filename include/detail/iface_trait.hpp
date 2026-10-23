@@ -23,6 +23,26 @@
 ASF_BEGIN_NAMESPACE
 namespace detail {
 
+// Internal Src tag for iface<Trait, mirror<View>> (unsourced Arg). Not a
+// real source type: Self is always the impl mirror; [[=mirror]] is checked
+// per method at call time, not at bind.
+struct unsourced_mirror_src {};
+
+template <typename Src>
+inline constexpr bool iface_src_is_plain_v = std::is_void_v<Src>;
+
+template <typename Src>
+inline constexpr bool iface_src_is_unsourced_mirror_v =
+    std::same_as<std::remove_cv_t<Src>, unsourced_mirror_src>;
+
+template <typename Src>
+inline constexpr bool iface_src_is_sourced_v =
+    !iface_src_is_plain_v<Src> && !iface_src_is_unsourced_mirror_v<Src>;
+
+template <typename Src, typename T>
+using iface_src_obj_t =
+    std::conditional_t<iface_src_is_sourced_v<Src>, Src, std::remove_cv_t<T>>;
+
 // Every vtable slot is a function pointer. Call sites convert to the concrete
 // signature (fn-to-fn). Object pointers are not stored in the table.
 using vt_fn = void (*)();
@@ -2080,8 +2100,8 @@ consteval bool trait_has_op_named_at(std::meta::info cls, std::string_view name,
 }
 
 // Match key: return type for convert/construct; RHS param type for assign.
-// Construct Src-wildcard: void / undeduced auto / signature_self (placeholder
-// body `return self`) -> imple_t. Avoid requiring a concrete return_type_of.
+// Construct Src-wildcard: void / signature_self (return tied to self) ->
+// imple_t. Placeholder return rejected by check_dyn_ann_method.
 consteval std::meta::info special_op_key_type(std::meta::info inst,
                                               special_op kind) {
   if (is_assign_op(kind)) {
@@ -2450,10 +2470,11 @@ consteval bool ann_enabled(std::meta::info method, std::meta::info yes_tag,
   return default_yes;
 }
 
-// One layout section (Trait<void>): every method must allow a user mirror.
+// One layout section (Trait<void>): every non-lifetime method must allow a
+// user mirror (full-layout gate for sourced mirror / plain Self selection).
 // Method mirror/no_mirror overrides the Trait tag. Default is no_mirror.
-// op_construct is not part of that agreement (it never follows the Trait
-// tag). A section with only those methods follows the Trait tag.
+// op_construct is skipped here — it never follows the Trait tag. A section
+// with only those methods follows the Trait tag.
 template <typename S>
 consteval bool section_allows_mirror_source() {
   auto methods = trait_methods_vec<S>();
@@ -2482,9 +2503,10 @@ consteval bool any_section_allows_mirror(tlist<Ss...>) {
   return (section_allows_mirror_source<Ss>() || ...);
 }
 
-// User mirror with no Src -> dyn/iface: every Trait in the inheritance
-// layout (sections_t) must allow mirror source. Empty layout does not
-// allow. Sourced mirror bind does not use this gate (see dyn_bind_mirror_*).
+// Full-layout mirror gate (every non-lifetime method allows mirror). Used
+// for plain-object iface Self selection (object bind with mirror Self) and
+// related probes. Mirror Arg -> iface does not use this (bind ungated;
+// call gate is per-method in invoke_method).
 template <template <class> class Trait>
 consteval bool layout_allows_unsourced_mirror() {
   if constexpr (sections_t<Trait<void>>::size == 0)
@@ -2556,10 +2578,9 @@ consteval bool sourced_dyn_view_mismatch_ok() {
   return true;
 }
 
-// [[=asf_ann::imple]] skips the Trait body. Non-op methods call the
-// same-named member. op_* does not look up that name: construct, assign,
-// convert, and catalog operators each have their own lookup.
-// [[=asf_ann::no_imple]] overrides a Trait-level imple. Default is no_imple.
+// [[=asf_ann::imple]]: between Trait<T> and Trait<void>, insert a member
+// impl from T matched like Trait<T> (op_*: special lookup). [[=no_imple]]
+// overrides a Trait-level imple. Default is no_imple.
 consteval bool method_prefers_imple(std::meta::info method) {
   return ann_enabled(method, ^^ann::imple_tag, ^^ann::no_imple_tag, false);
 }
@@ -2587,20 +2608,27 @@ consteval std::meta::info ann_probe_self_for(std::meta::info method) {
   return impl_self_info<Trait, As>();
 }
 
-// Read [[=imple]] with the body-valid Self substituted (see above). This is
-// how imple on a non-construct template method is honored.
+// [[=imple]] with As-aware method probe, then declaring Trait tag
+// (same fallback as ann_enabled / method_prefers_imple). Annotation
+// reading does not depend on const As — probe the unqualified As so a
+// mutating template body is not instantiated against mirror<const T>.
 template <template <class> class Trait, typename As>
 consteval bool method_prefers_imple_as(std::meta::info method) {
   auto on_decl = ann_choice_of(method, ^^ann::imple_tag, ^^ann::no_imple_tag);
   if (on_decl != ann_choice::unset)
     return on_decl == ann_choice::yes;
-  if (!std::meta::is_function_template(method))
-    return false;
-  auto inst = instantiate(method, ann_probe_self_for<Trait, As>(method));
-  if (inst == std::meta::info{})
-    return false;
-  return ann_choice_of(inst, ^^ann::imple_tag, ^^ann::no_imple_tag) ==
-         ann_choice::yes;
+  if (std::meta::is_function_template(method)) {
+    using ProbeAs = std::remove_const_t<std::remove_reference_t<As>>;
+    auto inst =
+        instantiate(method, ann_probe_self_for<Trait, ProbeAs>(method));
+    if (inst != std::meta::info{}) {
+      auto on_inst =
+          ann_choice_of(inst, ^^ann::imple_tag, ^^ann::no_imple_tag);
+      if (on_inst != ann_choice::unset)
+        return on_inst == ann_choice::yes;
+    }
+  }
+  return method_prefers_imple(method);
 }
 
 consteval bool dyn_ann_auto_params_ok(std::meta::info method) {
@@ -2760,6 +2788,8 @@ consteval self_ref_kind self_param_ref_kind(std::meta::info method) {
       return tcnst ? self_ref_kind::const_rvalue : self_ref_kind::rvalue;
     }
   }
+  // by-value mirror<T> is a copy (const lvalue). Trait↔Trait matching
+  // peels View separately (trait_self_kind_match).
   return self_ref_kind::const_lvalue;
 }
 
@@ -2913,6 +2943,29 @@ consteval bool layout_allows_mirror_source_as() {
         std::make_index_sequence<n>{});
 }
 
+// One method presents a user-mirror Self: method tag (or its declaring
+// Trait<void> tag). At iface call on a mirror Arg: yes -> pass the mirror;
+// no -> sourced: pass Src; unsourced: ill-formed (only [[=mirror]] callable).
+// As is kept for template annotation probes (method_ann_inst / substitute).
+template <template <class> class Trait, typename As>
+consteval bool method_allows_mirror_source_as(std::meta::info method) {
+  if (std::meta::has_identifier(method) &&
+      is_lifetime_dyn_op_name(std::meta::identifier_of(method)))
+    return false;
+  // Prefer the As-aware probe for function templates (body-valid substitute),
+  // then fall back to ann_enabled (method -> parent Trait tag).
+  if (std::meta::is_function_template(method)) {
+    auto inst = instantiate(method, ann_probe_self_for<Trait, As>(method));
+    if (inst != std::meta::info{}) {
+      auto on_inst =
+          ann_choice_of(inst, ^^ann::mirror_tag, ^^ann::no_mirror_tag);
+      if (on_inst != ann_choice::unset)
+        return on_inst == ann_choice::yes;
+    }
+  }
+  return ann_enabled(method, ^^ann::mirror_tag, ^^ann::no_mirror_tag, false);
+}
+
 // Conversion explicitness with the impl Self substituted (body is valid for
 // it). Used at iface carrier generation, where the object type is at hand.
 template <template <class> class Trait, typename As>
@@ -3018,77 +3071,42 @@ decltype(auto) call_impl_member(auto&& self, auto&&... args) {
   }
 }
 
-consteval bool is_construct_or_assign_special(std::meta::info method) {
-  if (!std::meta::has_identifier(method))
-    return false;
-  auto name = std::meta::identifier_of(method);
-  return is_special_op_name(name, special_op::construct) ||
-         is_special_op_name(name, special_op::assign);
-}
-
 template <typename Self>
   requires(is_sourced_mirror_v<Self>)
 decltype(auto) mirror_src_ref(Self&& self) {
   return src_of(self);
 }
 
-// from_impl construct/assign: capability of Src (AsMove selects ctor/assign kind).
+// sourced-mirror imple op_assign: Src must accept that assign.
 template <typename Self, std::meta::info Method, bool AsMove>
 consteval bool src_has_special_member_impl() {
   if constexpr (!is_sourced_mirror_v<Self> ||
-                !is_construct_or_assign_special(Method))
+                !is_special_op_name(std::meta::identifier_of(Method),
+                                   special_op::assign))
     return false;
   else {
     using Src = mirror_src_t<Self>;
-    constexpr auto name = std::meta::identifier_of(Method);
-    if constexpr (is_special_op_name(name, special_op::construct)) {
-      constexpr auto kind = self_param_ref_kind(Method);
-      if constexpr (kind == self_ref_kind::lvalue)
-        return std::is_constructible_v<Src, Src&>;
-      else if constexpr (kind == self_ref_kind::rvalue)
-        return std::is_constructible_v<Src, Src&&>;
-      else if constexpr (kind == self_ref_kind::const_rvalue)
-        return std::is_constructible_v<Src, Src const&&>;
-      else
-        return std::is_constructible_v<Src, Src const&>;
-    } else if constexpr (is_special_op_name(name, special_op::assign)) {
-      if constexpr (AsMove)
-        return std::is_assignable_v<Src&, Src&&>;
-      else
-        return std::is_assignable_v<Src&, Src const&>;
-    } else {
-      return false;
-    }
+    if constexpr (AsMove)
+      return std::is_assignable_v<Src&, Src&&>;
+    else
+      return std::is_assignable_v<Src&, Src const&>;
   }
 }
 
-// Same-named callable on Src (member or static); arity = sizeof...(Args).
+// Same-name functions / function templates on Src.
 template <typename Src>
-consteval std::meta::info find_src_method(std::string_view name,
-                                          std::size_t arity) {
+consteval std::vector<std::meta::info> src_methods_named_vec(
+    std::string_view name) {
+  std::vector<std::meta::info> out;
   for (auto member : std::meta::members_of(^^Src, unchecked())) {
     if (!std::meta::has_identifier(member) ||
         std::meta::identifier_of(member) != name)
       continue;
-    if (std::meta::is_function(member)) {
-      auto params = std::meta::parameters_of(member);
-      // non-static: implicit object not in parameters_of on some impls;
-      // count explicit params only.
-      std::size_t n = params.size();
-      if (std::meta::is_static_member(member)) {
-        if (n == arity)
-          return member;
-      } else if (n == arity) {
-        return member;
-      }
-    }
+    if (std::meta::is_function(member) ||
+        std::meta::is_function_template(member))
+      out.push_back(member);
   }
-  return std::meta::info{};
-}
-
-template <typename Src>
-consteval bool src_has_named_method(std::string_view name, std::size_t arity) {
-  return find_src_method<Src>(name, arity) != std::meta::info{};
+  return out;
 }
 
 // Call-arg arity of a Trait method (excludes the self/`auto` parameter).
@@ -3107,28 +3125,143 @@ consteval std::size_t trait_method_arg_arity(std::meta::info method) {
   return params.empty() ? 0 : params.size() - 1;
 }
 
-template <std::meta::info A, std::meta::info B>
-consteval bool extras_decl_match() {
-  constexpr auto da = signature_decl_of<A>();
-  constexpr auto db = signature_decl_of<B>();
+// If ty is mirror<View>[cvref], kind from View's cvref (not the mirror
+// wrapper). Empty if not a mirror parameter.
+consteval std::meta::info mirror_view_of_param(std::meta::info ty) {
+  auto bare = std::meta::remove_cvref(ty);
+  if (!std::meta::has_template_arguments(bare) ||
+      std::meta::template_of(bare) != ^^mirror)
+    return std::meta::info{};
+  auto args = std::meta::template_arguments_of(bare);
+  return args.empty() ? std::meta::info{} : args[0];
+}
+
+consteval self_ref_kind self_kind_from_mirror_view(std::meta::info view) {
+  bool rval = std::meta::is_rvalue_reference_type(view);
+  bool cnst = std::meta::is_const_type(std::meta::remove_reference(view));
+  if (rval)
+    return cnst ? self_ref_kind::const_rvalue : self_ref_kind::rvalue;
+  return cnst ? self_ref_kind::const_lvalue : self_ref_kind::lvalue;
+}
+
+// Interface self vs impl self. Plain: self_ref_kind. Mirror impl: peel View
+// (T) and compare that kind to the interface self.
+template <std::meta::info Want, std::meta::info Got>
+consteval bool trait_self_kind_match() {
+  constexpr auto da = signature_decl_of<Want>();
+  constexpr auto db = signature_decl_of<Got>();
   if (da == std::meta::info{} || db == std::meta::info{})
     return false;
-  std::size_t sa = self_param_index(A);
-  std::size_t sb = self_param_index(B);
+  std::size_t sa = self_param_index(Want);
+  std::size_t sb = self_param_index(Got);
   auto pa = std::meta::parameters_of(da);
   auto pb = std::meta::parameters_of(db);
+  if (sa >= pa.size() || sb >= pb.size())
+    return false;
+  auto ta = std::meta::dealias(std::meta::type_of(pa[sa]));
+  auto tb = std::meta::dealias(std::meta::type_of(pb[sb]));
+  auto va = mirror_view_of_param(ta);
+  auto vb = mirror_view_of_param(tb);
+  self_ref_kind ka = va != std::meta::info{}
+                         ? self_kind_from_mirror_view(va)
+                         : self_param_ref_kind_of<Want>();
+  self_ref_kind kb = vb != std::meta::info{}
+                         ? self_kind_from_mirror_view(vb)
+                         : self_param_ref_kind_of<Got>();
+  return ka == kb;
+}
+
+// Trait<void> Want ↔ Trait<T> Got: same self index; self via
+// trait_self_kind_match; other params match including cvref.
+template <std::meta::info Want, std::meta::info Got>
+consteval bool trait_impl_sig_match() {
+  if (self_param_index(Want) != self_param_index(Got))
+    return false;
+  if (!trait_self_kind_match<Want, Got>())
+    return false;
+  constexpr auto da = signature_decl_of<Want>();
+  constexpr auto db = signature_decl_of<Got>();
+  if (da == std::meta::info{} || db == std::meta::info{})
+    return false;
+  std::size_t sa = self_param_index(Want);
+  std::size_t sb = self_param_index(Got);
+  auto pa = std::meta::parameters_of(da);
+  auto pb = std::meta::parameters_of(db);
+  std::size_t ia = 0, ib = 0;
+  while (ia < pa.size() && ib < pb.size()) {
+    if (ia == sa || ib == sb) {
+      if (ia != sa || ib != sb)
+        return false;
+      ++ia;
+      ++ib;
+      continue;
+    }
+    auto ta = std::meta::dealias(std::meta::type_of(pa[ia]));
+    auto tb = std::meta::dealias(std::meta::type_of(pb[ib]));
+    if (ta != tb)
+      return false;
+    ++ia;
+    ++ib;
+  }
+  return ia == pa.size() && ib == pb.size();
+}
+
+// Trait self ↔ Src object parameter: const must match; lvalue self matches
+// unqualified or `&`; rvalue self needs `&&`.
+template <std::meta::info Want>
+consteval bool src_object_self_matches(std::meta::info got) {
+  auto k = self_param_ref_kind_of<Want>();
+  bool need_const = k == self_ref_kind::const_lvalue ||
+                    k == self_ref_kind::const_rvalue;
+  bool need_rval =
+      k == self_ref_kind::rvalue || k == self_ref_kind::const_rvalue;
+  if (std::meta::is_const(got) != need_const)
+    return false;
+  if (need_rval)
+    return std::meta::is_rvalue_reference_qualified(got);
+  return !std::meta::is_rvalue_reference_qualified(got);
+}
+
+// Trait Want ↔ Src Got: structural (no language overload set). Non-self
+// params match including cvref; object members also match const / ref-qual.
+template <std::meta::info Want>
+consteval bool src_imple_sig_match(std::meta::info got) {
+  constexpr auto da = signature_decl_of<Want>();
+  if (da == std::meta::info{} || !std::meta::is_function(got) ||
+      std::meta::is_function_template(got))
+    return false;
+  std::size_t sa = self_param_index(Want);
+  auto pa = std::meta::parameters_of(da);
+  auto pb = std::meta::parameters_of(got);
+  if (std::meta::is_static_member(got)) {
+    std::size_t ia = 0, ib = 0;
+    while (ia < pa.size() && ib < pb.size()) {
+      if (ia == sa) {
+        ++ia;
+        continue;
+      }
+      auto ta = std::meta::dealias(std::meta::type_of(pa[ia]));
+      auto tb = std::meta::dealias(std::meta::type_of(pb[ib]));
+      if (ta != tb)
+        return false;
+      ++ia;
+      ++ib;
+    }
+    for (; ia < pa.size(); ++ia)
+      if (ia != sa)
+        return false;
+    return ib == pb.size();
+  }
+  if (!src_object_self_matches<Want>(got))
+    return false;
   std::size_t ia = 0, ib = 0;
   while (ia < pa.size() && ib < pb.size()) {
     if (ia == sa) {
       ++ia;
       continue;
     }
-    if (ib == sb) {
-      ++ib;
-      continue;
-    }
-    auto ta = std::meta::remove_cvref(std::meta::type_of(pa[ia]));
-    auto tb = std::meta::remove_cvref(std::meta::type_of(pb[ib]));
+    auto ta = std::meta::dealias(std::meta::type_of(pa[ia]));
+    auto tb = std::meta::dealias(std::meta::type_of(pb[ib]));
     if (ta != tb)
       return false;
     ++ia;
@@ -3137,10 +3270,7 @@ consteval bool extras_decl_match() {
   for (; ia < pa.size(); ++ia)
     if (ia != sa)
       return false;
-  for (; ib < pb.size(); ++ib)
-    if (ib != sb)
-      return false;
-  return true;
+  return ib == pb.size();
 }
 
 template <template <class> class Trait, typename As, std::meta::info Method,
@@ -3150,9 +3280,7 @@ consteval std::meta::info trait_impl_hit() {
   if (!std::meta::has_identifier(m) ||
       std::meta::identifier_of(m) != std::meta::identifier_of(Method))
     return std::meta::info{};
-  if (self_param_index(m) != self_param_index(Method))
-    return std::meta::info{};
-  if (!extras_decl_match<Method, m>())
+  if (!trait_impl_sig_match<Method, m>())
     return std::meta::info{};
   return m;
 }
@@ -3293,29 +3421,39 @@ consteval std::meta::info trait_impl_of_unused(std::meta::info method) {
 }
 #endif
 
-// Trait<void> [[=asf_ann::imple]] non-op -> same-named Src member.
-// op_* is empty here; invoke_imple_op does that lookup.
-template <template <class> class Trait, typename As, typename Src>
-consteval std::meta::info src_impl_of(std::meta::info method) {
-  if constexpr (std::is_void_v<Src>) {
+// Trait<void> [[=asf_ann::imple]] non-op: same-name Src member with structural
+// match (same rule as Trait<T>). No hit → empty (invoke falls back to
+// Trait<void>). op_* is empty here; invoke_imple_op does that lookup.
+template <template <class> class Trait, typename As, typename Src,
+          std::meta::info Method>
+consteval std::meta::info src_impl_of() {
+  if constexpr (!iface_src_is_sourced_v<Src>) {
     return std::meta::info{};
   } else {
-    if (!method_prefers_imple_as<Trait, As>(method) ||
-        is_imple_op_name(std::meta::identifier_of(method)))
+    if (!method_prefers_imple_as<Trait, As>(Method) ||
+        is_imple_op_name(std::meta::identifier_of(Method)))
       return std::meta::info{};
-    return find_src_method<Src>(std::meta::identifier_of(method),
-                                trait_method_arg_arity(method));
+    auto named =
+        src_methods_named_vec<Src>(std::meta::identifier_of(Method));
+    std::meta::info found{};
+    int n = 0;
+    for (auto m : named) {
+      if (!src_imple_sig_match<Method>(m))
+        continue;
+      ++n;
+      found = m;
+    }
+    return n == 1 ? found : std::meta::info{};
   }
 }
 
-template <typename Src, std::meta::info Method>
-decltype(auto) call_impl_method(Src&& src, auto&&... args) {
-  if constexpr (std::meta::is_static_member(Method)) {
-    return [:Method:](std::forward<decltype(args)>(args)...);
-  } else {
-    return std::forward<Src>(src).[:Method:](
+template <std::meta::info Mem>
+decltype(auto) call_src_member(auto&& src, auto&&... args) {
+  if constexpr (std::meta::is_static_member(Mem))
+    return [:Mem:](std::forward<decltype(args)>(args)...);
+  else
+    return std::forward<decltype(src)>(src).[:Mem:](
         std::forward<decltype(args)>(args)...);
-  }
 }
 
 template <typename Src>
@@ -3323,9 +3461,7 @@ decltype(auto) assign_src(Src&& dst, auto&& rhs) {
   return (std::forward<Src>(dst) = std::forward<decltype(rhs)>(rhs));
 }
 
-// Constructor with the Trait method's parameter list. Self is passed as the
-// reference the declaration names (auto&& is an rvalue). Other arguments
-// stay in order.
+// imple op_construct: form Src(...) with self at SelfIdx (auto&& → rvalue).
 template <std::size_t SelfIdx, self_ref_kind Kind, class Src, class Self,
           class... Args>
 Src construct_like(Self&& self, Args&&... args) {
@@ -3398,15 +3534,13 @@ decltype(auto) imple_unary(Un&& un, Self&& self, Args&&...) {
   return std::forward<Un>(un)(std::forward<Self>(self));
 }
 
-// op_* imple. Not a name lookup: construct / assign / convert / catalog
-// operator. Self stays at its declared index. auto&& is an rvalue (construct).
+// op_* imple: not a same-name lookup (ctor / = / convert / catalog op).
 #if defined(__GNUC__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wattributes"
 #endif
-// Kind is also an NTTP so GCC's reflection-info encoding (which collapses
-// same-named function templates) still produces distinct assembler symbols
-// for copy vs move op_construct.
+// Kind NTTP: GCC reflection-info encoding collapses same-named templates;
+// keep copy vs move op_construct symbols distinct.
 template <std::meta::info Method, std::size_t SelfIdx, self_ref_kind Kind,
           class Obj, class... Args>
 [[gnu::weak]] inline decltype(auto)
@@ -3414,6 +3548,12 @@ invoke_imple_op(Obj&& obj, Args&&... args) {
   constexpr auto name = std::meta::identifier_of(Method);
   if constexpr (is_special_op_name(name, special_op::construct)) {
     using Impl = std::remove_cvref_t<Obj>;
+    static_assert(
+        requires {
+          construct_like<SelfIdx, Kind, Impl>(std::declval<Obj>(),
+                                              std::declval<Args>()...);
+        },
+        "[[=asf_ann::imple]] not callable with these arguments");
     return construct_like<SelfIdx, Kind, Impl>(
         std::forward<Obj>(obj), std::forward<Args>(args)...);
   } else if constexpr (is_special_op_name(name, special_op::assign)) {
@@ -3730,7 +3870,8 @@ consteval std::size_t method_ord_v() {
 }
 
 // Impl / SrcImpl are wired at proxy/vtable build (trait_impl_of / src_impl_of).
-// Non-op imple uses that member. op_* goes through invoke_imple_op.
+// Non-op imple: SrcImpl is the structurally matched Src member.
+// op_* goes through invoke_imple_op.
 template <template <class> class Trait, typename As, std::meta::info Method,
           std::meta::info Impl, std::meta::info SrcImpl = std::meta::info{},
           bool AsMove = false, std::size_t Overload = method_ord_v<Method>()>
@@ -3742,40 +3883,41 @@ decltype(auto) invoke_resolved(auto&& self, auto&&... args) {
   if constexpr (is_special_op_name(name, special_op::construct))
     check_construct_return_decl<Method>();
 
-  // Trait<As> impl -> imple (op special, else same name) -> Trait<void> default.
+  // Trait<As> impl -> imple (structural hit) -> Trait<void> default.
+  // Non-op imple miss falls through; no language overload / callable check.
   if constexpr (Impl != std::meta::info{}) {
     return call_impl_member<Trait<As>, Impl>(
         self, std::forward<decltype(args)>(args)...);
-  } else if constexpr (method_prefers_imple_as<Trait, As>(Method)) {
+  } else if constexpr (method_prefers_imple_as<Trait, As>(Method) &&
+                       is_imple_op_name(name)) {
     if constexpr (is_sourced_mirror_v<Self>) {
-      if constexpr (is_imple_op_name(name)) {
-        if constexpr (is_construct_or_assign_special(Method) &&
-                      (!is_special_op_name(name, special_op::construct) ||
-                       sizeof...(args) == 0)) {
-          static_assert(
-              src_has_special_member_impl<Self, Method, AsMove>(),
-              "[[=asf_ann::imple]] special op needs matching Src ctor/assign");
-        }
-        return invoke_imple_op<Method, self_i, self_param_ref_kind(Method)>(
-            mirror_src_ref(self), std::forward<decltype(args)>(args)...);
-      } else {
-        static_assert(SrcImpl != std::meta::info{},
-                      "[[=asf_ann::imple]] needs a same-named method on Src");
-        return call_impl_method<decltype(mirror_src_ref(self)), SrcImpl>(
-            mirror_src_ref(self), std::forward<decltype(args)>(args)...);
+      if constexpr (is_special_op_name(name, special_op::assign)) {
+        static_assert(
+            src_has_special_member_impl<Self, Method, AsMove>(),
+            "[[=asf_ann::imple]] op_assign needs matching Src assign");
       }
+      return invoke_imple_op<Method, self_i, self_param_ref_kind(Method)>(
+          mirror_src_ref(std::forward<decltype(self)>(self)),
+          std::forward<decltype(args)>(args)...);
     } else if constexpr (!is_mirror_v<Self>) {
-      // No ann::mirror: self is the object. Do not build a mirror.
-      if constexpr (is_imple_op_name(name)) {
-        return invoke_imple_op<Method, self_i, self_param_ref_kind(Method)>(
-            self, std::forward<decltype(args)>(args)...);
-      } else {
-        static_assert(SrcImpl != std::meta::info{},
-                      "[[=asf_ann::imple]] needs a same-named method on the "
-                      "object");
-        return call_impl_method<decltype(self), SrcImpl>(
-            self, std::forward<decltype(args)>(args)...);
-      }
+      return invoke_imple_op<Method, self_i, self_param_ref_kind(Method)>(
+          std::forward<decltype(self)>(self),
+          std::forward<decltype(args)>(args)...);
+    } else {
+      static_assert(
+          false,
+          "[[=asf_ann::imple]] needs a sourced mirror (dyn, or iface with Src)");
+    }
+  } else if constexpr (method_prefers_imple_as<Trait, As>(Method) &&
+                       SrcImpl != std::meta::info{}) {
+    if constexpr (is_sourced_mirror_v<Self>) {
+      return call_src_member<SrcImpl>(
+          mirror_src_ref(std::forward<decltype(self)>(self)),
+          std::forward<decltype(args)>(args)...);
+    } else if constexpr (!is_mirror_v<Self>) {
+      return call_src_member<SrcImpl>(
+          std::forward<decltype(self)>(self),
+          std::forward<decltype(args)>(args)...);
     } else {
       static_assert(
           false,
@@ -3810,18 +3952,36 @@ decltype(auto) invoke_method(auto&& self, auto&&... args) {
   if constexpr (std::is_const_v<std::remove_reference_t<As>>)
     static_assert(is_const_self_method(Method),
                   "const interface cannot call a non-const Interface method");
+  // Mirror Arg call gate. Sourced: every method callable; [[=mirror]] chooses
+  // presented Self (mirror vs Src). Unsourced: only [[=mirror]] methods.
+  // op_construct always uses the object.
+  constexpr auto kind = self_param_ref_kind_of<Method>();
   if constexpr (std::meta::has_identifier(Method) &&
                 is_special_op_name(std::meta::identifier_of(Method),
                                    special_op::construct)) {
     return invoke_resolved<Trait, As, Method, Impl, SrcImpl, AsMove, Overload>(
-        as_construct_self<self_param_ref_kind_of<Method>()>(
-            std::forward<decltype(self)>(self)),
+        as_construct_self<kind>(std::forward<decltype(self)>(self)),
         std::forward<decltype(args)>(args)...);
   } else {
-    return invoke_resolved<Trait, As, Method, Impl, SrcImpl, AsMove, Overload>(
-        as_decl_self<self_param_ref_kind_of<Method>()>(
-            std::forward<decltype(self)>(self)),
-        std::forward<decltype(args)>(args)...);
+    using SelfRaw = std::remove_cvref_t<decltype(self)>;
+    if constexpr (is_mirror_v<SelfRaw> &&
+                  !method_allows_mirror_source_as<Trait, As>(Method)) {
+      if constexpr (is_sourced_mirror_v<SelfRaw>) {
+        return invoke_resolved<Trait, As, Method, Impl, SrcImpl, AsMove,
+                               Overload>(
+            as_decl_self<kind>(src_of(self)),
+            std::forward<decltype(args)>(args)...);
+      } else {
+        static_assert(
+            false,
+            "unsourced mirror iface can only call [[=asf_ann::mirror]] methods");
+      }
+    } else {
+      return invoke_resolved<Trait, As, Method, Impl, SrcImpl, AsMove,
+                             Overload>(
+          as_decl_self<kind>(std::forward<decltype(self)>(self)),
+          std::forward<decltype(args)>(args)...);
+    }
   }
 }
 
@@ -3831,9 +3991,8 @@ template <template <class> class Trait, typename As, typename Src,
 decltype(auto) invoke_wired(auto&& self, auto&&... args) {
   constexpr auto impl = trait_impl_of<Trait, As, Method>();
   // imple members are looked up on the object: Src for sourced binds, else As.
-  using SrcObj = std::conditional_t<std::is_void_v<Src>,
-                                    std::remove_cvref_t<As>, Src>;
-  constexpr auto srcimpl = src_impl_of<Trait, As, SrcObj>(Method);
+  using SrcObj = iface_src_obj_t<Src, As>;
+  constexpr auto srcimpl = src_impl_of<Trait, As, SrcObj, Method>();
   return invoke_method<Trait, As, Method, impl, srcimpl, AsMove, Overload>(
       std::forward<decltype(self)>(self),
       std::forward<decltype(args)>(args)...);
@@ -4266,33 +4425,23 @@ consteval std::meta::info construct_erased_sig(std::meta::info inst) {
   return std::meta::substitute(^^construct_erased_fn, args);
 }
 
-// Written return is checked by check_construct_return_decl. Dyn forbids
-// a placeholder return, so Src is never substituted into the body.
+// Placeholder return already rejected by check_dyn_ann_method (all dyn slots).
 template <typename Src>
 consteval void check_construct_return_src(std::meta::info method) {
   (void)^^Src;
   (void)method;
 }
 
-// Declaration must return remove_cvref(self). Write
-// `-> std::remove_cvref_t<decltype(self)>` (or `T` when self is `T`).
-// Dummy Self is only substituted into that signature. Extra-arg construct
-// cannot use a placeholder `auto` return (that would instantiate the body).
+// op_construct only: return must be remove_cvref of the first parameter.
+// Dummy Self is only substituted into the signature. A concrete return type
+// is only for a type-specific impl.
 template <std::meta::info Method>
 consteval void check_construct_return_decl() {
-  if constexpr (has_placeholder_return<Method>()) {
-    if (method_nonself_arity(Method) != 0)
-      throw std::meta::exception(
-          "op_construct extras require a trailing return "
-          "std::remove_cvref_t<decltype(self)>",
-          Method, std::source_location::current());
-    return;
-  }
   constexpr auto decl = signature_decl_of<Method>();
   if (decl == std::meta::info{})
     throw std::meta::exception(
-        "op_construct extras require a trailing return "
-        "std::remove_cvref_t<decltype(self)>",
+        "op_construct must return remove_cvref of the first parameter; "
+        "write -> std::remove_cvref_t<decltype(self)>",
         Method, std::source_location::current());
   std::meta::info raw{};
   try {

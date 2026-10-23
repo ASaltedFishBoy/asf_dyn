@@ -151,7 +151,7 @@ int main() {
   asf::src_of(bare);
   // into = sourced 把 into 重绑到 person，不写 other。
   // 字段写入是 asf::assign_mirror。
-  // 没有 [[=mirror]] 时，to_iface 拒绝用户 mirror。
+  // 无源 mirror -> iface：绑定不要求整布局 [[=mirror]]；只允许调 [[=mirror]] 方法。
   // op_construct 自己标 [[=mirror]]：建虚表时不合法。
 #endif
 }

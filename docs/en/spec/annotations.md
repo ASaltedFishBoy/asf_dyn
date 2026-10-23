@@ -15,20 +15,43 @@ C++26 annotation syntax `[[=asf_ann::name]]`. Method pairs may sit on a **method
 | Yes | No | Default | Meaning |
 | --- | --- | --- | --- |
 | `expl` | `no_expl` | `no_expl` | Conversion is explicit (`expl`) or implicit (`no_expl`, like `operator T()`) |
-| `imple` | `no_imple` | `no_imple` | Skip the Trait body. A non-op method calls the same-named member. `op_*` is not looked up under that name: `op_construct` selects the constructor (`auto&&` is an rvalue), `op_assign` selects `operator=`, `op_convert` selects the conversion, and catalog names select the matching C++ operator. An object or a sourced Self both work |
-| `mirror` | `no_mirror` | `no_mirror` | User `mirror` with no Src, bound to `iface` (unsourced mirrors do not bind to `dyn`): every method of every Trait in the layout must allow `mirror`. Binding `dyn` from a sourced `mirror<T, Src>` does not need the whole layout tagged: mirror sections use the `T` specialization, non-mirror sections use `Src`. `op_construct` does not inherit the Trait `mirror` tag; marking it `[[=mirror]]` is ill-formed. Destroy is always `vt[-1]` (`~Src`), not a Trait method (see [mirror.md](mirror.md)) |
+| `imple` | `no_imple` | `no_imple` | After `Trait<T>`, try an impl on the bound object `T` before the `Trait<void>` default. Details below. |
+| `mirror` | `no_mirror` | `no_mirror` | Chooses the **presented Self** for that method (method tag, else the **declaring** `Trait<void>`). User `mirror` with no Src → `iface` only (no `dyn`). Mirror → `iface`: **bind ungated**. **Sourced**: every method callable; `[[=mirror]]` → pass the mirror, else the object (`Src`). **Unsourced**: only `[[=mirror]]` methods are callable. Sourced → `dyn` may mix: mirror sections use `Trait<T>`, non-mirror `Trait<Src>`. `op_construct` never follows the Trait `mirror` tag (`self` is the object / `Src`); marking it `[[=mirror]]` is ill-formed. Destroy is always `vt[-1]` (`~Src`) (see [mirror.md](mirror.md)) |
+
+## `imple`
+
+Resolve order for a concrete bound type `T`:
+
+1. `Trait<T>` specialization, if it has a matching method.
+2. If the method (or its declaring `Trait<void>`) is `[[=imple]]` (and not `[[=no_imple]]`): an implementation taken from `T`.
+3. The default body on `Trait<void>`.
+
+Step 2 is **structural match**, not C++ overload resolution and not `std::is_invocable`. No hit → step 3.
+
+### Ordinary methods (name is not `op_*`)
+
+Find one same-named callable on `T` (member or static) such that:
+
+- every parameter other than self has the same type as the Trait method, including cv-ref;
+- self has the same cv-ref **kind** as the Trait method.
+
+If the Trait self parameter is a `mirror`, compare the **View** type's qualifications to the Trait self (ignore the mirror wrapper). If the hit is an object member, also require: `const` matches; an lvalue Trait self matches an unqualified or `&`-qualified member; an rvalue Trait self needs `&&`.
+
+### `op_*` methods
+
+Not found by the `op_*` identifier. Map to the language facility: constructor (`auto&&` self means rvalue), `operator=`, conversion, or the matching C++ operator from the catalog.
 
 ## Dyn slots and `static` (not an annotation)
 
 `static` is a C++ **declaration property** (the `static` keyword on a method), **not** a `[[=asf_ann::…]]` annotation. That is deliberate: method-level annotations on templates must be substituted to be read (GCC instantiates the body — see *Compiler limitation* below), while a declaration property is readable by reflection for free. So the dyn-slot opt-out is `static`, not an annotation.
 
-Rule: a **non**-`static` method with `self` first and at most one deduced template parameter is a dyn slot; a `static` method is iface-only, with no opt-back-in. A later `self`, or a second deduced parameter, is also iface-only by shape (those never reach a dyn slot anyway).
+Rule: a **non**-`static` method with `self` first and at most one deduced template parameter is a dyn slot; a `static` method is iface-only, with no opt-back-in. A later `self`, or a second deduced parameter, is also iface-only by shape (those never reach a dyn slot anyway). The return type must be written on the declaration (undetermined `auto` / `decltype(auto)` return is not allowed).
 
 Why no opt-back-in: a dyn cannot know which concrete `mirror<T>` view a `static` self expects, and routing the call through the vtable anyway would just be a dyn method with extra steps. If you need a mirror out of a dyn, write an ordinary dyn method whose impl names the concrete mirror view (e.g. takes `c_mirror<T>` as Self or returns `mirror<T>`).
 
 ## Compiler limitation (annotation reads on templates)
 
-Reading an annotation on a function template requires substituting it (GCC instantiates the body), so method-level annotations on templates are read only where a concrete self is available: `[[=imple]]` and `[[=mirror]]` are read with the impl Self at invoke / iface-bind time, and `[[=expl]]` at iface carrier generation. On a `dyn` proxy (no concrete type), `[[=expl]]` on a `op_convert` template that has a body is not read (defaults to implicit). Trait-level annotations are always readable; prefer them when in doubt.
+Reading an annotation on a function template requires substituting it (GCC instantiates the body), so method-level annotations on templates are read only where a concrete self is available: `[[=imple]]` is read with the impl Self at invoke / bind; `[[=mirror]]` is read at **call** (to choose the presented Self) and at bind for plain-object mirror-Self selection / dyn section mix; `[[=expl]]` at iface carrier generation. On a `dyn` proxy (no concrete type), `[[=expl]]` on a `op_convert` template that has a body is not read (defaults to implicit). Trait-level annotations are always readable; prefer them when in doubt.
 
 ## Truncation (`truncate` / `truncated`)
 
@@ -54,25 +77,9 @@ If a direct base is already an ancestor of another direct base — `T final : A,
 
 See [multi_vt.md](multi_vt.md), [features.md](features.md)#asf_has_dyn_multi_vt, and `tests/general/iface_truncate.cpp`.
 
-## op_construct
-
-- Return `auto` or a concrete type (not `void`).
-- `[[=asf_ann::imple]]`: the key is the internal `imple_t`. The Trait body is ignored. The call selects the Src constructor with the same parameters. When the only parameter is `self`, `const&` copies and `&&` moves. `auto&&` is an rvalue reference (the `mirror<T&&, …>` spelling is not settled).
-- Custom default: omit `imple`. The concrete return type is the key (the body is used).
-- Each `op_construct` overload is an ordinary dyn slot like any other method. Dispatch is by arguments only (including `self` value category). There is no separate `construct_move` marker, and construct is not fixed at the end of the vtable.
-
-## Operators
-
-The full method-name table is in [traits.md](traits.md)#operators. Write them as ordinary methods on the Trait. Do not use the `friend` keyword.
-
-A Trait method becomes a member operator of the proxy, so the handle is the left operand: `(*h) + x`. A **dyn slot requires `self` as the first parameter, and at most one deduced template parameter**; a later `self`, or a second deduced parameter, is a compile error for dyn dispatch.
-
-Reversed operands (other side on the left) are **iface only**: add another Trait overload with `self` later and mark it `static`. Matching is by parameter position, e.g. `op_add(int x, auto const& self)` → `4 + (*h)`. dyn `*` has no reversed operators. Unary operators stay on the Trait.
-
-Example: `examples/*/03_operators.cpp`. Lifetime (`destroy` / `construct`): `examples/*/04_lifetime.cpp`.
-
 ## See also
 
-- [traits.md](traits.md)
+- [traits.md](traits.md) — special names (`op_construct`, …), operator catalog, proxy surface
 - [iface.md](iface.md)
 - [features.md](features.md)
+- Examples: `examples/*/03_operators.cpp`, `examples/*/04_lifetime.cpp`

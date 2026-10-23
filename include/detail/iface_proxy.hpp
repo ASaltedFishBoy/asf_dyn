@@ -417,7 +417,9 @@ consteval std::meta::info bound_overload_info(
 
 template <template <class> class Trait, typename T, typename Src>
 consteval std::meta::info iface_mut_host() {
-  if constexpr (std::is_void_v<Src>)
+  if constexpr (iface_src_is_unsourced_mirror_v<Src>)
+    return ^^iface<Trait, mirror<T>>;
+  else if constexpr (iface_src_is_plain_v<Src>)
     return ^^iface<Trait, T>;
   else
     return ^^iface<Trait, mirror<T, Src>>;
@@ -425,7 +427,9 @@ consteval std::meta::info iface_mut_host() {
 
 template <template <class> class Trait, typename T, typename Src>
 consteval std::meta::info iface_const_host() {
-  if constexpr (std::is_void_v<Src>)
+  if constexpr (iface_src_is_unsourced_mirror_v<Src>)
+    return ^^iface<Trait, mirror<const T>> const;
+  else if constexpr (iface_src_is_plain_v<Src>)
     return ^^iface<Trait, const T> const;
   else
     return ^^iface<Trait, mirror<const T, Src>> const;
@@ -443,8 +447,7 @@ consteval std::meta::info iface_bound_at() {
     return std::meta::info{};
   return bound_call_exact_from<m>(
       iface_mut_host<Trait, T, Src>(), trait_impl_of<Trait, T, m>(),
-      src_impl_of<Trait, T,
-                  std::conditional_t<std::is_void_v<Src>, T, Src>>(m));
+      src_impl_of<Trait, T, iface_src_obj_t<Src, T>, m>());
 }
 
 template <template <class> class Trait, typename T, typename Src,
@@ -518,9 +521,7 @@ consteval std::meta::info c_iface_bound_at() {
   return bound_call_exact_from<m>(
       iface_const_host<Trait, T, Src>(),
       trait_impl_of<Trait, const T, m>(),
-      src_impl_of<Trait, const T,
-                  std::conditional_t<std::is_void_v<Src>,
-                                     std::remove_cv_t<T>, Src>>(m));
+      src_impl_of<Trait, const T, iface_src_obj_t<Src, T>, m>());
 }
 
 template <template <class> class Trait, typename T, typename Src,
@@ -1282,12 +1283,24 @@ struct convert_carrier {
 
 // Sourced mirror iface: convert + assign.
 template <template <class> class Trait, typename T, typename Src>
-  requires(!std::is_void_v<Src> && !std::is_const_v<T>)
+  requires(iface_src_is_sourced_v<Src> && !std::is_const_v<T>)
 struct convert_carrier<iface<Trait, mirror<T, Src>>>
     : special_ops_bundle<iface<Trait, mirror<T, Src>>, Trait,
                          convert_kind::iface> {
   using base = special_ops_bundle<iface<Trait, mirror<T, Src>>, Trait,
                                   convert_kind::iface>;
+  using base::base;
+  using base::operator=;
+};
+
+// Unsourced mirror Arg: convert + concrete assign (same carrier as plain).
+template <template <class> class Trait, typename T>
+  requires(!std::is_const_v<T>)
+struct convert_carrier<iface<Trait, mirror<T>>>
+    : special_ops_bundle<iface<Trait, mirror<T>>, Trait,
+                         convert_kind::unsourced_iface> {
+  using base = special_ops_bundle<iface<Trait, mirror<T>>, Trait,
+                                  convert_kind::unsourced_iface>;
   using base::base;
   using base::operator=;
 };
@@ -1304,12 +1317,22 @@ struct convert_carrier<iface<Trait, T>>
 };
 
 template <template <class> class Trait, typename T, typename Src>
-  requires(!std::is_void_v<Src>)
+  requires(iface_src_is_sourced_v<Src>)
 struct convert_carrier<iface<Trait, mirror<const T, Src>>>
     : special_ops_bundle<iface<Trait, mirror<const T, Src>>, Trait,
                          convert_kind::c_dyn> {
   using base = special_ops_bundle<iface<Trait, mirror<const T, Src>>, Trait,
                                   convert_kind::c_dyn>;
+  using base::base;
+  using base::operator=;
+};
+
+template <template <class> class Trait, typename T>
+struct convert_carrier<iface<Trait, mirror<const T>>>
+    : special_ops_bundle<iface<Trait, mirror<const T>>, Trait,
+                         convert_kind::unsourced_iface> {
+  using base = special_ops_bundle<iface<Trait, mirror<const T>>, Trait,
+                                  convert_kind::unsourced_iface>;
   using base::base;
   using base::operator=;
 };
@@ -1326,13 +1349,24 @@ struct convert_carrier<iface<Trait, const T>>
 };
 
 template <template <class> class Trait, typename T, typename Src>
-  requires(!std::is_void_v<Src>)
+  requires(iface_src_is_sourced_v<Src>)
 struct convert_carrier<iface<Trait, mirror<const T, Src>> const>
     : special_ops_bundle<iface<Trait, mirror<const T, Src>> const, Trait,
                          convert_kind::c_dyn> {
   using base =
       special_ops_bundle<iface<Trait, mirror<const T, Src>> const, Trait,
                          convert_kind::c_dyn>;
+  using base::base;
+  using base::operator=;
+};
+
+template <template <class> class Trait, typename T>
+struct convert_carrier<iface<Trait, mirror<const T>> const>
+    : special_ops_bundle<iface<Trait, mirror<const T>> const, Trait,
+                         convert_kind::unsourced_iface> {
+  using base =
+      special_ops_bundle<iface<Trait, mirror<const T>> const, Trait,
+                         convert_kind::unsourced_iface>;
   using base::base;
   using base::operator=;
 };
@@ -1515,15 +1549,18 @@ using impl_self_t = [:impl_self_info<Trait, T>():];
 
 template <template <class> class Trait, typename T, typename Src>
 struct iface_self_type {
-  // ann::mirror: second parameter is the view T, self is that mirror.
-  // Otherwise the second parameter is Src, and self is Src&.
-  using type = std::conditional_t<layout_allows_mirror_source_as<Trait, T>(),
-                                  impl_self_t<Trait, T>,
-                                  std::add_lvalue_reference_t<T>>;
+  // Plain object: Self is T& unless the layout is fully [[=mirror]] (then
+  // the impl mirror). Mirror Arg (sourced or unsourced): Self is the impl
+  // mirror; bind is ungated. Call: sourced peels non-mirror to Src;
+  // unsourced allows [[=mirror]] methods only.
+  using type = std::conditional_t<
+      iface_src_is_unsourced_mirror_v<Src> ||
+          layout_allows_mirror_source_as<Trait, T>(),
+      impl_self_t<Trait, T>, std::add_lvalue_reference_t<T>>;
 };
 
 template <template <class> class Trait, typename T, typename Src>
-  requires(!std::is_void_v<Src> && layout_allows_unsourced_mirror<Trait>())
+  requires(iface_src_is_sourced_v<Src>)
 struct iface_self_type<Trait, T, Src> {
   using type = mirror<T, Src>;
 };
@@ -1549,14 +1586,16 @@ constexpr bool iface_src_ptrs_equal(const void* pa,
 }
 
 template <template <class> class Trait, typename View, typename Src>
-using iface_shape_t =
-    std::conditional_t<std::is_void_v<Src>, iface<Trait, View>,
-                       iface<Trait, mirror<View, Src>>>;
+using iface_shape_t = std::conditional_t<
+    iface_src_is_unsourced_mirror_v<Src>, iface<Trait, mirror<View>>,
+    std::conditional_t<iface_src_is_plain_v<Src>, iface<Trait, View>,
+                       iface<Trait, mirror<View, Src>>>>;
 
 template <template <class> class Trait, typename View, typename Src>
-using c_iface_shape_t =
-    std::conditional_t<std::is_void_v<Src>, iface<Trait, const View>,
-                       iface<Trait, mirror<const View, Src>>>;
+using c_iface_shape_t = std::conditional_t<
+    iface_src_is_unsourced_mirror_v<Src>, iface<Trait, mirror<const View>>,
+    std::conditional_t<iface_src_is_plain_v<Src>, iface<Trait, const View>,
+                       iface<Trait, mirror<const View, Src>>>>;
 
 // Trait bases either way, and Arg can build iface<To, Arg>.
 template <template <class> class To, template <class> class From, typename Arg>

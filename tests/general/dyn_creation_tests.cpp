@@ -327,6 +327,13 @@ static_assert(std::constructible_from<asf::dyn<NoMirrorBind>,
                                       asf::mirror<Session, Session>&>);
 static_assert(std::constructible_from<asf::dyn<MirrorOnTrait>,
                                       asf::mirror<Session, Session>&>);
+// Mirror Arg -> iface: bind ungated (no full-layout [[=mirror]] required).
+static_assert(std::constructible_from<
+              asf::iface<NoMirrorBind, asf::mirror<Session, Session>>,
+              asf::mirror<Session, Session>&>);
+static_assert(std::constructible_from<
+              asf::iface<NoMirrorBind, asf::mirror<Session>>,
+              asf::mirror<Session>&>);
 
 // Destroy is always vt[-1] (~Src). view≠Src may still use dyn.
 struct SessionAlias {
@@ -426,6 +433,10 @@ static_assert(asf::detail::convert_is_explicit(asf::detail::find_method(
     ^^ExOnTrait<void>, "op_convert")));
 static_assert(asf::detail::method_prefers_imple(asf::detail::find_method(
     ^^ImplOnTrait<void>, "op_construct")));
+// invoke_resolved uses the As-aware probe; Trait-level [[=imple]] must
+// still win (fallback to declaring Trait, same as method_prefers_imple).
+static_assert(asf::detail::method_prefers_imple_as<ImplOnTrait, Session>(
+    asf::detail::find_method(^^ImplOnTrait<void>, "op_construct")));
 
 template <typename T = void>
 struct CallMut;
@@ -498,8 +509,11 @@ void TestToCIface() {
                 asf::iface<Stringable, asf::mirror<const Session, Session>>>);
   ASF_CHECK_EQ(mi->to_string(), asf_test::session_text("ToCIface", 105));
   auto ui = asf::to_c_iface<Stringable>(asf::to_pure_mirror(s));
-  static_assert(
-      std::is_same_v<decltype(ui), asf::iface<Stringable, const Session>>);
+  // Unsourced pure mirror stays a mirror Arg (const View); not peeled to
+  // plain const Session.
+  static_assert(std::is_same_v<
+                decltype(ui),
+                asf::iface<Stringable, asf::mirror<const Session>>>);
   ASF_CHECK_EQ(ui->to_string(), asf_test::session_text("ToCIface", 105));
 }
 #endif
@@ -545,6 +559,45 @@ void TestSourcedMirror_ExplicitConversionOp_Dyn() {
   ASF_CHECK_EQ(d->to_string(), asf_test::session_text("ExplAlias", 102));
   asf::c_dyn<Stringable> cd{em};
   ASF_CHECK_EQ(cd->to_string(), asf_test::session_text("ExplAlias", 102));
+}
+
+// Sourced: [[=mirror]] chooses presented Self; non-mirror peels to Src.
+// Unsourced: only [[=mirror]] methods are callable.
+template <typename T = void>
+struct PresentSelf;
+template <>
+struct PresentSelf<void> {
+  int as_obj(auto& self) {
+    using R = std::remove_cvref_t<decltype(self)>;
+    if constexpr (asf::is_mirror_v<R>)
+      return 801;
+    else
+      return 802;
+  }
+  [[=asf_ann::mirror]] int as_mir(auto& self) {
+    using R = std::remove_cvref_t<decltype(self)>;
+    if constexpr (asf::is_mirror_v<R>)
+      return 803;
+    else
+      return 804;
+  }
+};
+
+void TestMirrorIface_PresentSelf() {
+  Session s{106, "PresentSelf"};
+  auto sm = asf::to_mirror(s);
+  auto si = asf::to_iface<PresentSelf>(sm);
+  static_assert(std::is_same_v<
+                decltype(si),
+                asf::iface<PresentSelf, asf::mirror<Session, Session>>>);
+  ASF_CHECK_EQ(si->as_obj(), 802); // peel to Src
+  ASF_CHECK_EQ(si->as_mir(), 803); // present mirror
+
+  auto um = asf::to_pure_mirror(s);
+  auto ui = asf::to_iface<PresentSelf>(um);
+  static_assert(std::is_same_v<
+                decltype(ui), asf::iface<PresentSelf, asf::mirror<Session>>>);
+  ASF_CHECK_EQ(ui->as_mir(), 803); // present mirror; as_obj is ill-formed
 }
 #endif
 
@@ -1365,6 +1418,7 @@ int main() {
 #endif
 #if ASF_TEST_VIA_MIRROR
   ASF_RUN(dyn_creation_tests_detail::TestSourcedMirror_ExplicitConversionOp_Dyn);
+  ASF_RUN(dyn_creation_tests_detail::TestMirrorIface_PresentSelf);
 #endif
   ASF_RUN(dyn_creation_tests_detail::TestMakeDyn_Unique_FromValue);
   ASF_RUN(dyn_creation_tests_detail::TestMakeDynShared_FromValue);

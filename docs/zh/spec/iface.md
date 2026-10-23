@@ -44,9 +44,9 @@ template <class V>
 explicit iface(V&& object);
 ```
 
-普通对象的 `iface` 存 `T*` / `const T*`，赋值可重绑。`iface` **始终处于绑定状态**：没有空态、没有默认构造、也没有 `operator bool` / 空比较（对照：`dyn` 是指针语义——可空、有默认构造、有 `operator bool`）。`==` 是按地址的身份比较，不是判空。mirror 后端的 `iface` 持有 mirror 值：sourced 也经 `src_of` / 私有 `Src*` 身份比较；mirror 本身不可默认构造。
+`Self` 须能从 `V` 构造。`V` 不得是本句柄类型。普通对象实参须是左值（句柄存其地址）。从 `mirror`（有源或无源）绑定不设门禁。**有源**：每个方法都可调；`[[=mirror]]` 选择呈现 Self（mirror 或 `Src`）。**无源**：只允许调 `[[=mirror]]` 方法（见 [annotations.md](annotations.md)、[mirror.md](mirror.md)）。
 
-普通对象的 `iface` 存 `T*` / `const T*`，赋值可重绑。`iface` **始终处于绑定状态**：没有空态、没有默认构造、也没有 `operator bool` / 空比较。`==` 是按地址的身份比较，不是判空。mirror 后端的 `iface` 持有 mirror 值：sourced 也经 `src_of` / 私有 `Src*` 身份比较；mirror 本身不可默认构造。
+普通对象的 `iface` 存 `T*` / `const T*`，赋值可重绑。`iface` **始终处于绑定状态**：没有空态、没有默认构造、也没有 `operator bool` / 空比较（对照：`dyn` 是指针语义——可空、有默认构造、有 `operator bool`）。`==` 是按地址的身份比较，不是判空。mirror 后端的 `iface` 持有 mirror 值：sourced 也经 `src_of` / 私有 `Src*` 身份比较；mirror 本身不可默认构造。
 
 ```cpp
 iface(iface const&) = default;
@@ -69,7 +69,7 @@ constexpr auto to_iface(V&& object);
 
 `V` 是 sourced `mirror<View, Src>`：`iface<Trait, mirror<View, Src>>`。
 
-`V` 是非 sourced 的 mirror-like：`iface<Trait, View>`。
+`V` 是非 sourced 的 mirror-like：`iface<Trait, mirror<View>>`（绑定不设门禁；只允许调 `[[=mirror]]` 方法）。
 
 否则：`iface<Trait, std::remove_reference_t<V>>`（`const Person&` → `iface<Trait, const Person>`）。
 
@@ -80,7 +80,7 @@ template <template <class> class Trait, class V>
 constexpr auto to_c_iface(V&& object);
 ```
 
-`to_iface` 的 const 视口（与 `to_dyn` 旁的 `to_c_dyn` 对称）：普通对象得 `iface<Trait, const T>`；sourced `mirror<View, Src>` 得 `iface<Trait, mirror<const View, Src>>`；非 sourced mirror-like 得 `iface<Trait, const View>`。
+`to_iface` 的 const 视口（与 `to_dyn` 旁的 `to_c_dyn` 对称）：普通对象得 `iface<Trait, const T>`；sourced `mirror<View, Src>` 得 `iface<Trait, mirror<const View, Src>>`；非 sourced mirror-like 得 `iface<Trait, mirror<const View>>`。
 
 ## 声明 — 可变 `iface`
 

@@ -163,7 +163,8 @@ foreach(dir_name IN ITEMS
     "general|identity_mirror_self_bind"
     "general|cache_destroy_unsupported"
     "mirror|explicit_mirror_copy_init"
-    "mirror|unsourced_mirror_dyn")
+    "mirror|unsourced_mirror_dyn"
+    "mirror|unsourced_mirror_non_mirror_call")
   string(REPLACE "|" ";" dir_name_list ${dir_name})
   list(GET dir_name_list 0 dir)
   list(GET dir_name_list 1 name)
