@@ -104,9 +104,9 @@ dyn<Trait, std::unique_ptr<void, alloc_delete<Alloc>>>
 to_dyn<Trait, std::unique_ptr>(Alloc alloc, U&& object);
 ```
 
-Value (or sourced-mirror Src) is forward-constructed into the final storage. No intermediate dyn. Cache path returns a dyn with empty `vt` if the buffer is too small (`!h`). Only cache uses this fit check. `Alloc` is an optional first argument. `std::allocator` stays the default `unique_dyn` (`::operator delete`), not `alloc_delete`.
+Value (or sourced-mirror Src) is forward-constructed into the final storage. No intermediate dyn. Cache Spec fit (`sizeof` / `alignof` vs Size/Align) is a compile error. `Alloc` is an optional first argument. `std::allocator` stays the default `unique_dyn` (`::operator delete`), not `alloc_delete`.
 
-`proxy_wrap<Ptr>` holds a dereferenceable `Ptr`. Pass it to `to_dyn` with a `cache_ptr` Spec (or omit Spec to use `sizeof`/`alignof(Ptr)`). The Ptr is placed into the cache buffer when it fits. The VT is keyed on `Ptr` with `As` = pointee: methods dereference; deep construct / destroy stay on `Ptr`. `meta.type` reports the pointee. If cache ops cover away copy and/or move, the matching deep `op_construct` slots stay empty.
+`proxy_wrap<Ptr>` holds a dereferenceable `Ptr`. Pass it to `to_dyn` with a `cache_ptr` Spec (or omit Spec to use `sizeof`/`alignof(Ptr)`). The Ptr is placed into the cache buffer; Spec fit is a compile error. The VT is keyed on `Ptr` with `As` = pointee: methods dereference; deep construct / destroy stay on `Ptr`. `meta.type` reports the pointee. If cache ops cover away copy and/or move, the matching deep `op_construct` slots stay empty.
 
 ```cpp
 template <template <class...> class Ptr, template <class> class From, class SrcP>
@@ -231,7 +231,7 @@ auto construct(Alloc alloc, /* *dyn or rproxy */, Extra&&... extra);
 
 `OutPtr` is `std::unique_ptr` and there is `Alloc alloc` as the first argument: `dyn<Trait, std::unique_ptr<void, alloc_delete<Alloc>>>`. `std::allocator` stays `unique_dyn`. Other `OutPtr` types keep their type; `alloc` is only used for the allocation.
 
-`OutPtr` is `cache_ptr`: `cache_dyn<Trait, …>` with Trait-deduced `cache_ops`. Empty `vt` if the buffer is too small.
+`OutPtr` is `cache_ptr`: `cache_dyn<Trait, …>` with Trait-deduced `cache_ops`. Empty `vt` if the erased source's storage does not fit (size/align from the vt).
 
 A custom `OutPtr` (for example `fake_uptr`): `dyn<Trait, OutPtr<void>>`.
 

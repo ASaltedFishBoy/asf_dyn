@@ -130,9 +130,8 @@ class iface_mut_body {
     if constexpr (plain_pointer)
       return a.store_.self_ptr_ == b.store_.self_ptr_;
     else
-      return iface_src_ptrs_equal<Src, Src>(
-          static_cast<const void*>(detail::mirror_src_ptr(a.store_.self_)),
-          static_cast<const void*>(detail::mirror_src_ptr(b.store_.self_)));
+      return iface_src_ptrs_equal(detail::mirror_src_ptr(a.store_.self_),
+                                  detail::mirror_src_ptr(b.store_.self_));
   }
 
   template <template <class> class Trait2, typename View, typename Src2>
@@ -143,9 +142,8 @@ class iface_mut_body {
     if constexpr (plain_pointer)
       return false;
     else
-      return iface_src_ptrs_equal<Src, Src2>(
-          static_cast<const void*>(detail::mirror_src_ptr(a.store_.self_)),
-          static_cast<const void*>(detail::mirror_src_ptr(b.store_.self_)));
+      return iface_src_ptrs_equal(detail::mirror_src_ptr(a.store_.self_),
+                                  detail::mirror_src_ptr(b.store_.self_));
   }
 
   proxy_t proxy() const {
@@ -376,9 +374,8 @@ class iface_const_body {
     if constexpr (plain_pointer)
       return a.store_.self_ptr_ == b.store_.self_ptr_;
     else
-      return iface_src_ptrs_equal<Src, Src>(
-          static_cast<const void*>(detail::mirror_src_ptr(a.store_.self_)),
-          static_cast<const void*>(detail::mirror_src_ptr(b.store_.self_)));
+      return iface_src_ptrs_equal(detail::mirror_src_ptr(a.store_.self_),
+                                  detail::mirror_src_ptr(b.store_.self_));
   }
 
   proxy_t proxy() const {

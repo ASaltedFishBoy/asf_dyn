@@ -162,6 +162,7 @@ foreach(dir_name IN ITEMS
     "general|static_method_on_dyn"
     "general|identity_mirror_self_bind"
     "general|cache_destroy_unsupported"
+    "general|cache_spec_too_small"
     "mirror|explicit_mirror_copy_init"
     "mirror|unsourced_mirror_dyn"
     "mirror|unsourced_mirror_non_mirror_call")

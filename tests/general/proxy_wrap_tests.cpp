@@ -82,14 +82,6 @@ int main() {
     ASF_CHECK_EQ(h->to_string(), asf_test::no_sso("X") + ":703");
   }
 
-  // Too-small cache Spec -> empty.
-  {
-    using Spec = asf::cache_ptr<1, 1>;
-    auto h = asf::to_dyn<Stringable, Spec>(asf::proxy_wrap{
-        std::make_unique<Widget>(Widget{704, asf_test::no_sso("E")})});
-    ASF_CHECK(!h);
-  }
-
   // shared_ptr wrap; VT distinct from value-in-cache path.
   {
     using Spec = asf::cache_ptr<sp_sz, sp_al>;

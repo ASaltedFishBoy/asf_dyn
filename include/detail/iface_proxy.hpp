@@ -1565,24 +1565,23 @@ struct iface_self_type<Trait, T, Src> {
   using type = mirror<T, Src>;
 };
 
-// Compare object identity pointers with static_cast adjustment for MI.
+// Compare Src object identity. Typed pointers (deduced); MI adjusts with
+// static_cast to the common base — no void* erase.
 template <typename SrcA, typename SrcB>
-constexpr bool iface_src_ptrs_equal(const void* pa,
-                                    const void* pb) noexcept {
+constexpr bool iface_src_ptrs_equal(SrcA* pa, SrcB* pb) noexcept {
   if (pa == nullptr || pb == nullptr)
     return pa == pb;
   using A = std::remove_cv_t<SrcA>;
   using B = std::remove_cv_t<SrcB>;
   if constexpr (std::same_as<A, B>)
-    return pa == pb;
+    return static_cast<A const*>(pa) == static_cast<A const*>(pb);
   else if constexpr (std::is_base_of_v<A, B>)
-    return pa == static_cast<const void*>(
-               static_cast<A const*>(static_cast<B const*>(pb)));
+    return static_cast<A const*>(pa) == static_cast<A const*>(pb);
   else if constexpr (std::is_base_of_v<B, A>)
-    return static_cast<const void*>(
-               static_cast<B const*>(static_cast<A const*>(pa))) == pb;
+    return static_cast<B const*>(pa) == static_cast<B const*>(pb);
   else
-    return false;
+    static_assert(std::same_as<A, B>,
+                  "iface_src_ptrs_equal requires related Src types");
 }
 
 template <template <class> class Trait, typename View, typename Src>

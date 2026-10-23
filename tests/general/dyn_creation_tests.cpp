@@ -819,12 +819,6 @@ void TestCacheDyn_ConstructMove() {
   ASF_CHECK_EQ(d->to_string(), asf_test::session_text("CacheCMove", 12));
 }
 
-void TestCacheDyn_TooSmall() {
-  Session s{13, "Tiny"};
-  auto d = asf::to_dyn<Stringable, asf::cache_ptr<1, 1>>(s);
-  ASF_CHECK(!d);
-}
-
 // Trivial payload on purpose: this is the memcpy path. A Trait with no
 // op_construct leaves copy/move as op_trivial; destroy becomes op_from_trait
 // because every table has vt[-1].
@@ -1446,7 +1440,6 @@ int main() {
   ASF_RUN(dyn_creation_tests_detail::TestCacheDyn_FromValue);
   ASF_RUN(dyn_creation_tests_detail::TestCacheDyn_Move);
   ASF_RUN(dyn_creation_tests_detail::TestCacheDyn_ConstructMove);
-  ASF_RUN(dyn_creation_tests_detail::TestCacheDyn_TooSmall);
   ASF_RUN(dyn_creation_tests_detail::TestCacheTrivialCopyMove);
 #if ASF_TEST_VIA_MIRROR
   ASF_RUN(dyn_creation_tests_detail::TestCacheDyn_FromMirror);

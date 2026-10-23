@@ -91,9 +91,8 @@ struct alloc_delete {
   alloc_delete(Alloc a, std::size_t n) noexcept
       : alloc(std::move(a)), size(n) {}
 
+  // Null p is the caller's job (unique_ptr already skips empty).
   void operator()(void* p) const noexcept {
-    if (!p)
-      return;
     using ByteAlloc =
         typename std::allocator_traits<Alloc>::template rebind_alloc<std::byte>;
     ByteAlloc ba(alloc);
@@ -1621,11 +1620,10 @@ struct dyn_adopt_delete_impl : private Free {
   dyn_adopt_delete_impl(void (*fn)(void*), Free f = {}) noexcept
       : Free(std::move(f)), destroy(fn) {}
 
+  // Null p / null destroy: caller's job. Empty unique_ptr never calls this;
+  // a live Ptr with no destroy armed is a bug (crash).
   void operator()(void* p) const noexcept {
-    if (!p)
-      return;
-    if (destroy)
-      destroy(p);
+    destroy(p);
     this->Free::operator()(p);
   }
 };
@@ -1771,11 +1769,9 @@ struct dyn_shared_storage {
         static_cast<std::byte*>(payload) - payload_offset_for(align));
   }
 
-  ~dyn_shared_storage() {
-    void* p = payload();
-    if (auto fn = untag_destroy_fn(destroy))
-      fn(p);
-  }
+  // Always call. Pre-placement arming uses vt_destroy_nop (not null); a
+  // null untagged destroy is a bug (crash).
+  ~dyn_shared_storage() { untag_destroy_fn(destroy)(payload()); }
 };
 
 // allocate_shared proxy: n is always 1 (one object). extra packs Storage
@@ -1847,10 +1843,10 @@ std::shared_ptr<void> make_dyn_sptr(std::size_t size, vt_ptr vt,
   const std::size_t alog = dyn_storage_align_log<Trait>(vt);
   dyn_sptr_proxy_alloc<dyn_shared_storage, Alloc> pa(
       std::move(alloc), size | (alog << dyn_size_value_bits));
-  // Align tag in destroy low bits. Object destroy is armed after placement
-  // so a throwing construct does not run vt[-1] on uninitialized payload.
+  // Align tag in destroy low bits. Arm vt_destroy_nop first so a throwing
+  // construct does not run vt[-1] on uninitialized payload (~ always calls).
   auto p = std::allocate_shared<dyn_shared_storage>(
-      pa, tag_destroy_align(nullptr, alog));
+      pa, tag_destroy_align(vt_destroy_nop, alog));
   void* payload = p->payload();
   return std::shared_ptr<void>(std::move(p), payload);
 }
@@ -2006,7 +2002,8 @@ template <class Core>
 struct dyn_destroy_facet<Core, true> {
   void destroy() {
     auto& s = static_cast<Core&>(*this);
-    if (ptr_get(s.obj_) != nullptr && s.vt_ != nullptr)
+    // Emptiness follows operator bool (cache: vt; else: ptr).
+    if (s)
       dyn_vt_destroy(s.vt_)(ptr_get(s.obj_));
     s.vt_ = nullptr;
     ptr_reset(s.obj_);
@@ -2020,7 +2017,7 @@ template <class Core, template <class> class Trait>
 struct dyn_typeid_facet<Core, Trait, true> {
   const std::type_info& typeid_of() const noexcept {
     auto const& s = static_cast<Core const&>(*this);
-    if (!s.vt_)
+    if (!s)
       return typeid(void);
     return meta_of<Trait>(s.vt_)->typeid_of();
   }
@@ -2033,11 +2030,11 @@ template <class Handle, template <class> class Trait>
 struct dyn_size_facet<Handle, Trait, true> {
   std::size_t size() const noexcept {
     auto const& s = static_cast<Handle const&>(*this);
-    return s.vt_ ? dyn_storage_size<Trait>(s.vt_) : 0;
+    return s ? dyn_storage_size<Trait>(s.vt_) : 0;
   }
   std::size_t align() const noexcept {
     auto const& s = static_cast<Handle const&>(*this);
-    return s.vt_ ? dyn_storage_align<Trait>(s.vt_) : 0;
+    return s ? dyn_storage_align<Trait>(s.vt_) : 0;
   }
 };
 
@@ -2106,7 +2103,7 @@ class dyn_ptr_core
   }
 
   pointer_destroy_fn destroy_fn() const noexcept {
-    if (ptr_get(obj_) != nullptr && vt_ != nullptr)
+    if (*this)
       return dyn_vt_destroy(vt_);
     return nullptr;
   }
@@ -2119,7 +2116,7 @@ class dyn_ptr_core
         static_assert(!SliceCall,
                       "sub_dyn vt_destroy Ptr needs "
                       "pointer_trait::release that accepts this handle");
-        if (ptr_get(obj_) != nullptr && vt_ != nullptr)
+        if (*this)
           dyn_vt_destroy(vt_)(ptr_get(obj_));
         ptr_reset(obj_);
       }
@@ -2130,11 +2127,11 @@ class dyn_ptr_core
     }
   }
 
-  // op_from_trait is the deep vt op applied as that cache slot.
-  // Other live slots are the cache_ptr's own shallow copy / move.
+  // Cache shallow paths (assign / prepare_assign / dtor via dispose) may
+  // trigger this deep teardown; library soft-skips empty (*this).
   void end_cache_payload()
     requires(is_cache_ptr_v<Ptr>) {
-    if (vt_ == nullptr)
+    if (!*this)
       return;
     if constexpr (pointer_trait_can_release<Ptr, Derived>()) {
       pointer_trait<Ptr>::release(static_cast<Derived&>(*this));
@@ -2150,10 +2147,10 @@ class dyn_ptr_core
   }
 
   // Same-geometry payload transfer: fit is guaranteed at compile time, so
-  // no runtime check (occupy, not emplace).
+  // no runtime check (occupy, not emplace). Empty source is a shallow no-op.
   void cache_take_copied_from(dyn_ptr_core const& o)
     requires(is_cache_ptr_v<Ptr> && cache_ptr_copy_via_trait_v<Ptr>) {
-    if (o.vt_ == nullptr)
+    if (!o)
       return;
     if constexpr (SliceCall) {
       // sub: no table head. Construct via the section's own op_construct.
@@ -2170,7 +2167,7 @@ class dyn_ptr_core
 
   void cache_take_moved_from(dyn_ptr_core& o)
     requires(is_cache_ptr_v<Ptr>) {
-    if (o.vt_ == nullptr)
+    if (!o)
       return;
     if constexpr (cache_ptr_move_via_trait_v<Ptr>) {
       if constexpr (SliceCall) {
@@ -2209,7 +2206,7 @@ class dyn_ptr_core
   dyn_ptr_core(dyn_ptr_core const& o)
     requires(is_cache_ptr_v<Ptr> && cache_ptr_copy_live_v<Ptr>)
       : dyn_ptr_core() {
-    if (o.vt_ != nullptr) {
+    if (o) {
       obj_.copy_from(o.obj_, static_cast<Derived const&>(o));
       vt_ = o.vt_;
     }
@@ -2235,7 +2232,7 @@ class dyn_ptr_core
       // (skip the destroy + construct round trip entirely).
       if constexpr (cache_copy_assign_live_v<
                     typename Ptr::ops_type::copy_assign_type>()) {
-        if (vt_ != nullptr && o.vt_ != nullptr) {
+        if (*this && o) {
           obj_.assign_copy_from(o.obj_, static_cast<Derived&>(*this),
                                 static_cast<Derived const&>(o));
           vt_ = o.vt_;
@@ -2245,7 +2242,7 @@ class dyn_ptr_core
       end_cache_payload();
       if constexpr (cache_ptr_copy_via_trait_v<Ptr>) {
         cache_take_copied_from(o);
-      } else if (o.vt_ != nullptr) {
+      } else if (o) {
         obj_.copy_from(o.obj_, static_cast<Derived const&>(o));
         vt_ = o.vt_;
       }
@@ -2273,7 +2270,7 @@ class dyn_ptr_core
     requires(is_cache_ptr_v<Ptr> && cache_ptr_move_live_v<Ptr> &&
              !cache_ptr_move_via_trait_v<Ptr>)
       : dyn_ptr_core() {
-    if (o.vt_ != nullptr) {
+    if (o) {
       vt_ptr v = std::exchange(o.vt_, nullptr);
       obj_.move_from(o.obj_, static_cast<Derived&>(o));
       vt_ = v;
@@ -2297,6 +2294,7 @@ class dyn_ptr_core
              slice_proxy_ok()) {
     if (this != &o) {
       // vt[-1] must run before the pointer frees the storage.
+      // Dtor/assign are shallow: dispose_owned soft-skips empty.
       dispose_owned();
       take_shallow_moved_from(o);
     }
@@ -2308,7 +2306,7 @@ class dyn_ptr_core
     if (this != &o) {
       if constexpr (cache_move_assign_live_v<
                     typename Ptr::ops_type::move_assign_type>()) {
-        if (vt_ != nullptr && o.vt_ != nullptr) {
+        if (*this && o) {
           // Source must stay live for handle-form assign ops; unpublish after.
           obj_.assign_move_from(o.obj_, static_cast<Derived&>(*this),
                                 static_cast<Derived&>(o));
@@ -2350,9 +2348,9 @@ class dyn_ptr_core
 
   std::conditional_t<Const, const void*, void*> raw() const noexcept
     requires(!is_wptr_v<Ptr>) {
-    // cache_ptr's buffer is always addressable; emptiness is the vt's say.
+    // cache_ptr's buffer is always addressable; emptiness follows bool.
     if constexpr (is_cache_ptr_v<Ptr>) {
-      if (vt_ == nullptr)
+      if (!*this)
         return nullptr;
     }
     if constexpr (Const)
@@ -3090,11 +3088,21 @@ class dyn_handle_base
     return out;
   }
 
+  // Erased construct: size/align come from the source vt (runtime).
   template <class DoConstruct>
   void cache_emplace_owned(vt_ptr vt, std::size_t size,
                            std::size_t align, DoConstruct&& do_construct)
     requires(is_cache_ptr_v<Ptr> && !Const) {
     void* dst = obj_.emplace(size, align);
+    std::forward<DoConstruct>(do_construct)(dst);
+    vt_ = vt;
+  }
+
+  // Typed adopt: Spec fit already static_assert'd; no runtime size/align.
+  template <class DoConstruct>
+  void cache_occupy_owned(vt_ptr vt, DoConstruct&& do_construct)
+    requires(is_cache_ptr_v<Ptr> && !Const) {
+    void* dst = obj_.occupy();
     std::forward<DoConstruct>(do_construct)(dst);
     vt_ = vt;
   }
@@ -3154,7 +3162,8 @@ class dyn_handle_base
       dyn_handle_base<H, From, FromConst, Ptr> const& o) {
     using Src = dyn_handle_base<H, From, FromConst, Ptr>;
     if constexpr (is_cache_ptr_v<Ptr> && cache_ptr_copy_via_trait_v<Ptr>) {
-      if (o.vt_ == nullptr)
+      // Shallow convert may deep-construct; library soft-skips empty source.
+      if (!o)
         return;
       auto* new_vt = Src::template upcast_vt<Trait>(o.vt_);
       // Same geometry: fit is guaranteed at compile time (occupy).
@@ -3162,10 +3171,8 @@ class dyn_handle_base
       dyn_construct_of<From, false>(o.vt_)(ptr_get(o.obj_), dst);
       vt_ = new_vt;
     } else {
-      vt_ptr src_vt = o.vt_;
       obj_ = o.obj_;
-      vt_ = src_vt != nullptr ? Src::template upcast_vt<Trait>(src_vt)
-                              : nullptr;
+      vt_ = o ? Src::template upcast_vt<Trait>(o.vt_) : nullptr;
     }
   }
 
@@ -3174,18 +3181,19 @@ class dyn_handle_base
   void take_upcast_move(dyn_handle_base<H, From, FromConst, Ptr>&& o) {
     using Src = dyn_handle_base<H, From, FromConst, Ptr>;
     if constexpr (is_cache_ptr_v<Ptr> && cache_ptr_move_via_trait_v<Ptr>) {
-      if (o.vt_ == nullptr)
+      if (!o)
         return;
       auto* new_vt = Src::template upcast_vt<Trait>(o.vt_);
       void* dst = obj_.occupy();
       dyn_construct_of<From, true>(o.vt_)(ptr_get(o.obj_), dst);
       vt_ = new_vt;
       o.dispose_owned();
+    } else if (!o) {
+      return;
     } else {
       vt_ptr src_vt = std::exchange(o.vt_, nullptr);
       obj_ = std::move(o.obj_);
-      vt_ = src_vt != nullptr ? Src::template upcast_vt<Trait>(src_vt)
-                              : nullptr;
+      vt_ = Src::template upcast_vt<Trait>(src_vt);
     }
   }
 
@@ -3199,25 +3207,21 @@ class dyn_handle_base
     } else if constexpr (dyn_ptr_deleter_handoff<Ptr, SrcP, SrcP const&>()) {
       vt_ptr src_vt = o.vt_;
       obj_ = dyn_ptr_to_deleter_copy<Ptr>(o.obj_, src_vt);
-      vt_ = this->obj_ && src_vt != nullptr
-                ? Src::template upcast_vt<Trait>(src_vt)
-                : nullptr;
+      vt_ = *this ? Src::template upcast_vt<Trait>(src_vt) : nullptr;
     } else if constexpr (dyn_cache_grow<Ptr, SrcP>() &&
                          cache_ptr_copy_via_trait_v<Ptr> &&
                          cache_ptr_copy_via_trait_v<SrcP>) {
       // Grow-only erased cache -> cache: the payload lived in the
       // smaller-or-equal source buffer, so it provably fits (occupy).
-      if (o.vt_ == nullptr)
+      if (!o)
         return;
       auto* new_vt = Src::template upcast_vt<Trait>(o.vt_);
       void* dst = obj_.occupy();
       dyn_construct_of<From, false>(o.vt_)(ptr_get(o.obj_), dst);
       vt_ = new_vt;
     } else {
-      vt_ptr src_vt = o.vt_;
       obj_ = ptr_type(o.obj_);
-      vt_ = src_vt != nullptr ? Src::template upcast_vt<Trait>(src_vt)
-                              : nullptr;
+      vt_ = o ? Src::template upcast_vt<Trait>(o.vt_) : nullptr;
     }
   }
 
@@ -3234,28 +3238,27 @@ class dyn_handle_base
       if constexpr (std::is_pointer_v<SrcP>)
         o.obj_ = nullptr;
       obj_ = std::move(next);
-      vt_ = this->obj_ && src_vt != nullptr
-                ? Src::template upcast_vt<Trait>(src_vt)
-                : nullptr;
+      vt_ = *this ? Src::template upcast_vt<Trait>(src_vt) : nullptr;
     } else if constexpr (dyn_cache_grow<Ptr, SrcP>() &&
                          cache_ptr_move_via_trait_v<Ptr> &&
                          cache_ptr_move_via_trait_v<SrcP>) {
       // Grow-only erased cache -> cache: provably fits (occupy).
-      if (o.vt_ == nullptr)
+      if (!o)
         return;
       auto* new_vt = Src::template upcast_vt<Trait>(o.vt_);
       void* dst = obj_.occupy();
       dyn_construct_of<From, true>(o.vt_)(ptr_get(o.obj_), dst);
       vt_ = new_vt;
       o.dispose_owned();
+    } else if (!o) {
+      return;
     } else {
       vt_ptr src_vt = o.vt_;
       if constexpr (!std::is_constructible_v<Ptr, SrcP const&>) {
         src_vt = std::exchange(o.vt_, nullptr);
       }
       obj_ = ptr_type(std::move(o.obj_));
-      vt_ = src_vt != nullptr ? Src::template upcast_vt<Trait>(src_vt)
-                              : nullptr;
+      vt_ = Src::template upcast_vt<Trait>(src_vt);
     }
   }
 
@@ -3508,6 +3511,7 @@ class dyn
 
  private:
   // In-place cache construction (detail::dyn_factory_access only).
+  // Erased: size/align from vt. Typed: occupy (fit already static).
   template <class DoConstruct>
   dyn(detail::cache_owned_inplace_t, vt_ptr vt, std::size_t size,
       std::size_t align, DoConstruct&& do_construct)
@@ -3515,6 +3519,13 @@ class dyn
       : base() {
     this->cache_emplace_owned(vt, size, align,
                               std::forward<DoConstruct>(do_construct));
+  }
+
+  template <class DoConstruct>
+  dyn(detail::cache_owned_inplace_t, vt_ptr vt, DoConstruct&& do_construct)
+    requires(detail::is_cache_ptr_v<Ptr>)
+      : base() {
+    this->cache_occupy_owned(vt, std::forward<DoConstruct>(do_construct));
   }
 
  public:

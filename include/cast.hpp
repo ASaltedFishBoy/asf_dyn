@@ -5,7 +5,7 @@
 //   to_iface<Trait>(obj)                     build iface (see iface.hpp)
 //   to_dyn/to_c_dyn                          source must become Ptr (or mirror)
 //   to_dyn<Trait>(ptr|handle)                mirror only if ann::mirror
-//   to_dyn<Trait, cache_ptr>(value|mirror)   -> cache_dyn (empty vt if no fit)
+//   to_dyn<Trait, cache_ptr>(value|mirror)   -> cache_dyn (fit is static_assert)
 //   to_dyn<Trait, cache_ptr<S,A,Ops>>(wrap)  -> cache holding Ptr; VT *Ptr
 //   to_dyn<Trait>(proxy_wrap{Ptr})           -> same, Spec=sizeof/alignof(Ptr)
 //   to_dyn<Trait, uptr>([alloc, ]value)      forward into heap uptr
@@ -89,26 +89,29 @@ consteval bool can_ptr_bind_as() {
 }
 
 // Forward U into final cache Storage; no intermediate dyn / virt op_construct.
+// Fit (sizeof/alignof vs Spec) is a static_assert — all operands are constexpr.
 template <template <class> class Trait, class Spec, class U>
-constexpr auto try_cache_forward_value(U&& object)
+constexpr auto cache_forward_value(U&& object)
     -> cache_dyn_for_t<Trait, Spec, std::remove_cvref_t<U>> {
   using Obj = std::remove_cvref_t<U>;
   using Out = cache_dyn_for_t<Trait, Spec, Obj>;
   static_assert(can_ptr_bind_as<Trait, Obj>(),
                 "cache_ptr value adopt requires Trait final for Obj "
                 "(or ASF_HAS_DYN_INTERMEDIATE)");
-  if (sizeof(Obj) > Spec::size || alignof(Obj) > Spec::align)
-    return {};
+  static_assert(sizeof(Obj) <= Spec::size && alignof(Obj) <= Spec::align,
+                "cache_ptr Spec is too small/narrow for the value type");
   vt_ptr vt = dyn_object_slots<false, Trait, Obj, Obj>();
   return dyn_factory_access::from_cache_inplace<Out>(
-      cache_owned_inplace, vt, sizeof(Obj), alignof(Obj), [&](void* dst) {
+      cache_owned_inplace, vt, [&](void* dst) {
         std::construct_at(static_cast<Obj*>(dst), std::forward<U>(object));
       });
 }
 
-// Forward Src from mirror into final cache Storage.
-template <template <class> class Trait, class Spec, typename T, typename Src>
-constexpr auto try_cache_forward_mirror(mirror<T, Src> m, bool as_move)
+// Forward Src from mirror into final cache Storage. AsMove is the call-site
+// value category (copy vs move of Src), not a runtime flag.
+template <template <class> class Trait, class Spec, bool AsMove, typename T,
+          typename Src>
+constexpr auto cache_forward_mirror(mirror<T, Src> m)
     -> cache_dyn_for_t<Trait, Spec, Src> {
   constexpr bool allow_mirror = layout_allows_mirror_source_as<Trait, T>();
   using Out = cache_dyn_for_t<Trait, Spec, Src>;
@@ -118,12 +121,12 @@ constexpr auto try_cache_forward_mirror(mirror<T, Src> m, bool as_move)
   static_assert(can_ptr_bind_as<Trait, T>(),
                 "cache_ptr mirror adopt requires Trait final for T "
                 "(or ASF_HAS_DYN_INTERMEDIATE)");
-  if (sizeof(Src) > Spec::size || alignof(Src) > Spec::align)
-    return {};
+  static_assert(sizeof(Src) <= Spec::size && alignof(Src) <= Spec::align,
+                "cache_ptr Spec is too small/narrow for the mirror Src");
   vt_ptr vt = dyn_bind_mirror_slots<false, Trait, T, T, Src>();
   return dyn_factory_access::from_cache_inplace<Out>(
-      cache_owned_inplace, vt, sizeof(Src), alignof(Src), [&](void* dst) {
-        if (as_move)
+      cache_owned_inplace, vt, [&](void* dst) {
+        if constexpr (AsMove)
           std::construct_at(static_cast<Src*>(dst), std::move(src_of(m)));
         else
           std::construct_at(static_cast<Src*>(dst), src_of(m));
@@ -133,22 +136,22 @@ constexpr auto try_cache_forward_mirror(mirror<T, Src> m, bool as_move)
 // Place Ptr from proxy_wrap into cache_dyn; Spec is cache_ptr geometry/ops.
 // VT is (Storage=Ptr, As=pointee) with method deref.
 template <template <class> class Trait, class Spec, class P>
-constexpr auto try_proxy_wrap_forward(P&& ptr)
+constexpr auto proxy_wrap_forward(P&& ptr)
     -> cache_dyn_for_t<Trait, Spec, std::remove_cvref_t<P>> {
   using Ptr = std::remove_cvref_t<P>;
   using Elem = ptr_element_t<Ptr>;
   using Out = cache_dyn_for_t<Trait, Spec, Ptr>;
   static_assert(is_cache_ptr_spec_v<Spec>,
-                "try_proxy_wrap_forward requires cache_ptr Spec "
+                "proxy_wrap_forward requires cache_ptr Spec "
                 "(Size/Align/Ops)");
   static_assert(can_ptr_bind_as<Trait, Elem>(),
                 "proxy_wrap adopt requires Trait final for the pointee "
                 "(or ASF_HAS_DYN_INTERMEDIATE)");
-  if (sizeof(Ptr) > Spec::size || alignof(Ptr) > Spec::align)
-    return {};
+  static_assert(sizeof(Ptr) <= Spec::size && alignof(Ptr) <= Spec::align,
+                "cache_ptr Spec is too small/narrow for the wrapped Ptr");
   vt_ptr vt = dyn_object_slots<false, Trait, Ptr, Elem>();
   return dyn_factory_access::from_cache_inplace<Out>(
-      cache_owned_inplace, vt, sizeof(Ptr), alignof(Ptr), [&](void* dst) {
+      cache_owned_inplace, vt, [&](void* dst) {
         std::construct_at(static_cast<Ptr*>(dst), std::forward<P>(ptr));
       });
 }
@@ -302,20 +305,20 @@ struct to_dyn_t {
   template <detail::value_for_owning_ptr U>
     requires(cache)
   constexpr auto operator()(U& object) const {
-    return detail::try_cache_forward_value<Trait, Spec>(object);
+    return detail::cache_forward_value<Trait, Spec>(object);
   }
 
   template <detail::value_for_owning_ptr U>
     requires(cache && !std::is_lvalue_reference_v<U>)
   constexpr auto operator()(U&& object) const {
-    return detail::try_cache_forward_value<Trait, Spec>(
+    return detail::cache_forward_value<Trait, Spec>(
         std::forward<U>(object));
   }
 
   template <class W>
     requires(cache && detail::is_proxy_wrap_v<std::remove_cvref_t<W>>)
   constexpr auto operator()(W&& w) const {
-    return detail::try_proxy_wrap_forward<Trait, Spec>(
+    return detail::proxy_wrap_forward<Trait, Spec>(
         std::forward<W>(w).pointer());
   }
 
@@ -324,7 +327,7 @@ struct to_dyn_t {
   constexpr auto operator()(W&& w) const {
     using Wraw = std::remove_cvref_t<W>;
     using WrapSpec = typename Wraw::default_cache_spec;
-    return detail::try_proxy_wrap_forward<Trait, WrapSpec>(
+    return detail::proxy_wrap_forward<Trait, WrapSpec>(
         std::forward<W>(w).pointer());
   }
 
@@ -344,7 +347,7 @@ struct to_dyn_t {
              !std::is_const_v<T> &&
              detail::mirror_view_is_src_v<T, Src>)
   constexpr auto operator()(mirror<T, Src> m) const {
-    return detail::try_cache_forward_mirror<Trait, Spec>(std::move(m), false);
+    return detail::cache_forward_mirror<Trait, Spec, false>(std::move(m));
   }
 
   template <typename T, typename Src>
@@ -352,7 +355,7 @@ struct to_dyn_t {
              !std::is_const_v<T> &&
              detail::mirror_view_is_src_v<T, Src>)
   constexpr auto operator()(mirror<T, Src>&& m) const {
-    return detail::try_cache_forward_mirror<Trait, Spec>(m, true);
+    return detail::cache_forward_mirror<Trait, Spec, true>(std::move(m));
   }
 
   template <class P>
@@ -398,7 +401,7 @@ struct to_dyn_cache_ptr_t {
     using Obj = std::remove_cvref_t<U>;
     using Spec = CachePtr<sizeof(Obj), alignof(Obj), cache_ops<>>;
     assert_cache_ptr_spec<Spec>();
-    return detail::try_cache_forward_value<Trait, Spec>(object);
+    return detail::cache_forward_value<Trait, Spec>(object);
   }
 
   template <detail::value_for_owning_ptr U>
@@ -407,7 +410,7 @@ struct to_dyn_cache_ptr_t {
     using Obj = std::remove_cvref_t<U>;
     using Spec = CachePtr<sizeof(Obj), alignof(Obj), cache_ops<>>;
     assert_cache_ptr_spec<Spec>();
-    return detail::try_cache_forward_value<Trait, Spec>(
+    return detail::cache_forward_value<Trait, Spec>(
         std::forward<U>(object));
   }
 
@@ -417,7 +420,7 @@ struct to_dyn_cache_ptr_t {
     using Ptr = typename std::remove_cvref_t<W>::pointer_type;
     using Spec = CachePtr<sizeof(Ptr), alignof(Ptr), cache_ops<>>;
     assert_cache_ptr_spec<Spec>();
-    return detail::try_proxy_wrap_forward<Trait, Spec>(
+    return detail::proxy_wrap_forward<Trait, Spec>(
         std::forward<W>(w).pointer());
   }
 
@@ -427,7 +430,7 @@ struct to_dyn_cache_ptr_t {
   constexpr auto operator()(mirror<T, Src> m) const {
     using Spec = CachePtr<sizeof(Src), alignof(Src), cache_ops<>>;
     assert_cache_ptr_spec<Spec>();
-    return detail::try_cache_forward_mirror<Trait, Spec>(std::move(m), false);
+    return detail::cache_forward_mirror<Trait, Spec, false>(std::move(m));
   }
 
   template <typename T, typename Src>
@@ -436,7 +439,7 @@ struct to_dyn_cache_ptr_t {
   constexpr auto operator()(mirror<T, Src>&& m) const {
     using Spec = CachePtr<sizeof(Src), alignof(Src), cache_ops<>>;
     assert_cache_ptr_spec<Spec>();
-    return detail::try_cache_forward_mirror<Trait, Spec>(m, true);
+    return detail::cache_forward_mirror<Trait, Spec, true>(std::move(m));
   }
 
   // Same acceptance as calling this with the iface's second parameter.

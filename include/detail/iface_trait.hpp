@@ -1455,8 +1455,6 @@ struct vtable_meta {
   }
 
   vt_ptr find_vt(const void* to_id) const noexcept {
-    if (!find)
-      return nullptr;
     std::size_t k = find(to_id);
     return k == static_cast<std::size_t>(-1) ? nullptr : tables()[k];
   }

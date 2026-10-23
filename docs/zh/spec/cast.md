@@ -96,7 +96,7 @@ dyn<Trait, std::unique_ptr<void, alloc_delete<Alloc>>>
 to_dyn<Trait, std::unique_ptr>(Alloc alloc, U&& object);
 ```
 
-值（或 sourced-mirror 的 Src）转发构造到最终存储。无中间 dyn。容量不够时仅 cache 返回空 `vt` 的 dyn (`!h`)。`Alloc` 是可选的第一个实参。`std::allocator` 仍是默认 `unique_dyn`（`::operator delete`），不是 `alloc_delete`。
+值（或 sourced-mirror 的 Src）转发构造到最终存储。无中间 dyn。Cache Spec 拟合（`sizeof` / `alignof` 对 Size/Align）不够则编译错误。`Alloc` 是可选的第一个实参。`std::allocator` 仍是默认 `unique_dyn`（`::operator delete`），不是 `alloc_delete`。
 
 ```cpp
 template <class Ptr>
@@ -108,7 +108,7 @@ cache_dyn<Trait, sizeof(Ptr), alignof(Ptr), /* ... */>
 to_dyn<Trait>(proxy_wrap<Ptr> w);
 ```
 
-`proxy_wrap<Ptr>` 持有可解引用的 `Ptr`。交给 `to_dyn` 时用 `cache_ptr` Spec（或不写 Spec，默认 `sizeof`/`alignof(Ptr)`）。放得下时把 Ptr 放进 cache 缓冲。虚表键是 `Ptr`，`As` 为 pointee：方法解引用；深构造 / 析构仍在 `Ptr` 上。`meta.type` 报 pointee。若 cache ops 盖掉了 copy 和/或 move，对应的深 `op_construct` 槽可以空着。
+`proxy_wrap<Ptr>` 持有可解引用的 `Ptr`。交给 `to_dyn` 时用 `cache_ptr` Spec（或不写 Spec，默认 `sizeof`/`alignof(Ptr)`）。Ptr 放进 cache 缓冲；Spec 拟合不够则编译错误。虚表键是 `Ptr`，`As` 为 pointee：方法解引用；深构造 / 析构仍在 `Ptr` 上。`meta.type` 报 pointee。若 cache ops 盖掉了 copy 和/或 move，对应的深 `op_construct` 槽可以空着。
 
 ```cpp
 template <template <class...> class Ptr, template <class> class From, class SrcP>
@@ -235,7 +235,7 @@ auto construct(Alloc alloc, /* *dyn or rproxy */, Extra&&... extra);
 
 其他 `OutPtr` 保持原类型；`alloc` 只用于分配。
 
-`OutPtr` 是 `cache_ptr`： `cache_dyn<Trait, …>`， `cache_ops` 按 Trait 推导。容量不够则空 `vt`。
+`OutPtr` 是 `cache_ptr`： `cache_dyn<Trait, …>`， `cache_ops` 按 Trait 推导。擦除源的存储放不下则空 `vt`（size/align 来自 vt）。
 
 自定义 `OutPtr`（如 `fake_uptr`）：`dyn<Trait, OutPtr<void>>`。
 
