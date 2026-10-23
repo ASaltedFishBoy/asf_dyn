@@ -44,7 +44,7 @@ template <class V>
 explicit iface(V&& object);
 ```
 
-`Self` must be constructible from `V`. `V` must not be this handle type. For a plain object the argument must be an lvalue (the handle stores its address). When `T` is an unsourced `mirror` (`mirror<View>`), the Trait still needs `[[=mirror]]` (see [annotations.md](annotations.md)).
+`Self` must be constructible from `V`. `V` must not be this handle type. For a plain object the argument must be an lvalue (the handle stores its address). Binding from a `mirror` (sourced or unsourced) is ungated: every method stays callable; `[[=mirror]]` only chooses the presented Self at each call (see [annotations.md](annotations.md), [mirror.md](mirror.md)).
 
 A plain-object `iface` stores `T*` / `const T*` and is rebindable by assignment. An `iface` is **always bound**: there is no null state, no default constructor, and no `operator bool` / null comparison. (Contrast: `dyn` is pointer semantics — nullable, default-constructible, with `operator bool`.) `==` is identity by address, not a null check. A mirror-backed `iface` keeps its mirror value: sourced mirrors also compare through `src_of` / the private `Src*` identity; `mirror` itself is not default-constructible.
 
@@ -69,7 +69,7 @@ Factory: it picks the second template argument. `iface` cannot (`Trait` plus `T`
 
 `V` is a sourced `mirror<View, Src>`: `iface<Trait, mirror<View, Src>>`.
 
-`V` is unsourced mirror-like: `iface<Trait, View>`.
+`V` is unsourced mirror-like: `iface<Trait, mirror<View>>` (bind ungated; `[[=mirror]]` at each call).
 
 Otherwise: `iface<Trait, std::remove_reference_t<V>>` (`const Person&` → `iface<Trait, const Person>`).
 
@@ -78,7 +78,7 @@ template <template <class> class Trait, class V>
 constexpr auto to_c_iface(V&& object);
 ```
 
-Const-view counterpart of `to_iface` (symmetric with `to_c_dyn` next to `to_dyn`): a plain object gives `iface<Trait, const T>`; a sourced `mirror<View, Src>` gives `iface<Trait, mirror<const View, Src>>`; unsourced mirror-like gives `iface<Trait, const View>`.
+Const-view counterpart of `to_iface` (symmetric with `to_c_dyn` next to `to_dyn`): a plain object gives `iface<Trait, const T>`; a sourced `mirror<View, Src>` gives `iface<Trait, mirror<const View, Src>>`; unsourced mirror-like gives `iface<Trait, mirror<const View>>`.
 
 No `iface` form has a default constructor; every `iface` is bound at construction.
 

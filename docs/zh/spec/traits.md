@@ -34,7 +34,7 @@ struct Trait<MyType> final {
 ## 方法与虚表
 
 - 默认：方法进入 **dyn 虚表槽**（类似虚函数）。
-- **dyn 槽**：`self` 必须是第一个参数，且最多一个模板推导参数（就是 self）。
+- **dyn 槽**：`self` 必须是第一个参数，且最多一个模板推导参数（就是 self）；返回类型须写在声明上（不允许未定 `auto` / `decltype(auto)` 返回）。
 - 接口属性注解可标在 **类型**（`Trait<void>`）或 **方法**（接口）上。标在类型上时，该声明里的每个方法都继承这条注解。标在方法上时，覆盖类型上的同名注解。同一声明上同时写一对相反属性是错的。成对：`[[=expl]]`/`[[=no_expl]]`、`[[=imple]]`/`[[=no_imple]]`、`[[=mirror]]`/`[[=no_mirror]]`。（`static` 是声明属性，不是注解。）见 [annotations.md](annotations.md)。
 - 第二个推导参数不能动态派发（编译错误）；该重载标 `static`，仅用于 iface。
 - `static`：不进 dyn 槽，仅用于 `iface`（无重新加入）。
@@ -47,7 +47,7 @@ struct Trait<MyType> final {
 | 名字 | 含义 |
 | -------------- | ------------------------------------------------------------------------------------------ |
 | *（destroy）* | 不是 Trait 方法。每张虚表都有 `vt[-1]` destroy（`~Src` / `~Storage`）。平凡析构共用一个空函数指针。句柄 `destroy()` 调用该槽 |
-| `op_construct` | 擦除构造；返回 `auto`/具体类型（非 `void`）。`[[=imple]]` 不按名查找：按声明参数选构造函数（`auto&&` 是右值）。各重载是普通 dyn 槽，只按参数分发（含 `self` 值类别） |
+| `op_construct` | 擦除构造。返回类型必须是首参的 `remove_cvref`（例如 `-> std::remove_cvref_t<decltype(self)>`）；具体类型仅限只针对该类型的实现。各重载是普通 dyn 槽，只按参数分发（含 `self` 值类别） |
 | `op_assign*` | `(*h) = x` 具体 RHS 赋值（非 Src/`auto`） |
 | `op_convert*` | `To(*h)` 转换；`[[=expl]]` 标为显式 |
 

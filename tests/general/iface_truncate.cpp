@@ -97,47 +97,47 @@ struct Obj {
 
 template <>
 struct A<Obj> {
-  static std::string a(const Obj& self) { return self.name + "/a"; }
+  static std::string a(Obj& self) { return self.name + "/a"; }
 };
 template <>
 struct B<Obj> {
-  static std::string b(const Obj& self) { return self.name + "/b"; }
+  static std::string b(Obj& self) { return self.name + "/b"; }
 };
 template <>
 struct C<Obj> {
-  static std::string c(const Obj& self) { return self.name + "/c"; }
+  static std::string c(Obj& self) { return self.name + "/c"; }
 };
 template <>
 struct Mid<Obj> final {
-  static std::string mid(const Obj& self) { return self.name + "/mid"; }
+  static std::string mid(Obj& self) { return self.name + "/mid"; }
 };
 template <>
 struct MidCut<Obj> {
-  static std::string mid(const Obj& self) { return self.name + "/mid"; }
+  static std::string mid(Obj& self) { return self.name + "/mid"; }
 };
 template <>
 struct LeafViaMid<Obj> final {
-  static std::string leaf(const Obj& self) { return self.name + "/leaf"; }
+  static std::string leaf(Obj& self) { return self.name + "/leaf"; }
 };
 template <>
 struct LeafEdge<Obj> final {
-  static std::string leaf(const Obj& self) { return self.name + "/leaf"; }
+  static std::string leaf(Obj& self) { return self.name + "/leaf"; }
 };
 template <>
 struct BTrunc<Obj> {
-  static std::string b(const Obj& self) { return self.name + "/b"; }
+  static std::string b(Obj& self) { return self.name + "/b"; }
 };
 template <>
 struct LeafPassive<Obj> final {
-  static std::string leaf(const Obj& self) { return self.name + "/leaf"; }
+  static std::string leaf(Obj& self) { return self.name + "/leaf"; }
 };
 template <>
 struct Side<Obj> {
-  static std::string side(const Obj& self) { return self.name + "/side"; }
+  static std::string side(Obj& self) { return self.name + "/side"; }
 };
 template <>
 struct LeafSideCut<Obj> final {
-  static std::string leaf(const Obj& self) { return self.name + "/leaf"; }
+  static std::string leaf(Obj& self) { return self.name + "/leaf"; }
 };
 
 // --- Mid: truncate on self ---

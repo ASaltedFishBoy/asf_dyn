@@ -50,14 +50,15 @@ class iface_mut_body {
   using fns_type = typename iface_fn_box<Trait, T, Src>::data;
   static constexpr bool allows_mirror_source =
       layout_allows_mirror_source_as<Trait, T>();
-  static_assert(allows_mirror_source || std::is_void_v<Src>,
-                "non-mirror Trait: iface<Trait, T>: the argument is the "
-                "object, not a mirror view");
+  static constexpr bool unsourced_mirror_arg =
+      iface_src_is_unsourced_mirror_v<Src>;
+  // Mirror Arg (sourced or unsourced): bind is ungated. [[=mirror]] only
+  // selects what each call presents as Self (see invoke_method).
   // Pointer semantics for a plain object; mirror Self stays a value.
   static constexpr bool plain_pointer =
-      std::is_void_v<Src> && !allows_mirror_source;
+      iface_src_is_plain_v<Src> && !allows_mirror_source;
   static constexpr bool has_identity =
-      plain_pointer || !std::is_void_v<Src>;
+      plain_pointer || iface_src_is_sourced_v<Src>;
   iface_self_store<Self, plain_pointer> store_;
 
   template <template <class> class, class, typename, typename>
@@ -74,12 +75,12 @@ class iface_mut_body {
     requires(!std::same_as<std::remove_cvref_t<V>, Derived> &&
              std::constructible_from<Self, V> &&
              (!is_mirror_like_v<std::remove_cvref_t<V>> ||
-              allows_mirror_source) &&
+              allows_mirror_source || !iface_src_is_plain_v<Src>) &&
              (!plain_pointer || std::is_lvalue_reference_v<V>) &&
-             (std::is_void_v<Src> ? (!std::same_as<Self, identity_mirror<T>> ||
-                                     std::same_as<std::remove_cvref_t<V>,
-                                                  identity_mirror<T>>)
-                                  : true))
+             (iface_src_is_plain_v<Src>
+                  ? (!std::same_as<Self, identity_mirror<T>> ||
+                     std::same_as<std::remove_cvref_t<V>, identity_mirror<T>>)
+                  : true))
   explicit iface_mut_body(V&& object)
       : store_(make_store(std::forward<V>(object))) {}
 
@@ -201,14 +202,22 @@ class iface_mut_body {
 
   template <template <class> class To>
     requires(can_iface_convert_of<
-             To, Trait, std::conditional_t<std::is_void_v<Src>, T, mirror<T, Src>>>())
+             To, Trait,
+             std::conditional_t<
+                 iface_src_is_plain_v<Src>, T,
+                 std::conditional_t<unsourced_mirror_arg, mirror<T>,
+                                    mirror<T, Src>>>>())
   iface_shape_t<To, T, Src> trait_cast() const {
     return iface_shape_t<To, T, Src>(store_.self());
   }
 
   template <template <class> class To>
     requires(can_iface_convert_of<
-             To, Trait, std::conditional_t<std::is_void_v<Src>, T, mirror<T, Src>>>())
+             To, Trait,
+             std::conditional_t<
+                 iface_src_is_plain_v<Src>, T,
+                 std::conditional_t<unsourced_mirror_arg, mirror<T>,
+                                    mirror<T, Src>>>>())
   c_iface_shape_t<To, T, Src> c_trait_cast() const {
     return c_iface_shape_t<To, T, Src>(store_.self());
   }
@@ -262,7 +271,7 @@ class iface_mut_body {
                   find_special_op_method_on<
                       ^^Trait<void>, std::remove_cvref_t<From>,
                       special_op::assign>()) ||
-              !std::is_void_v<Src>))
+              iface_src_is_sourced_v<Src>))
   decltype(auto) cast_assign(From&& rhs) {
     using Key = std::remove_cvref_t<From>;
     constexpr auto method =
@@ -280,14 +289,13 @@ class iface_const_body {
   using fns_type = typename c_iface_fn_box<Trait, T, Src>::data;
   static constexpr bool allows_mirror_source =
       layout_allows_mirror_source_as<Trait, T>();
-  static_assert(allows_mirror_source || std::is_void_v<Src>,
-                "non-mirror Trait: iface<Trait, const T>: the argument is "
-                "the object, not a mirror view");
-  // Pointer semantics for a plain object; mirror Self stays a value.
+  static constexpr bool unsourced_mirror_arg =
+      iface_src_is_unsourced_mirror_v<Src>;
+  // Mirror Arg: bind ungated; [[=mirror]] selects presented Self at call.
   static constexpr bool plain_pointer =
-      std::is_void_v<Src> && !allows_mirror_source;
+      iface_src_is_plain_v<Src> && !allows_mirror_source;
   static constexpr bool has_identity =
-      plain_pointer || !std::is_void_v<Src>;
+      plain_pointer || iface_src_is_sourced_v<Src>;
   iface_self_store<Self, plain_pointer> store_;
 
   template <template <class> class, class, typename, typename>
@@ -312,9 +320,9 @@ class iface_const_body {
              !std::same_as<std::remove_cvref_t<V>, MutSelf> &&
              std::constructible_from<Self, V> &&
              (!is_mirror_like_v<std::remove_cvref_t<V>> ||
-              allows_mirror_source) &&
+              allows_mirror_source || !iface_src_is_plain_v<Src>) &&
              (!plain_pointer || std::is_lvalue_reference_v<V>) &&
-             (std::is_void_v<Src>
+             (iface_src_is_plain_v<Src>
                   ? (!std::same_as<Self, identity_mirror<const T>> ||
                      std::same_as<std::remove_cvref_t<V>,
                                   identity_mirror<const T>>)
@@ -323,10 +331,10 @@ class iface_const_body {
       : store_(make_store(std::forward<V>(object))) {}
 
   explicit iface_const_body(Self self)
-    requires(allows_mirror_source)
+    requires(allows_mirror_source || !iface_src_is_plain_v<Src>)
       : store_(make_store(self)) {}
   explicit iface_const_body(MutSelf self)
-    requires(allows_mirror_source)
+    requires(allows_mirror_source || !iface_src_is_plain_v<Src>)
       : store_(make_store(self)) {}
 
   iface_const_body(const iface_const_body&) = default;
@@ -415,7 +423,10 @@ class iface_const_body {
   template <template <class> class To>
     requires(can_iface_convert_of<
              To, Trait,
-             std::conditional_t<std::is_void_v<Src>, const T, mirror<const T, Src>>>())
+             std::conditional_t<
+                 iface_src_is_plain_v<Src>, const T,
+                 std::conditional_t<unsourced_mirror_arg, mirror<const T>,
+                                    mirror<const T, Src>>>>())
   c_iface_shape_t<To, T, Src> trait_cast() const {
     return c_iface_shape_t<To, T, Src>(store_.self());
   }
@@ -423,7 +434,10 @@ class iface_const_body {
   template <template <class> class To>
     requires(can_iface_convert_of<
              To, Trait,
-             std::conditional_t<std::is_void_v<Src>, const T, mirror<const T, Src>>>())
+             std::conditional_t<
+                 iface_src_is_plain_v<Src>, const T,
+                 std::conditional_t<unsourced_mirror_arg, mirror<const T>,
+                                    mirror<const T, Src>>>>())
   c_iface_shape_t<To, T, Src> c_trait_cast() const {
     return c_iface_shape_t<To, T, Src>(store_.self());
   }
@@ -494,8 +508,35 @@ class iface<Trait, const T>
   using base::base;
 };
 
-template <template <class> class Trait, typename T, typename Src>
+// Unsourced mirror Arg: Self is always the impl mirror; [[=mirror]] is
+// checked per method at call time (no layout gate at bind).
+template <template <class> class Trait, typename T>
   requires(!std::is_const_v<T>)
+class iface<Trait, mirror<T, void>>
+    : public detail::iface_mut_body<Trait, iface<Trait, mirror<T>>, T,
+                                    detail::unsourced_mirror_src> {
+  using base =
+      detail::iface_mut_body<Trait, iface<Trait, mirror<T>>, T,
+                             detail::unsourced_mirror_src>;
+
+ public:
+  using base::base;
+};
+
+template <template <class> class Trait, typename T>
+class iface<Trait, mirror<const T, void>>
+    : public detail::iface_const_body<Trait, iface<Trait, mirror<const T>>, T,
+                                      detail::unsourced_mirror_src> {
+  using base =
+      detail::iface_const_body<Trait, iface<Trait, mirror<const T>>, T,
+                               detail::unsourced_mirror_src>;
+
+ public:
+  using base::base;
+};
+
+template <template <class> class Trait, typename T, typename Src>
+  requires(!std::is_const_v<T> && !std::is_void_v<Src>)
 class iface<Trait, mirror<T, Src>>
     : public detail::iface_mut_body<Trait, iface<Trait, mirror<T, Src>>, T,
                                     Src> {
@@ -507,6 +548,7 @@ class iface<Trait, mirror<T, Src>>
 };
 
 template <template <class> class Trait, typename T, typename Src>
+  requires(!std::is_void_v<Src>)
 class iface<Trait, mirror<const T, Src>>
     : public detail::iface_const_body<Trait,
                                       iface<Trait, mirror<const T, Src>>, T,
@@ -523,10 +565,10 @@ template <template <class> class Trait, typename V>
 constexpr auto to_iface(V&& object) {
   using Raw = std::remove_cvref_t<V>;
   if constexpr (is_sourced_mirror_v<Raw>) {
-    static_assert(
-        detail::layout_allows_mirror_source_as<Trait, mirror_target_t<Raw>>(),
-        "mirror -> iface requires [[=asf_ann::mirror]] on every "
-        "Trait in the inheritance layout");
+    // Bind ungated; [[=mirror]] selects presented Self at each call.
+    return iface<Trait, Raw>(std::forward<V>(object));
+  } else if constexpr (is_mirror_like_v<Raw>) {
+    // Unsourced: keep mirror<View>; bind ungated.
     return iface<Trait, Raw>(std::forward<V>(object));
   } else {
     using As = detail::deduce_iface_t<V>;
@@ -551,15 +593,13 @@ using c_iface = typename c_iface_select<Trait, T>::type;
 // to_iface's const-view counterpart (symmetric with to_c_dyn next to
 // to_dyn): plain object -> iface<Trait, const T>; sourced mirror ->
 // iface<Trait, mirror<const View, Src>>; unsourced mirror-like ->
-// iface<Trait, const View>.
+// iface<Trait, mirror<const View>> (Arg stays unsourced mirror).
 template <template <class> class Trait, typename V>
 constexpr auto to_c_iface(V&& object) {
   using Raw = std::remove_cvref_t<V>;
   if constexpr (is_sourced_mirror_v<Raw>) {
-    static_assert(
-        detail::layout_allows_mirror_source_as<Trait, mirror_target_t<Raw>>(),
-        "mirror -> iface requires [[=asf_ann::mirror]] on every "
-        "Trait in the inheritance layout");
+    return c_iface<Trait, Raw>(std::forward<V>(object));
+  } else if constexpr (is_mirror_like_v<Raw>) {
     return c_iface<Trait, Raw>(std::forward<V>(object));
   } else {
     using As = detail::deduce_iface_t<V>;

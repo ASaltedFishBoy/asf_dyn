@@ -267,6 +267,294 @@ void TestObserverDispatch() {
   ASF_CHECK(!weak.lock());
 }
 
+// imple order: Trait<T> -> imple(T) -> Trait<void>. Unique tags so a wrong
+// layer cannot hide behind a matching value.
+inline constexpr int k_imple_trait_t = 5101;
+inline constexpr int k_imple_from_t = 5102;
+inline constexpr int k_imple_default = 5103;
+inline constexpr int k_no_imple_default = 5104;
+inline constexpr int k_trait_level_from_t = 5105;
+inline constexpr int k_imple_over_int = 5106;
+inline constexpr int k_imple_over_cstr = 5107;
+inline constexpr int k_skip_src_default = 5108;
+inline constexpr int k_skip_src_unused = 5199;
+
+template <typename T = void>
+struct ImpleOrder;
+
+// Trait<void> final: un-specialized T still emits a vt (no empty Trait<T>).
+template <>
+struct ASF_TEST_TRAIT_MIRROR
+ImpleOrder<void> final {
+  [[=asf_ann::imple]] int tag(auto const&) { return k_imple_default; }
+};
+
+struct ImpleOrderBoth {
+  int tag() const { return k_imple_from_t; }
+};
+
+template <>
+struct ImpleOrder<ImpleOrderBoth> {
+  static int tag(ASF_TEST_CM(ImpleOrderBoth)) { return k_imple_trait_t; }
+};
+
+struct ImpleOrderSrcOnly {
+  int tag() const { return k_imple_from_t; }
+};
+
+template <typename T = void>
+struct ImpleSkipSrc;
+
+template <>
+struct ASF_TEST_TRAIT_MIRROR
+ImpleSkipSrc<void> final {
+  // Not imple: object's tag must not be selected.
+  int tag(auto const&) { return k_skip_src_default; }
+};
+
+struct ImpleSkipSrcObj {
+  int tag() const { return k_skip_src_unused; }
+};
+
+template <typename T = void>
+struct ImpleTraitLevel;
+
+template <>
+struct [[=asf_ann::imple]] ASF_TEST_TRAIT_MIRROR
+ImpleTraitLevel<void> final {
+  int a(auto const&) { return k_imple_default; }
+  [[=asf_ann::no_imple]] int b(auto const&) { return k_no_imple_default; }
+};
+
+struct ImpleTraitLevelObj {
+  int a() const { return k_trait_level_from_t; }
+  int b() const { return k_skip_src_unused; }
+};
+
+template <typename T = void>
+struct ImpleOverload;
+
+template <>
+struct ASF_TEST_TRAIT_MIRROR
+ImpleOverload<void> final {
+  [[=asf_ann::imple]] int pick(auto const&, int) { return k_imple_default; }
+  [[=asf_ann::imple]] int pick(auto const&, const char*) {
+    return k_imple_default;
+  }
+};
+
+struct ImpleOverloadObj {
+  int pick(int) const { return k_imple_over_int; }
+  int pick(const char*) const { return k_imple_over_cstr; }
+};
+
+void TestImpleOrder_TraitTWins() {
+  ImpleOrderBoth o{};
+  auto p = asf_test::to_dyn<ImpleOrder>(o);
+  ASF_CHECK_EQ(p->tag(), k_imple_trait_t);
+  auto i = asf_test::to_iface<ImpleOrder>(o);
+  ASF_CHECK_EQ(i->tag(), k_imple_trait_t);
+}
+
+void TestImpleOrder_ImpleWins() {
+  ImpleOrderSrcOnly o{};
+  auto p = asf_test::to_dyn<ImpleOrder>(o);
+  ASF_CHECK_EQ(p->tag(), k_imple_from_t);
+  auto i = asf_test::to_iface<ImpleOrder>(o);
+  ASF_CHECK_EQ(i->tag(), k_imple_from_t);
+}
+
+void TestImpleOrder_DefaultWithoutImple() {
+  ImpleSkipSrcObj o{};
+  auto p = asf_test::to_dyn<ImpleSkipSrc>(o);
+  ASF_CHECK_EQ(p->tag(), k_skip_src_default);
+  auto i = asf_test::to_iface<ImpleSkipSrc>(o);
+  ASF_CHECK_EQ(i->tag(), k_skip_src_default);
+}
+
+void TestImpleOrder_TraitLevelAndNoImple() {
+  ImpleTraitLevelObj o{};
+  auto p = asf_test::to_dyn<ImpleTraitLevel>(o);
+  ASF_CHECK_EQ(p->a(), k_trait_level_from_t);
+  ASF_CHECK_EQ(p->b(), k_no_imple_default);
+  auto i = asf_test::to_iface<ImpleTraitLevel>(o);
+  ASF_CHECK_EQ(i->a(), k_trait_level_from_t);
+  ASF_CHECK_EQ(i->b(), k_no_imple_default);
+}
+
+void TestImpleOrder_OverloadOnT() {
+  ImpleOverloadObj o{};
+  auto p = asf_test::to_dyn<ImpleOverload>(o);
+  ASF_CHECK_EQ(p->pick(0), k_imple_over_int);
+  ASF_CHECK_EQ(p->pick("x"), k_imple_over_cstr);
+  auto i = asf_test::to_iface<ImpleOverload>(o);
+  ASF_CHECK_EQ(i->pick(1), k_imple_over_int);
+  ASF_CHECK_EQ(i->pick("y"), k_imple_over_cstr);
+}
+
+// imple object-member const / ref-qual vs Trait self: const must match;
+// lvalue self matches unqualified or `&`; rvalue self needs `&&`. Mismatch
+// falls through to Trait<void> (unique tags).
+inline constexpr int k_qual_default = 5110;
+inline constexpr int k_qual_unqual = 5111;
+inline constexpr int k_qual_lref = 5112;
+inline constexpr int k_qual_rref = 5113;
+inline constexpr int k_qual_const = 5114;
+inline constexpr int k_qual_const_lref = 5115;
+inline constexpr int k_qual_const_rref = 5116;
+
+template <typename T = void>
+struct ImpleQualL;
+
+template <>
+struct ASF_TEST_TRAIT_MIRROR
+ImpleQualL<void> final {
+  [[=asf_ann::imple]] int tag(auto&) { return k_qual_default; }
+};
+
+struct ImpleQualUnqual {
+  int tag() { return k_qual_unqual; }
+};
+
+struct ImpleQualLRef {
+  int tag() & { return k_qual_lref; }
+};
+
+struct ImpleQualRRefOnly {
+  int tag() && { return k_qual_rref; }
+};
+
+struct ImpleQualConstOnly {
+  int tag() const { return k_qual_const; }
+};
+
+template <typename T = void>
+struct ImpleQualC;
+
+template <>
+struct ASF_TEST_TRAIT_MIRROR
+ImpleQualC<void> final {
+  [[=asf_ann::imple]] int tag(auto const&) { return k_qual_default; }
+};
+
+struct ImpleQualMutOnly {
+  int tag() { return k_qual_unqual; }
+};
+
+struct ImpleQualConstLRef {
+  int tag() const& { return k_qual_const_lref; }
+};
+
+template <typename T = void>
+struct ImpleQualR;
+
+template <>
+struct ASF_TEST_TRAIT_MIRROR
+ImpleQualR<void> final {
+  [[=asf_ann::imple]] int tag(auto&&) { return k_qual_default; }
+};
+
+struct ImpleQualRRef {
+  int tag() && { return k_qual_rref; }
+};
+
+struct ImpleQualLRefOnly {
+  int tag() & { return k_qual_lref; }
+};
+
+template <typename T = void>
+struct ImpleQualCR;
+
+template <>
+struct ASF_TEST_TRAIT_MIRROR
+ImpleQualCR<void> final {
+  [[=asf_ann::imple]] int tag(auto const&&) { return k_qual_default; }
+};
+
+struct ImpleQualConstRRef {
+  int tag() const&& { return k_qual_const_rref; }
+};
+
+void TestImpleQual_LvalueUnqual() {
+  ImpleQualUnqual o{};
+  auto p = asf_test::to_dyn<ImpleQualL>(o);
+  ASF_CHECK_EQ(p->tag(), k_qual_unqual);
+  auto i = asf_test::to_iface<ImpleQualL>(o);
+  ASF_CHECK_EQ(i->tag(), k_qual_unqual);
+}
+
+void TestImpleQual_LvalueRefQual() {
+  ImpleQualLRef o{};
+  auto p = asf_test::to_dyn<ImpleQualL>(o);
+  ASF_CHECK_EQ(p->tag(), k_qual_lref);
+  auto i = asf_test::to_iface<ImpleQualL>(o);
+  ASF_CHECK_EQ(i->tag(), k_qual_lref);
+}
+
+void TestImpleQual_LvalueRejectsRvalueMem() {
+  ImpleQualRRefOnly o{};
+  auto p = asf_test::to_dyn<ImpleQualL>(o);
+  ASF_CHECK_EQ(p->tag(), k_qual_default);
+  auto i = asf_test::to_iface<ImpleQualL>(o);
+  ASF_CHECK_EQ(i->tag(), k_qual_default);
+}
+
+void TestImpleQual_LvalueRejectsConstMem() {
+  ImpleQualConstOnly o{};
+  auto p = asf_test::to_dyn<ImpleQualL>(o);
+  ASF_CHECK_EQ(p->tag(), k_qual_default);
+  auto i = asf_test::to_iface<ImpleQualL>(o);
+  ASF_CHECK_EQ(i->tag(), k_qual_default);
+}
+
+void TestImpleQual_ConstMatch() {
+  ImpleQualConstOnly o{};
+  auto p = asf_test::to_dyn<ImpleQualC>(o);
+  ASF_CHECK_EQ(p->tag(), k_qual_const);
+  auto i = asf_test::to_iface<ImpleQualC>(o);
+  ASF_CHECK_EQ(i->tag(), k_qual_const);
+}
+
+void TestImpleQual_ConstLRefMatch() {
+  ImpleQualConstLRef o{};
+  auto p = asf_test::to_dyn<ImpleQualC>(o);
+  ASF_CHECK_EQ(p->tag(), k_qual_const_lref);
+  auto i = asf_test::to_iface<ImpleQualC>(o);
+  ASF_CHECK_EQ(i->tag(), k_qual_const_lref);
+}
+
+void TestImpleQual_ConstRejectsMutMem() {
+  ImpleQualMutOnly o{};
+  auto p = asf_test::to_dyn<ImpleQualC>(o);
+  ASF_CHECK_EQ(p->tag(), k_qual_default);
+  auto i = asf_test::to_iface<ImpleQualC>(o);
+  ASF_CHECK_EQ(i->tag(), k_qual_default);
+}
+
+void TestImpleQual_RvalueRefQual() {
+  ImpleQualRRef o{};
+  auto p = asf_test::to_dyn<ImpleQualR>(o);
+  ASF_CHECK_EQ(p->tag(), k_qual_rref);
+  auto i = asf_test::to_iface<ImpleQualR>(o);
+  ASF_CHECK_EQ(i->tag(), k_qual_rref);
+}
+
+void TestImpleQual_RvalueRejectsLvalueMem() {
+  ImpleQualLRefOnly o{};
+  auto p = asf_test::to_dyn<ImpleQualR>(o);
+  ASF_CHECK_EQ(p->tag(), k_qual_default);
+  auto i = asf_test::to_iface<ImpleQualR>(o);
+  ASF_CHECK_EQ(i->tag(), k_qual_default);
+}
+
+void TestImpleQual_ConstRvalueMatch() {
+  ImpleQualConstRRef o{};
+  auto p = asf_test::to_dyn<ImpleQualCR>(o);
+  ASF_CHECK_EQ(p->tag(), k_qual_const_rref);
+  auto i = asf_test::to_iface<ImpleQualCR>(o);
+  ASF_CHECK_EQ(i->tag(), k_qual_const_rref);
+}
+
 }  // namespace dyn_invocation_tests_detail
 
 int main() {
@@ -278,5 +566,20 @@ int main() {
   ASF_RUN(dyn_invocation_tests_detail::TestOverloadResolution_Member);
   ASF_RUN(dyn_invocation_tests_detail::TestMultipleDispatches_Duplicated);
   ASF_RUN(dyn_invocation_tests_detail::TestObserverDispatch);
+  ASF_RUN(dyn_invocation_tests_detail::TestImpleOrder_TraitTWins);
+  ASF_RUN(dyn_invocation_tests_detail::TestImpleOrder_ImpleWins);
+  ASF_RUN(dyn_invocation_tests_detail::TestImpleOrder_DefaultWithoutImple);
+  ASF_RUN(dyn_invocation_tests_detail::TestImpleOrder_TraitLevelAndNoImple);
+  ASF_RUN(dyn_invocation_tests_detail::TestImpleOrder_OverloadOnT);
+  ASF_RUN(dyn_invocation_tests_detail::TestImpleQual_LvalueUnqual);
+  ASF_RUN(dyn_invocation_tests_detail::TestImpleQual_LvalueRefQual);
+  ASF_RUN(dyn_invocation_tests_detail::TestImpleQual_LvalueRejectsRvalueMem);
+  ASF_RUN(dyn_invocation_tests_detail::TestImpleQual_LvalueRejectsConstMem);
+  ASF_RUN(dyn_invocation_tests_detail::TestImpleQual_ConstMatch);
+  ASF_RUN(dyn_invocation_tests_detail::TestImpleQual_ConstLRefMatch);
+  ASF_RUN(dyn_invocation_tests_detail::TestImpleQual_ConstRejectsMutMem);
+  ASF_RUN(dyn_invocation_tests_detail::TestImpleQual_RvalueRefQual);
+  ASF_RUN(dyn_invocation_tests_detail::TestImpleQual_RvalueRejectsLvalueMem);
+  ASF_RUN(dyn_invocation_tests_detail::TestImpleQual_ConstRvalueMatch);
   return asf_test::g_failures ? 1 : 0;
 }

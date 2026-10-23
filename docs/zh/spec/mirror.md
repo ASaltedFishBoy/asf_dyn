@@ -240,9 +240,9 @@ class asf::mirror<Widget> : public asf::mirror_base<Widget> {
 
 - `iface<Trait, T>`: Self 来自实现侧 mirror（unsourced 或 sourced）。
 - `iface<Trait, mirror<T, Src>>`: `Self = mirror<T, Src>`.
-- 用户 `mirror` 没有 Src 时只能绑 `iface`（无源 mirror 无 `dyn` 路径），布局里每个方法仍要 `[[=mirror]]`。
+- 用户 `mirror` 没有 Src 时只能绑 `iface`（无 `dyn` 路径）。mirror → `iface`（有源或无源）：绑定不设门禁，每个方法都可调；`[[=mirror]]`（方法标记，否则声明 Trait）只选择呈现 Self——mirror，或对象（`Src`） / 物化出的 View。
 - `dyn` 从 `mirror<T, Src>`： 不要求整棵布局都标 `mirror`。 view 与 `Src` 同类时 Storage 指向对象（每次调用重建 mirror）；view ≠ `Src` 或 `identity_mirror` 时 Storage 指向该 mirror（须比 dyn 活得久）。mirror 段用 `Trait<T>`，非 mirror 段用 `Trait<Src>`。
-- 构造不是 mirror：`op_construct` 不跟 Trait 的 `[[=mirror]]` 走。`self` 是对象（sourced 时是 `Src`）。自己标 `[[=mirror]]` 则不合法。
+- 在 `dyn` 上，`op_construct` 不是 mirror 方法：不跟 Trait 的 `[[=mirror]]` 走。`self` 是对象（sourced 时是 `Src`）。自己标 `[[=mirror]]` 则不合法。
 - destroy 不是 Trait 方法：每张虚表都有 `vt[-1]` destroy（`~Src`）。view 与 `Src` 不一致的 sourced mirror 仍用普通 `dyn`。
 
 ## 参见

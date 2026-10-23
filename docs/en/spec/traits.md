@@ -36,7 +36,7 @@ Implementation requirements: a non-static member on `Trait<T>` is invoked on a f
 ## Methods and the vtable
 
 - Default: the method is a **dyn vtable slot** (like a virtual function).
-- **Dyn slot**: `self` must be the first parameter, and there is at most one deduced template parameter (that is self).
+- **Dyn slot**: `self` must be the first parameter, and there is at most one deduced template parameter (that is self). The return type must be written on the declaration (undetermined `auto` / `decltype(auto)` return is not allowed).
 
 Interface-property annotations may sit on the **type** (`Trait<void>`) or on a **method** (the interface). On the type, every method declared there inherits that annotation. On a method, the annotation overrides the type. Writing both the yes and no forms of a pair on the same declaration is ill-formed. Pairs: `[[=expl]]`/`[[=no_expl]]`, `[[=imple]]`/`[[=no_imple]]`, `[[=mirror]]`/`[[=no_mirror]]`. (`static` on a method is a declaration property, not an annotation.) See [annotations.md](annotations.md).
 
@@ -51,7 +51,7 @@ Interface-property annotations may sit on the **type** (`Trait<void>`) or on a *
 | Name | Meaning |
 | --- | --- |
 | *(destroy)* | Not a Trait method. Every vtable has destroy at `vt[-1]` (`~Src` / `~Storage`). A trivial destructor shares one empty function pointer. Handle `destroy()` calls that slot |
-| `op_construct` | Erased construction. Returns `auto` or a concrete type (not `void`). `[[=imple]]` does not look this up by name: it selects the constructor with the declared parameters (`auto&&` is an rvalue). Overloads are ordinary dyn slots; dispatch is by arguments only (including `self` value category) |
+| `op_construct` | Erased construction. Return type must be `remove_cvref` of the first parameter (e.g. `-> std::remove_cvref_t<decltype(self)>`); a concrete type only if that impl targets that type alone. Overloads are ordinary dyn slots; dispatch is by arguments (including `self` value category) |
 | `op_assign*` | `(*h) = x` for a concrete RHS (not Src / `auto`) |
 | `op_convert*` | `To(*h)`. `[[=expl]]` makes it explicit |
 

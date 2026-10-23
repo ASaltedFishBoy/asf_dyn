@@ -151,7 +151,7 @@ int main() {
   asf::src_of(bare);
   // into = sourced rebinds into onto person; it does not write other.
   // Field write is asf::assign_mirror.
-  // Without [[=mirror]], to_iface rejects a user mirror.
+  // Unsourced mirror -> iface: bind ok without [[=mirror]]; the call needs it.
   // Marking op_construct itself [[=mirror]] is ill-formed when building a vtable.
 #endif
 }

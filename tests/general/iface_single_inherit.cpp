@@ -66,31 +66,31 @@ struct Obj {
 
 template <>
 struct A<Obj> {
-  static std::string a(const Obj& self) { return self.name + "/a"; }
+  static std::string a(Obj& self) { return self.name + "/a"; }
 };
 template <>
 struct B<Obj> {
-  static std::string b(const Obj& self) { return self.name + "/b"; }
+  static std::string b(Obj& self) { return self.name + "/b"; }
 };
 template <>
 struct Linear<Obj> final {
-  static std::string lin(const Obj& self) { return self.name + "/lin"; }
+  static std::string lin(Obj& self) { return self.name + "/lin"; }
 };
 template <>
 struct LiveMI<Obj> final {
-  static std::string mi(const Obj& self) { return self.name + "/mi"; }
+  static std::string mi(Obj& self) { return self.name + "/mi"; }
 };
 template <>
 struct TruncEdge<Obj> final {
-  static std::string leaf(const Obj& self) { return self.name + "/leaf"; }
+  static std::string leaf(Obj& self) { return self.name + "/leaf"; }
 };
 template <>
 struct BTrunc<Obj> {
-  static std::string b(const Obj& self) { return self.name + "/b"; }
+  static std::string b(Obj& self) { return self.name + "/b"; }
 };
 template <>
 struct TruncPassive<Obj> final {
-  static std::string leaf(const Obj& self) { return self.name + "/leaf"; }
+  static std::string leaf(Obj& self) { return self.name + "/leaf"; }
 };
 
 // --- compile-time: live-edge MI detection (independent of the flag) ---
