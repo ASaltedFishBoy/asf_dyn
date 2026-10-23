@@ -140,7 +140,7 @@ RTTI 前缀占位：meta 在 `vt[-2]`。`op_construct` 与其它方法一样在�
 
 ### 开启
 
-**活边单继承**：dyn 生成（`dyn_object_slots` / `instantiate_dyn`）时，若某 section 的**活**直接 Trait 基类超过 1 个则 `static_assert`。`[[=truncate]]` / `[[=truncated]]` 边**允许**，不计入该限制。被另一直接基支配的直接基（兄弟基的祖先，见 [annotations.md](annotations.md)）同样按截断处理、不计入。`iface` 在绑 dyn 前不受影响。
+**活边单继承**：dyn 生成（`dyn_object_slots` / `instantiate_dyn`）时，若某 section 的**活**直接 Trait 基类超过 1 个则 `static_assert`。`[[=truncate]]` / `[[=truncated]]` 边**允许**，不计入该限制。被另一直接基支配的直接基（兄弟基的祖先，视同未继承，见 [annotations.md](annotations.md)）不计入。`iface` 在绑 dyn 前不受影响。
 
 本开关不另开上行通道。与 MULTI_VT 互斥，故走关闭 MULTI_VT 的 section-prefix 规则；活边 SI 下可达基恰好都是 prefix，活链上的隐式上行 / `trait_cast` 仍然可用。
 

@@ -778,20 +778,49 @@ template <typename T, std::size_t I>
 using base_t =
     [:std::meta::type_of(std::meta::bases_of(^^T, unchecked())[I]):];
 
+// Dominated / cut-covered edges omit from sections (defined after reachable_t).
+template <typename T, std::size_t I>
+consteval bool direct_base_dominated();
+template <typename T, std::size_t I>
+consteval bool section_edge_omitted();
+
 // Sections (grid-merge order, self last), one instantiation per Trait<void>.
+// Omitted: dominated (as-if not inherited), or truncate/truncated edges whose
+// base is already in another direct base's sections (duplicate — no extra
+// slots). Unique truncate branches still contribute slots for same-table view.
 template <typename T>
-struct sections_resident {
-  template <std::size_t... I>
-  static consteval auto merge(std::index_sequence<I...>) {
-    if constexpr (sizeof...(I) == 0)
-      return tlist<T>{};
-    else
-      return typename tlist_concat_unique<
-          tlist<>, typename sections_resident<base_t<T, I>>::type...,
-          tlist<T>>::type{};
-  }
-  using type = decltype(merge(std::make_index_sequence<n_direct_bases<T>()>{}));
+struct sections_resident;
+
+template <typename T, typename Acc, std::size_t... I>
+struct sections_merge {
+  using type = Acc;
 };
+template <typename T, typename Acc, std::size_t I0, std::size_t... Is>
+struct sections_merge<T, Acc, I0, Is...> {
+  struct empty_sub {
+    using type = tlist<>;
+  };
+  using sub =
+      std::conditional_t<!section_edge_omitted<T, I0>(),
+                         sections_resident<base_t<T, I0>>, empty_sub>;
+  using with = typename tlist_concat_unique<Acc, typename sub::type>::type;
+  using next =
+      std::conditional_t<!section_edge_omitted<T, I0>(), with, Acc>;
+  using type = typename sections_merge<T, next, Is...>::type;
+};
+
+template <typename T, typename ISq>
+struct sections_resident_impl;
+template <typename T, std::size_t... I>
+struct sections_resident_impl<T, std::index_sequence<I...>> {
+  using type = typename tlist_concat_unique<
+      typename sections_merge<T, tlist<>, I...>::type, tlist<T>>::type;
+};
+
+template <typename T>
+struct sections_resident
+    : sections_resident_impl<T,
+                             std::make_index_sequence<n_direct_bases<T>()>> {};
 
 template <typename T>
 using sections_t = typename sections_resident<T>::type;
@@ -928,10 +957,15 @@ consteval bool edge_tag_live() {
   return !has_ann_tag(b, ^^ann::truncate_tag) && !trait_has_truncated(base);
 }
 
-// Defined after reachable_t: direct base I is an ancestor of another
-// direct base, making the edge redundant.
+// Cut edge whose base has another direct base as ancestor: truncate lifts
+// off this edge; the ancestor is as-if not inherited (dominated).
 template <typename T, std::size_t I>
-consteval bool direct_base_dominated();
+consteval bool edge_truncate_lifted();
+
+template <typename T, std::size_t I>
+consteval bool edge_effectively_live() {
+  return edge_tag_live<T, I>() || edge_truncate_lifted<T, I>();
+}
 
 // Defined after reachable_t: warning marker for dominated edges.
 // [[deprecated]] on a callable (not a class template): naming a deprecated
@@ -941,8 +975,8 @@ consteval bool direct_base_dominated();
 // template (even a function template specialization per T).
 template <typename T>
 [[deprecated(
-    "redundant direct Trait base (ancestor of another direct base): the "
-    "edge is treated as truncate")]]
+    "redundant direct Trait base (ancestor of another direct base): "
+    "ignored as if not inherited; slots/upcast come through the sibling")]]
 consteval std::size_t redundant_edge_marker() {
   return 1;
 }
@@ -952,7 +986,7 @@ consteval std::size_t warn_if_dominated_edge();
 
 template <typename T, std::size_t I>
 consteval bool live_base_at() {
-  return edge_tag_live<T, I>() && !direct_base_dominated<T, I>();
+  return edge_effectively_live<T, I>() && !direct_base_dominated<T, I>();
 }
 
 template <typename T>
@@ -998,34 +1032,187 @@ consteval std::vector<std::meta::info> reachable_vec() {
   return reachable_t<T>::vec();
 }
 
-// --- Redundant direct base (edge domination) --------------------------------
-// Resident: one instantiation per T computes the tlist of dominated direct
-// base types (a direct base that is an ancestor of another direct base).
-// The edge is treated as truncate (not a live dyn-upcast edge, not an SI
-// base) and the resident warns once per dominated edge.
+// --- Edge omit / lift (main loop) ------------------------------------------
+// Structural facts from each base type (not T's masks):
+//   live_anc[j]: i in reachable_t<base_j>  — 链路活 (对方链路内 truncate 也裁)
+//   sec_anc[j]:  i in sections_t<base_j>   — 结构祖先 (不要求链路活)
+//
+// 本身活基 → 对所有兄弟(含活)一律 live_anc。活对活并不天然链路可达：
+//   对方自己的基类链里也可能夹死边，sections 会虚报祖先；必须显式链路可达。
+// 本身死基 → 用 sec_anc（死对死不要求链路活）。
+//
+//   主循环(每轮扫完所有基；每个基至多触发一次，omit/lift 后不再查该基):
+//     循环活基(tag-live|已 lift, 尚未 omit):
+//       若 live_anc 下为某兄弟祖先 → omit（不中断，继续下一基）
+//     循环死基(仍裁、未 lift):
+//       若 sec_anc ∩ omit ∩ tag 非空 → lift
+//     整轮无任何 omit/lift 才退出（A 不合并不能挡住后面的 B–C 合并）
+//   收尾(按本身活/死选祖先关系):
+//     contrib 的祖先再 omit — 活基用 live_anc, 死基用 sec_anc
+//
+// 强化前提: Dom 本身未裁。独有裁剪旁支(非 contrib 结构祖先)仍留同表槽。
 
-template <typename T, std::size_t I, std::size_t J>
-consteval bool direct_base_dominates_at() {
-  if constexpr (I == J || !edge_tag_live<T, I>() || !edge_tag_live<T, J>())
+template <typename T>
+struct edge_status_resident {
+  static constexpr std::size_t N = n_direct_bases<T>();
+  static_assert(N <= 64, "edge_status_resident: too many direct bases");
+
+  static consteval std::uint64_t bit(std::size_t i) {
+    return std::uint64_t{1} << i;
+  }
+
+  template <std::size_t... I>
+  static consteval std::uint64_t tag_live_mask(std::index_sequence<I...>) {
+    return ((edge_tag_live<T, I>() ? bit(I) : 0) | ...);
+  }
+
+  template <std::size_t I, std::size_t J>
+  static consteval std::uint64_t live_anc_bit() {
+    if constexpr (I == J)
+      return 0;
+    else if constexpr (tlist_has<reachable_t<base_t<T, J>>, base_t<T, I>>::value)
+      return bit(I);
+    else
+      return 0;
+  }
+
+  template <std::size_t J, std::size_t... I>
+  static consteval std::uint64_t live_anc_col(std::index_sequence<I...>) {
+    return (live_anc_bit<I, J>() | ...);
+  }
+
+  template <std::size_t... J>
+  static consteval void fill_live_anc(std::uint64_t* live_anc,
+                                      std::index_sequence<J...>) {
+    ((live_anc[J] = live_anc_col<J>(std::make_index_sequence<N>{})), ...);
+  }
+
+  template <std::size_t I, std::size_t J>
+  static consteval std::uint64_t sec_anc_bit() {
+    if constexpr (I == J)
+      return 0;
+    else if constexpr (tlist_has<sections_t<base_t<T, J>>, base_t<T, I>>::value)
+      return bit(I);
+    else
+      return 0;
+  }
+
+  template <std::size_t J, std::size_t... I>
+  static consteval std::uint64_t sec_anc_col(std::index_sequence<I...>) {
+    return (sec_anc_bit<I, J>() | ...);
+  }
+
+  template <std::size_t... J>
+  static consteval void fill_sec_anc(std::uint64_t* sec_anc,
+                                     std::index_sequence<J...>) {
+    ((sec_anc[J] = sec_anc_col<J>(std::make_index_sequence<N>{})), ...);
+  }
+
+  static consteval bool live_ancestor_of_sibling(
+      std::size_t i, std::uint64_t const* live_anc) {
+    for (std::size_t j = 0; j < N; ++j) {
+      if (i != j && (live_anc[j] & bit(i)))
+        return true;
+    }
     return false;
-  else
-    return tlist_has<reachable_t<base_t<T, J>>, base_t<T, I>>::value;
+  }
+
+  static consteval std::pair<std::uint64_t, std::uint64_t> masks() {
+    constexpr auto idx = std::make_index_sequence<N>{};
+    std::uint64_t tag = tag_live_mask(idx);
+    std::uint64_t live_anc[64]{};
+    std::uint64_t sec_anc[64]{};
+    fill_live_anc(live_anc, idx);
+    fill_sec_anc(sec_anc, idx);
+
+    std::uint64_t omit = 0;
+    std::uint64_t lifted = 0;
+
+    for (std::size_t round = 0; round < N * 2 + 2; ++round) {
+      bool progress = false;
+
+      // 循环活基: 对任意兄弟一律 live_anc；每个未 omit 的活基都查一遍。
+      for (std::size_t i = 0; i < N; ++i) {
+        if (((tag | lifted) & bit(i)) == 0)
+          continue;
+        if (omit & bit(i))
+          continue;
+        if (live_ancestor_of_sibling(i, live_anc)) {
+          omit |= bit(i);
+          progress = true;
+        }
+      }
+
+      // 循环死基: 若已有本身未裁且 omit 的祖先 (sec_anc ∩ omit ∩ tag) → lift。
+      for (std::size_t i = 0; i < N; ++i) {
+        if (tag & bit(i))
+          continue;
+        if (lifted & bit(i))
+          continue;
+        if (sec_anc[i] & omit & tag) {
+          lifted |= bit(i);
+          progress = true;
+        }
+      }
+      if (!progress)
+        break;
+    }
+
+    // 收尾: contrib 祖先 omit — 本身活用 live_anc, 本身死用 sec_anc。
+    std::uint64_t contrib = (tag | lifted) & ~omit;
+    for (std::size_t i = 0; i < N; ++i) {
+      if (omit & bit(i))
+        continue;
+      bool self_live = ((tag | lifted) & bit(i)) != 0;
+      for (std::size_t j = 0; j < N; ++j) {
+        if ((contrib & bit(j)) == 0)
+          continue;
+        if (self_live) {
+          if (live_anc[j] & bit(i))
+            omit |= bit(i);
+        } else {
+          if (sec_anc[j] & bit(i))
+            omit |= bit(i);
+        }
+      }
+    }
+    return {omit, lifted};
+  }
+
+  static constexpr std::uint64_t omit = masks().first;
+  static constexpr std::uint64_t lifted = masks().second;
+};
+
+template <typename T, std::size_t I>
+consteval bool edge_truncate_lifted() {
+  return (edge_status_resident<T>::lifted &
+          edge_status_resident<T>::bit(I)) != 0;
 }
 
-template <typename T, std::size_t I, std::size_t... J>
-consteval bool dominated_edge_fold(std::index_sequence<J...>) {
-  return (direct_base_dominates_at<T, I, J>() || ...);
+template <typename T, std::size_t I>
+consteval bool section_edge_omitted() {
+  return (edge_status_resident<T>::omit & edge_status_resident<T>::bit(I)) !=
+         0;
+}
+
+template <typename T, std::size_t I>
+consteval bool direct_base_dominated() {
+  return section_edge_omitted<T, I>();
 }
 
 template <typename T, std::size_t I>
 consteval std::size_t warn_if_dominated_edge() {
-  if constexpr (edge_tag_live<T, I>() &&
-                dominated_edge_fold<T, I>(
-                    std::make_index_sequence<n_direct_bases<T>()>{}))
+  if constexpr (edge_tag_live<T, I>() && section_edge_omitted<T, I>())
     return redundant_edge_marker<T>();
   else
     return 0;
 }
+
+// NTTP forces warn when ::type is formed.
+template <typename List, std::size_t /*Warn*/>
+struct dominated_warn_attach {
+  using type = List;
+};
 
 template <typename T, typename Acc, std::size_t... I>
 struct dominated_merge {
@@ -1034,17 +1221,9 @@ struct dominated_merge {
 template <typename T, typename Acc, std::size_t I0, std::size_t... Is>
 struct dominated_merge<T, Acc, I0, Is...> {
   using next = std::conditional_t<
-      dominated_edge_fold<T, I0>(
-          std::make_index_sequence<n_direct_bases<T>()>{}),
+      section_edge_omitted<T, I0>(),
       typename tlist_append_unique<Acc, base_t<T, I0>>::type, Acc>;
   using type = typename dominated_merge<T, next, Is...>::type;
-};
-
-// NTTP forces warn_if_dominated_edge when ::type is formed (a plain
-// static constexpr member is not instantiated just by naming ::type).
-template <typename List, std::size_t /*Warn*/>
-struct dominated_warn_attach {
-  using type = List;
 };
 
 template <typename T, typename ISq>
@@ -1065,15 +1244,10 @@ struct dominated_resident
 template <typename T>
 using dominated_t = typename dominated_resident<T>::type;
 
-template <typename T, std::size_t I>
-consteval bool direct_base_dominated() {
-  return tlist_has<dominated_t<T>, base_t<T, I>>::value;
-}
-
 // Direct bases that still participate in dyn upcast (same cut rules as
-// dyn_upcast_reachable_of). truncate / truncated / dominated edges are
-// allowed under ASF_HAS_DYN_SINGLE_INHERIT and do not count as
-// multi-inherit.
+// dyn_upcast_reachable_of). truncate / truncated edges and dominated
+// (as-if-not-inherited) edges are allowed under ASF_HAS_DYN_SINGLE_INHERIT
+// and do not count as multi-inherit.
 template <typename T, std::size_t... I>
 consteval std::size_t live_dyn_base_count_pack(std::index_sequence<I...>) {
   return (std::size_t{0} + ... + (live_base_at<T, I>() ? 1 : 0));
@@ -1112,7 +1286,10 @@ consteval void assert_single_inherit() {
 //   [[=truncate]] on T -> stop (no proper bases)
 //   [[=truncate]] on base-specifier T:B -> skip that branch
 //   [[=truncated]] on B -> inheriting B is a truncate edge (skip B)
+//   unless another direct base is an ancestor of B: then B's cut lifts
+//   and that ancestor is as-if not inherited (dominated)
 // Ancestor [[=truncate]] still applies when reached via a live edge.
+// Dominated edges are also omitted from sections (unlike truncate).
 
 // --- Resident layout (type domain) ------------------------------------------
 // Layout entry tags: the type-domain mirror of layout_entry. All recursion

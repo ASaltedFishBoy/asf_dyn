@@ -144,7 +144,7 @@ Retypes the Trait tag only (same ptr, same vt). After a Redirect upcast the hand
 
 ### On
 
-**Single-inheritance among live dyn bases**: at dyn generation (`dyn_object_slots` / `instantiate_dyn`), `static_assert` if any section has more than one **live** direct Trait base. `[[=truncate]]` / `[[=truncated]]` edges (see [annotations.md](annotations.md)#truncation-truncate--truncated) are **allowed** and do not count toward that limit. Direct bases **dominated** by another direct base (an ancestor of a sibling, see [annotations.md](annotations.md)#redundant-direct-base-automatic-truncation) are likewise treated as truncate and do not count. `iface` is unaffected until you bind dyn.
+**Single-inheritance among live dyn bases**: at dyn generation (`dyn_object_slots` / `instantiate_dyn`), `static_assert` if any section has more than one **live** direct Trait base. `[[=truncate]]` / `[[=truncated]]` edges (see [annotations.md](annotations.md)#truncation-truncate--truncated) are **allowed** and do not count toward that limit. Direct bases **dominated** by another direct base (an ancestor of a sibling, see [annotations.md](annotations.md)#redundant-direct-base-merge-and-truncate-re-activation) are as if not inherited and do not count. `iface` is unaffected until you bind dyn.
 
 This flag does not add a separate upcast mode. Mutex forces MULTI_VT off, which is the section-prefix rule. On an SI live DAG every reachable Trait base is a section prefix, so implicit upcast / `trait_cast` along the live chain still works.
 

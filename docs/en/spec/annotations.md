@@ -71,9 +71,11 @@ struct [[=asf_ann::truncated]] B<void> { /* ... */ };
 struct D<void> : A<void>, B<void> {};  // same as truncate on the edge; D→B no
 ```
 
-### Redundant direct base (automatic truncation)
+### Redundant direct base: merge and truncate re-activation
 
-If a direct base is already an ancestor of another direct base — `T final : A, B` with `B : A` — the direct edge `T→A` duplicates the live path `T→B→…→A`. The library emits a **compile-time warning** (a `[[deprecated]]` marker; GCC dedups it to one warning per TU) and treats the edge as **truncated**: the direct edge is not a live edge — it does not count as a base for the `ASF_HAS_DYN_SINGLE_INHERIT` check and produces no upcast path of its own. The base itself stays reachable (and upcastable) through the dominating live path, so sections, covers, and dispatch are unchanged. A `truncate` / `truncated` edge cannot dominate, and a base whose only live path would pass through such an edge is not dominated. Chains (`A⊂B⊂C`), diamonds (`A⊂B` and `A⊂D`), and mixed cases behave the same way; see `tests/general/iface_dominant_base.cpp`.
+**Merge**: if a direct base is already an ancestor of another — `T final : A, B` with `B : A` — the library warns and treats that base as **not inherited** (omit from `sections`, not a live edge); slots and upcasts go through the sibling only.
+
+**Truncate re-activation**: if a truncated direct base has an ancestor that is itself a non-truncated direct base and has already been merged, that edge’s `truncate` is **lifted** and the base becomes live again (it may then merge if still redundant relative to a more derived sibling). A unique truncate side branch (no such merged ancestor) still keeps same-table slots. See `tests/general/iface_dominant_base.cpp`.
 
 See [multi_vt.md](multi_vt.md), [features.md](features.md)#asf_has_dyn_multi_vt, and `tests/general/iface_truncate.cpp`.
 

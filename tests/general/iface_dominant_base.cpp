@@ -1,13 +1,16 @@
 // Redundant direct bases (edge domination) under complex multiple
 // inheritance: a direct base that is an ancestor of another direct base
-// warns and its edge is treated as truncate, while the base stays reachable
-// through the dominating live path.
+// warns and is as-if not inherited (omitted from sections); slots/upcast
+// come through the sibling only. Distinct from truncate (which keeps slots).
+//
+// Truncate lift: if a cut direct base has another direct base as ancestor,
+// the cut lifts off the descendant and the ancestor is as-if not inherited.
 //
 //   A <- B <- C        X <- Y        Z        D <- A
 //   Wide   : A, B, C, X, Y, Z        (A,B,X dominated; live C,Y,Z)
 //   Diamond: A, B, D                 (A dominated via B and D; live B,D)
-//   Cut    : A, [truncate]B, C       (truncated B cannot dominate; A cut via C)
-//   Solo   : A, [truncate]B          (truncated B cannot dominate; A stays live)
+//   Cut    : A, [truncate]B, C       (B lifted then dominated by C; live C)
+//   Solo   : A, [truncate]B          (B lifted; A dominated; live B)
 
 #include "asf_check.hpp"
 #include "cast.hpp"
@@ -124,6 +127,14 @@ static_assert(!asf::detail::direct_base_dominated<Wide<void>, 5>());  // Z
 static_assert(asf::detail::live_dyn_base_count<Wide<void>>() == 3,
               "A, B, X dominated; live bases are C, Y, Z");
 
+// Sections omit dominated edges: same as inheriting only live siblings.
+using wide_sections_via_live = typename asf::detail::tlist_concat_unique<
+    asf::detail::sections_t<C<void>>, asf::detail::sections_t<Y<void>>,
+    asf::detail::sections_t<Z<void>>,
+    asf::detail::tlist<Wide<void>>>::type;
+static_assert(
+    std::is_same_v<asf::detail::sections_t<Wide<void>>, wide_sections_via_live>);
+
 // Live (not just DAG) reachability after the cuts.
 template <typename T, typename S>
 inline constexpr bool live_base_of_v =
@@ -146,23 +157,29 @@ static_assert(live_base_of_v<Diamond<void>, A<void>>);
 static_assert(live_base_of_v<Diamond<void>, B<void>>);
 static_assert(live_base_of_v<Diamond<void>, D<void>>);
 
-// --- Cut: truncated B cannot dominate; A is still cut via C ---
-static_assert(asf::detail::direct_base_dominated<Cut<void>, 0>());
-static_assert(!asf::detail::direct_base_dominated<Cut<void>, 1>());
-static_assert(!asf::detail::direct_base_dominated<Cut<void>, 2>());
+// --- Cut: B's truncate lifts (A is ancestor) then B is dominated by C ---
+static_assert(asf::detail::direct_base_dominated<Cut<void>, 0>());   // A
+static_assert(asf::detail::direct_base_dominated<Cut<void>, 1>());   // B
+static_assert(!asf::detail::direct_base_dominated<Cut<void>, 2>());  // C
 static_assert(asf::detail::live_dyn_base_count<Cut<void>>() == 1);
-// The Cut->B edge is dead, but B and A still reach live through C.
+static_assert(asf::detail::edge_truncate_lifted<Cut<void>, 1>());
 static_assert(live_base_of_v<Cut<void>, C<void>>);
 static_assert(live_base_of_v<Cut<void>, B<void>>);
 static_assert(live_base_of_v<Cut<void>, A<void>>);
 
-// --- Solo: the only path into B is truncated, so A is NOT dominated ---
-static_assert(!asf::detail::direct_base_dominated<Solo<void>, 0>());
-static_assert(!asf::detail::direct_base_dominated<Solo<void>, 1>());
+// --- Solo: listing ancestor A lifts B's truncate; A as-if not inherited ---
+static_assert(asf::detail::direct_base_dominated<Solo<void>, 0>());   // A
+static_assert(!asf::detail::direct_base_dominated<Solo<void>, 1>());  // B
+static_assert(asf::detail::edge_truncate_lifted<Solo<void>, 1>());
 static_assert(asf::detail::live_dyn_base_count<Solo<void>>() == 1);
-static_assert(live_base_of_v<Solo<void>, A<void>>);
-static_assert(!live_base_of_v<Solo<void>, B<void>>,
-              "B is reachable only through the truncated edge: not live");
+static_assert(live_base_of_v<Solo<void>, B<void>>,
+              "B's truncate lifted: live via the lifted edge");
+static_assert(live_base_of_v<Solo<void>, A<void>>,
+              "A remains reachable through lifted B");
+using solo_sections_via_b = typename asf::detail::tlist_concat_unique<
+    asf::detail::sections_t<B<void>>, asf::detail::tlist<Solo<void>>>::type;
+static_assert(
+    std::is_same_v<asf::detail::sections_t<Solo<void>>, solo_sections_via_b>);
 
 void TestWide_Dyn() {
   Obj o{};
@@ -199,6 +216,14 @@ void TestSolo_Iface() {
   ASF_CHECK_EQ(i.as<B>()->b(), 7);
 }
 
+void TestSolo_Dyn() {
+  Obj o{};
+  asf::dyn<Solo> d{&o};
+  // Lifted B is the live edge; A is storeable through B.
+  ASF_CHECK_EQ(d.as<B>()->b(), 7);
+  ASF_CHECK_EQ(d.as<B>().as<A>()->a(), 3);
+}
+
 }  // namespace iface_dominant_base_detail
 
 int main() {
@@ -207,5 +232,6 @@ int main() {
   ASF_RUN(iface_dominant_base_detail::TestDiamond_Iface);
   ASF_RUN(iface_dominant_base_detail::TestCut_Iface);
   ASF_RUN(iface_dominant_base_detail::TestSolo_Iface);
+  ASF_RUN(iface_dominant_base_detail::TestSolo_Dyn);
   return asf_test::g_failures ? 1 : 0;
 }

@@ -61,8 +61,8 @@ dyn 无法知道 `static` 方法的 self 期望哪个具体 `mirror<T>` 视图�
 
 | 注解 | 挂点 | 含义 |
 | --- | --- | --- |
-| `truncate` | `Trait<void>` 或 **基类说明符** | **主动截断**。在自身上：`dyn` 不能再向上转换。在多继承边上：不能沿该分支走到**仅该分支带来的**基类（含该直接基），故不为该路径生成额外 cover 表。祖先已标 `truncate` 时，后代经该边也不能越过它继续上行 |
-| `truncated` | 仅 `Trait<void>` | **被动截断**。别的类型继承该接口时，这条继承边自带 `truncate` 含义：`dyn` 不能上行转换到**这个** Interface |
+| `truncate` | `Trait<void>` 或 **基类说明符** | **主动截断**。在自身上：`dyn` 不能再向上转换。在多继承边上：不能沿该分支走到**仅该分支带来的**基类（含该直接基），故不为该路径生成额外 cover 表。祖先已标 `truncate` 时，后代经该边也不能越过它继续上行。若该裁剪基已由另一直接基继承（重复），则**不**再为其留 section 槽；仅独有旁支仍保留同表视口槽 |
+| `truncated` | 仅 `Trait<void>` | **被动截断**。别的类型继承该接口时，这条继承边自带 `truncate` 含义：`dyn` 不能上行转换到**这个** Interface。重复继承时同样不留槽 |
 
 ```cpp
 struct [[=asf_ann::truncate]] Mid<void> : Base<void> { /* ... */ };
@@ -73,9 +73,11 @@ struct [[=asf_ann::truncated]] B<void> { /* ... */ };
 struct D<void> : A<void>, B<void> {};  // 等同于边上写 truncate；D→B 否
 ```
 
-### 冗余直接基（自动截断）
+### 冗余直接基：合并与裁剪重激活
 
-直接基已是另一直接基的祖先时——如 `T final : A, B` 且 `B : A`——直接边 `T→A` 与活路径 `T→B→…→A` 重复。库发出**编译期警告**（`[[deprecated]]` 标记；GCC 按声明去重，每个 TU 一条），并把该边**视为截断**：直接边不是活边——不计入 `ASF_HAS_DYN_SINGLE_INHERIT` 的基类数，也不产生自己的上行路径。该基仍经占支配地位的活路径可达（且可上行），sections、cover 与分发均不变。`truncate` / `truncated` 边不能支配；唯一活路径须经过这类边的基不被支配。链式（`A⊂B⊂C`）、菱形（`A⊂B` 与 `A⊂D`）与混合情形同理；见 `tests/general/iface_dominant_base.cpp`。
+**合并**：直接基已是另一直接基的祖先时——如 `T final : A, B` 且 `B : A`——直接边 `T→A` 与经 `B` 的继承重复。库发出**编译期警告**，并把该直接基**视同未继承**（不进 `sections`、非活边）；槽与上行只经兄弟。
+
+**裁剪重激活**：若被裁的直接基以某个已合并、且本身未裁的直接基为祖先，则该边上的 `truncate` **取消**，该基重新成为活边（随后若相对更派生的兄弟仍属冗余，仍可再被合并）。独有裁剪旁支（没有这种已合并祖先）仍保留同表槽。见 `tests/general/iface_dominant_base.cpp`。
 
 见 [multi_vt.md](multi_vt.md)、[features.md](features.md)#asf_has_dyn_multi_vt、`tests/general/iface_truncate.cpp`。
 
