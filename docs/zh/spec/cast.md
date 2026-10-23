@@ -210,7 +210,7 @@ auto get_forward_proxy(iface<From, Arg>&& h) -> decltype(std::move(h).template r
 
 ## `construct`
 
-从已擦除对象深构造。Trait 须有 dyn `op_construct`。拆除恒为 `vt[-1]`。`op_construct` 按参数分发，不限于拷贝 / 移动。代理后面的额外函数实参派到对应重载。`Alloc` 是可选的第一个实参：第一个是 proxy 就没有分配器；第二个是 proxy 则第一个是分配器。`OutPtr` 只随这次深构造换 `Ptr`，不能单独换。
+从已擦除对象深构造。Trait 须有 dyn `op_construct`。拆除恒为 `vt[-1]`。`op_construct` 按参数分发，不限于拷贝 / 移动。代理后面的额外函数实参派到对应重载。`Alloc` 是可选的第一个实参：第一个是 proxy 就没有分配器；第二个是 proxy 则第一个是分配器。`OutPtr` 只随这次深构造换 `Ptr`，不能单独换。源须存活；`construct` 不做空句柄检查（`!h` 由调用方负责）。
 
 从 sourced mirror 的 dyn 深构造要求 `op_construct` 返回 `mirror`（重绑到原来的源）。返回对象会让新 mirror 别名到随调用消亡的临时量，因此该槽发成桩，执行构造即陷入。
 

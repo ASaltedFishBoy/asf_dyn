@@ -208,7 +208,7 @@ auto get_forward_proxy(iface<From, Arg>&& h) -> decltype(std::move(h).template r
 
 ## `construct`
 
-Deep-construct an already-erased object. Requires dyn `op_construct` on the Trait. Teardown is always `vt[-1]`. `op_construct` dispatches by arguments, not only copy/move. Extra function arguments after `*dyn` / `rproxy` go to that overload. `Alloc` is an optional first argument: if the first argument is the proxy, there is no allocator; if the second is the proxy, the first is the allocator. `OutPtr` retargets `Ptr` only as a side effect of that deep construct; it is not a standalone operation.
+Deep-construct an already-erased object. Requires dyn `op_construct` on the Trait. Teardown is always `vt[-1]`. `op_construct` dispatches by arguments, not only copy/move. Extra function arguments after `*dyn` / `rproxy` go to that overload. `Alloc` is an optional first argument: if the first argument is the proxy, there is no allocator; if the second is the proxy, the first is the allocator. `OutPtr` retargets `Ptr` only as a side effect of that deep construct; it is not a standalone operation. The source must be live; `construct` does not empty-check (`!h` is the caller's job).
 
 Deep-constructing from a sourced-mirror dyn requires `op_construct` to return a `mirror` (it rebinds the original source). An object result would alias a temporary that dies with the call, so that slot is emitted as a stub and constructing traps.
 

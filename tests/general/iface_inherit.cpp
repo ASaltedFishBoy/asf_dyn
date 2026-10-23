@@ -330,7 +330,7 @@ int main() {
   // as/to_dyn may Redirect when a different flat layout is required to store.
   auto d5 = asf::trait_cast<I5>(d9);
   asf::dyn<I5> d5_imp = d9;  // implicit non-prefix upcast
-  if (d5_imp.ptr() != d5.ptr())
+  if (d5_imp.raw() != d5.raw())
     return 1;
   if (!expect(d5.as<I2>()->m2(), "m2") || !expect(d5.as<I3>()->m3(), "m3") ||
       !expect(d5.as<I3>().as<I1>()->m1(), "m1") ||

@@ -830,8 +830,7 @@ constexpr auto construct_via_cache_ptr(
   requires(trait_has_dyn_construct<Trait>()) {
   auto const& h = p.buf_;
   return try_construct_cache<Trait, Size, Align, Rvalue && !Const>(
-      const_cast<void*>(static_cast<const void*>(h.ptr())), vt_of(h),
-      std::forward<Extra>(extra)...);
+      storage_addr_of(h), vt_of(h), std::forward<Extra>(extra)...);
 }
 
 template <template <class> class Trait, class Out, bool Const, class SrcP,
@@ -841,9 +840,11 @@ Out construct_erased_from_proxy(
     Extra&&... extra)
   requires(trait_has_dyn_construct<Trait>()) {
   auto const& h = p.buf_;
+  // SrcP may be cache_ptr (construct(*cache_dyn) / construct<uptr>(*cache)).
+  // buf_ is always void* observation seeded from host storage_addr.
   return construct_erased_to<Trait, Out, Rvalue && !Const>(
-      const_cast<void*>(static_cast<const void*>(h.ptr())), vt_of(h),
-      std::forward<Alloc>(alloc), std::forward<Extra>(extra)...);
+      storage_addr_of(h), vt_of(h), std::forward<Alloc>(alloc),
+      std::forward<Extra>(extra)...);
 }
 
 }  // namespace detail

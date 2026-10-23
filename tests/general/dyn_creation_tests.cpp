@@ -1355,11 +1355,11 @@ void TestSharedFromQualifiedUptr() {
   Box box{1, "Qual"};
   asf::dyn<Loud> obs{&box};
   auto owned = asf::construct<std::unique_ptr>(*obs);
-  void* raw = owned.ptr();
+  void* raw = owned.raw();
   asf::shared_dyn<Loud> shared{std::move(owned)};
   ASF_CHECK(static_cast<bool>(shared));
   ASF_CHECK(!owned);
-  ASF_CHECK(shared.ptr() == raw);
+  ASF_CHECK(shared.raw() == raw);
   ASF_CHECK_EQ(shared->name(), asf_test::no_sso("Qual"));
   shared.reset();
   ASF_CHECK(Box::dtor_count >= 1);
@@ -1370,14 +1370,14 @@ void TestReleaseToPtrAndObs() {
   Box box{1, "Rel"};
   asf::dyn<Loud> obs{&box};
   auto owned = asf::construct<std::unique_ptr>(*obs);
-  void* raw = owned.ptr();
+  void* raw = owned.raw();
   auto parts = owned.release();
   static_assert(std::same_as<decltype(parts.first),
                              std::unique_ptr<void, asf::detail::new_delete>>);
   static_assert(std::same_as<decltype(parts.second), asf::dyn<Loud>>);
   ASF_CHECK(!owned);
   ASF_CHECK(parts.first.get() == raw);
-  ASF_CHECK(parts.second.ptr() == raw);
+  ASF_CHECK(parts.second.raw() == raw);
   ASF_CHECK_EQ(parts.second->name(), asf_test::no_sso("Rel"));
   ASF_CHECK_EQ(Box::dtor_count, 0);
   parts.second.destroy();
@@ -1391,7 +1391,7 @@ void TestReleaseToPtrAndObs() {
   auto raw_parts = view.release();
   ASF_CHECK(!view);
   ASF_CHECK(raw_parts.first == &box);
-  ASF_CHECK(raw_parts.second.ptr() == &box);
+  ASF_CHECK(raw_parts.second.raw() == &box);
   ASF_CHECK_EQ(raw_parts.second->name(), asf_test::no_sso("Rel"));
   raw_parts.second.reset();
   ASF_CHECK_EQ(Box::dtor_count, 1);

@@ -123,7 +123,7 @@ void TestViewOfOwning() {
   auto obs = asf_test::to_dyn<MutStringable>(src);
   auto p1 = asf::construct<std::unique_ptr>(*obs);
   asf::dyn<MutStringable> p2 =
-      asf::to_dyn<MutStringable>(static_cast<IntBox*>(p1.ptr()));
+      asf::to_dyn<MutStringable>(static_cast<IntBox*>(p1.raw()));
   ASF_CHECK(static_cast<bool>(p1));
   ASF_CHECK(static_cast<bool>(p2));
   (*p2) += 3;

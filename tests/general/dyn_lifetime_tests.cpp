@@ -847,8 +847,8 @@ void TestDestroy_SharedControlBlock_LastReset() {
   Probe::dtor_count = 0;
   auto p1 = asf::construct<std::shared_ptr>(*obs);
   auto p2 = p1;
-  ASF_CHECK(p1.ptr() == p2.ptr());
-  static_cast<Probe*>(p1.ptr())->v = 49;
+  ASF_CHECK(p1.raw() == p2.raw());
+  static_cast<Probe*>(p1.raw())->v = 49;
   ASF_CHECK_EQ(p2->value(), 49);
   p1.reset();
   ASF_CHECK_EQ(Probe::dtor_count, 0);
@@ -861,9 +861,9 @@ void TestShallowMove_UniqueKeepsAddress() {
   Probe ps{50};
   auto obs = asf::to_dyn<ProbeMake>(&ps);
   auto p1 = asf::construct<std::unique_ptr>(*obs);
-  void* addr = p1.ptr();
+  void* addr = p1.raw();
   auto p2 = std::move(p1);
-  ASF_CHECK_EQ(p2.ptr(), addr);
+  ASF_CHECK_EQ(p2.raw(), addr);
   ASF_CHECK(!p1);
   ASF_CHECK_EQ(p2->value(), 50);
 }
@@ -872,9 +872,9 @@ void TestShallowMove_SharedKeepsAddress() {
   Probe ps{51};
   auto obs = asf::to_dyn<ProbeMake>(&ps);
   auto p1 = asf::construct<std::shared_ptr>(*obs);
-  void* addr = p1.ptr();
+  void* addr = p1.raw();
   auto p2 = std::move(p1);
-  ASF_CHECK_EQ(p2.ptr(), addr);
+  ASF_CHECK_EQ(p2.raw(), addr);
   ASF_CHECK(!p1);
   ASF_CHECK_EQ(p2->value(), 51);
 }
@@ -888,9 +888,9 @@ void TestShallowMove_AdoptDeleteTravels() {
   std::unique_ptr<Probe, asf::dyn_adopt_delete<FreeCount>> src(
       new Probe{52}, asf::dyn_adopt_delete<FreeCount>{});
   auto d1 = asf::to_dyn<ProbeMake>(std::move(src));
-  void* addr = d1.ptr();
+  void* addr = d1.raw();
   auto d2 = std::move(d1);
-  ASF_CHECK_EQ(d2.ptr(), addr);
+  ASF_CHECK_EQ(d2.raw(), addr);
   ASF_CHECK(!d1);
   ASF_CHECK_EQ(FreeCount::count, 0);
   d2.reset();
@@ -902,9 +902,9 @@ void TestShallowMove_TypedDeleterTravels() {
   ProbeDel::count = 0;
   std::unique_ptr<Probe, ProbeDel> src(new Probe{53});
   auto d1 = asf::to_dyn<ProbeMake>(std::move(src));
-  void* addr = d1.ptr();
+  void* addr = d1.raw();
   auto d2 = std::move(d1);
-  ASF_CHECK_EQ(d2.ptr(), addr);
+  ASF_CHECK_EQ(d2.raw(), addr);
   ASF_CHECK(!d1);
   ASF_CHECK_EQ(ProbeDel::count, 0);
   d2.reset();

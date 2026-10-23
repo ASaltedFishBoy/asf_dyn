@@ -154,8 +154,8 @@ c_dyn_view<Trait, To> as() const;     // c_dyn
 Ptr& get() noexcept;
 Ptr const& get() const noexcept;
 
-void* ptr() const noexcept;              // dyn
-void const* ptr() const noexcept;        // c_dyn
+void* raw() const noexcept;              // dyn
+void const* raw() const noexcept;        // c_dyn
 
 void reset();
 void destroy();   // dyn; not shared_ptr / weak_ptr. Always vt[-1] (~Src)
@@ -173,7 +173,7 @@ template <template <class> class Other>
 bool operator==(dyn<Trait, Ptr> const& a, dyn<Other, Ptr> const& b) noexcept;
 ```
 
-`operator bool` / `== nullptr`：非空原始指针，或 `weak_ptr` 上 `!expired()`。跨 Trait 的 `==` 比 `ptr()`。不声明 `!=`（C++20 可改写）。没有 `<=>`。
+`operator bool` / `== nullptr`：非空原始指针，或 `weak_ptr` 上 `!expired()`。跨 Trait 的 `==` 比 `raw()`。不声明 `!=`（C++20 可改写）。没有 `<=>`。
 
 有 dyn `op_construct` 时才有 `size()` / `align()`：Storage 的 `sizeof` / `alignof`（vt 方法槽之后的尾槽）。空句柄为 0。没有 `op_construct`：没有这些成员。
 

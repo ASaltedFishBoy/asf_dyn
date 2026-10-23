@@ -189,6 +189,8 @@
 //                   to_dyn / trait_cast (iface: member trait_cast<To>() /
 //                   c_trait_cast<To>(); also downcasts when Self converts).
 //   get()           dyn: Ptr&; iface: Self by value (T& / mirror).
+//   raw()           dyn: void* / const void* erased object address (identity;
+//                   empty cache_dyn -> nullptr). Hot path uses storage_addr().
 //   proxy<To>() / rproxy<To>() / c_proxy<To>()  call surface. To == this
 //                   Trait uses proxy() / rproxy() / c_proxy(); a base To uses
 //                   that view's proxy / rproxy / c_proxy. c_dyn / const iface:

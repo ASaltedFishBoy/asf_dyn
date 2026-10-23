@@ -1995,6 +1995,8 @@ consteval bool dyn_ptr_to_sptr_copy_ok() {
 // vt_destroy Ptr on sub_dyn only if pointer_trait::release accepts *this.
 template <class Handle>
 vt_ptr vt_of(Handle const& h) noexcept;
+template <class Handle>
+void* storage_addr_of(Handle const& h) noexcept;
 
 // GCC: constrained members are hard errors inside requires { h.fn() }.
 // Specialize the facet away so the member does not exist.
@@ -2050,6 +2052,8 @@ class dyn_ptr_core
           Trait, !SliceCall> {
   template <class H>
   friend vt_ptr vt_of(H const&) noexcept;
+  template <class H>
+  friend void* storage_addr_of(H const&) noexcept;
   friend dyn_destroy_facet<dyn_ptr_core, true>;
   friend dyn_destroy_facet<dyn_ptr_core, false>;
   friend dyn_typeid_facet<dyn_ptr_core, Trait, true>;
@@ -2188,8 +2192,8 @@ class dyn_ptr_core
   }
 
   // Naked storage address for vt slots / observer rebind. No emptiness
-  // gate (unlike ptr()). cache: always &buf; unique_ptr/raw: .get() bits.
-  void* raw() const noexcept
+  // gate (unlike raw()). cache: always &buf; unique_ptr: .get() bits.
+  void* storage_addr() const noexcept
     requires(!is_wptr_v<Ptr>) {
     if constexpr (is_cache_ptr_v<Ptr>)
       return obj_.get();
@@ -2344,7 +2348,7 @@ class dyn_ptr_core
     return *this;
   }
 
-  std::conditional_t<Const, const void*, void*> ptr() const noexcept
+  std::conditional_t<Const, const void*, void*> raw() const noexcept
     requires(!is_wptr_v<Ptr>) {
     // cache_ptr's buffer is always addressable; emptiness is the vt's say.
     if constexpr (is_cache_ptr_v<Ptr>) {
@@ -2380,7 +2384,7 @@ class dyn_ptr_core
   }
   friend bool operator==(Derived const& a, Derived const& b) noexcept
     requires(!is_wptr_v<Ptr>) {
-    return a.ptr() == b.ptr();
+    return a.raw() == b.raw();
   }
 
  protected:
@@ -2429,7 +2433,7 @@ class dyn_ptr_core
           ptr_get(obj_), vt_, std::forward<decltype(args)>(args)...);
     else
       return handle_call<Trait, Method, true, false>(
-          raw(), vt_, nullptr, nullptr,
+          storage_addr(), vt_, nullptr, nullptr,
           std::forward<decltype(args)>(args)...);
   }
 
@@ -2472,7 +2476,7 @@ class dyn_ptr_core
           ptr_get(obj_), vt_, std::forward<Args>(args)...);
     else
       return handle_call<Trait, method, true, false>(
-          raw(), vt_, nullptr, nullptr, std::forward<Args>(args)...);
+          storage_addr(), vt_, nullptr, nullptr, std::forward<Args>(args)...);
   }
 
 };
@@ -2480,6 +2484,12 @@ class dyn_ptr_core
 template <class Handle>
 vt_ptr vt_of(Handle const& h) noexcept {
   return h.vt();
+}
+
+// Naked storage address; no raw() emptiness gate. construct / vt hot paths.
+template <class Handle>
+void* storage_addr_of(Handle const& h) noexcept {
+  return h.storage_addr();
 }
 
 // Same-vt view on Layout's table. Mutable and const are separate types
@@ -2708,7 +2718,7 @@ class sub_dyn
 
  public:
   using base::base;
-  using base::ptr;
+  using base::raw;
   using base::reset;
 
   // Trait-keyed observer proxy (always sub_dyn<Trait> / void*) -- like dyn_proxy.
@@ -2739,12 +2749,12 @@ class sub_dyn
 
   proxy_t operator->()
     requires(!detail::is_wptr_v<Ptr>) {
-    auto obs = sub_dyn<Trait>::observe(this->raw(), this->vt_);
+    auto obs = sub_dyn<Trait>::observe(this->storage_addr(), this->vt_);
     return proxy_t{&obs};
   }
   proxy_t operator*()
     requires(!detail::is_wptr_v<Ptr>) {
-    auto obs = sub_dyn<Trait>::observe(this->raw(), this->vt_);
+    auto obs = sub_dyn<Trait>::observe(this->storage_addr(), this->vt_);
     return proxy_t{&obs};
   }
 
@@ -2781,7 +2791,7 @@ class c_sub_dyn
 
  public:
   using base::base;
-  using base::ptr;
+  using base::raw;
   using base::reset;
 
   using proxy_t =
@@ -2855,13 +2865,13 @@ class c_sub_dyn
   proxy_t operator->() const
     requires(!detail::is_wptr_v<Ptr>) {
     auto obs = c_sub_dyn<Trait>::observe(
-        const_cast<void*>(static_cast<const void*>(this->raw())), this->vt_);
+        const_cast<void*>(static_cast<const void*>(this->storage_addr())), this->vt_);
     return proxy_t{&obs};
   }
   proxy_t operator*() const
     requires(!detail::is_wptr_v<Ptr>) {
     auto obs = c_sub_dyn<Trait>::observe(
-        const_cast<void*>(static_cast<const void*>(this->raw())), this->vt_);
+        const_cast<void*>(static_cast<const void*>(this->storage_addr())), this->vt_);
     return proxy_t{&obs};
   }
 
@@ -2935,10 +2945,10 @@ template <template <class> class Trait, class Out, bool AsRvalue,
 Out construct_erased_to(void* ptr, vt_ptr vt, Alloc alloc, Extra&&... extra)
   requires(trait_has_dyn_construct<Trait>());
 
-// cache_ptr free-construct: capacity check; empty vt if it does not fit.
-// Ops are the Trait deduction (chain slot -> op_from_trait, else unsupported
-// for copy/move; destroy is always op_from_trait).
-// Definition follows dyn_factory_access.
+// cache_ptr free-construct: capacity check only; empty vt if it does not fit.
+// Live source is the caller's job (same as construct_erased_to). Ops are the
+// Trait deduction (chain slot -> op_from_trait, else unsupported for copy/move;
+// destroy is always op_from_trait). Definition follows dyn_factory_access.
 template <template <class> class Trait, std::size_t Size, std::size_t Align,
           bool AsRvalue, class... Extra>
 dyn<Trait, cache_ptr<Size, Align, cache_ops_from_trait<Trait>>>
@@ -2958,6 +2968,8 @@ class dyn_handle_base
                             trait_has_dyn_construct<Trait>()> {
   friend dyn_size_facet<dyn_handle_base, Trait, true>;
   friend dyn_size_facet<dyn_handle_base, Trait, false>;
+  template <class H>
+  friend void* storage_addr_of(H const&) noexcept;
 
  protected:
   using core =
@@ -2965,7 +2977,7 @@ class dyn_handle_base
   using typename core::ptr_type;
   using core::core;
   using core::obj_;
-  using core::raw;
+  using core::storage_addr;
   using core::vt_;
 
   template <template <template <class> class, class> class H,
@@ -3097,7 +3109,7 @@ class dyn_handle_base
   }
 
  public:
-  using core::ptr;
+  using core::raw;
   using core::reset;
 
   // Split ownership from the vtable. Callable on an lvalue; the Ptr is moved
@@ -3363,7 +3375,7 @@ class dyn_handle_base
              can_dyn_compare<Trait, Other>())
   friend bool operator==(Handle<Trait, Ptr> const& a,
                          Handle<Other, Ptr> const& b) noexcept {
-    return a.ptr() == b.ptr();
+    return a.raw() == b.raw();
   }
 
  private:
@@ -3374,7 +3386,7 @@ class dyn_handle_base
   template <typename Key, special_op Op>
   decltype(auto) cast_special(auto&&... args) const {
     return handle_cast_special<Trait, Key, Op>(
-        this->raw(), this->vt_, std::forward<decltype(args)>(args)...);
+        this->storage_addr(), this->vt_, std::forward<decltype(args)>(args)...);
   }
 
   template <typename To>
@@ -3398,13 +3410,13 @@ class dyn_handle_base
   template <template <class> class To>
     requires(is_trait_base_of<To, Trait>() && !Const)
   dyn_view<Trait, To> as() const {
-    return dyn_view<Trait, To>(vt_, raw());
+    return dyn_view<Trait, To>(vt_, storage_addr());
   }
 
   template <template <class> class To>
     requires(is_trait_base_of<To, Trait>() && Const)
   c_dyn_view<Trait, To> as() const {
-    return c_dyn_view<Trait, To>(vt_, raw());
+    return c_dyn_view<Trait, To>(vt_, storage_addr());
   }
 
   // Retype Trait only (same ptr/vt). NOT static_cast: under interface MI a
@@ -3804,8 +3816,6 @@ try_construct_cache(void* ptr, vt_ptr vt, Extra&&... extra)
   requires(trait_has_dyn_construct<Trait>()) {
   using Out =
       dyn<Trait, cache_ptr<Size, Align, cache_ops_from_trait<Trait>>>;
-  if (ptr == nullptr || vt == nullptr)
-    return {};
   const std::size_t size = dyn_storage_size<Trait>(vt);
   const std::size_t align = dyn_storage_align<Trait>(vt);
   if (size > Size || align > Align)
@@ -4041,19 +4051,19 @@ struct dyn_obs_proxy_facet
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #endif
-  // raw(): naked storage addr, no ptr()/emptiness gate. operator-> on an
+  // storage_addr(): naked storage addr, no raw()/emptiness gate. operator-> on an
   // empty handle is already on the caller.
   template <class Ptr>
     requires(!Const)
   explicit dyn_obs_proxy_facet(dyn<Trait, Ptr>* host)
       : no_friend_ops(), base(&buf_),
-        buf_(Obs::from_storage(host->raw(), host->vt())) {}
+        buf_(Obs::from_storage(host->storage_addr(), host->vt())) {}
 
   template <class Ptr>
     requires(Const)
   explicit dyn_obs_proxy_facet(c_dyn<Trait, Ptr> const* host)
       : no_friend_ops(), base(&buf_),
-        buf_(Obs::from_storage(host->raw(), host->vt())) {}
+        buf_(Obs::from_storage(host->storage_addr(), host->vt())) {}
 
   dyn_obs_proxy_facet(dyn_obs_proxy_facet const& o)
       : no_friend_ops(), base(&buf_), buf_(o.buf_) {}

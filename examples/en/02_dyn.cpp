@@ -59,7 +59,7 @@ int main() {
   std::println("d ok = {}", static_cast<bool>(d));
 
   // Recover raw pointer when you know the concrete type
-  auto* raw = static_cast<Person*>(d.ptr());
+  auto* raw = static_cast<Person*>(d.raw());
   std::println("via ptr = {}", raw->name);
 
   // const observation surface

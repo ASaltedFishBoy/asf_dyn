@@ -154,8 +154,8 @@ Same `vt`, no convert. Storable upcast is the converting constructor / `trait_ca
 Ptr& get() noexcept;
 Ptr const& get() const noexcept;
 
-void* ptr() const noexcept;              // dyn
-void const* ptr() const noexcept;        // c_dyn
+void* raw() const noexcept;              // dyn
+void const* raw() const noexcept;        // c_dyn
 
 void reset();
 void destroy();   // dyn; not shared_ptr / weak_ptr. Always vt[-1] (~Src)
@@ -173,7 +173,7 @@ template <template <class> class Other>
 bool operator==(dyn<Trait, Ptr> const& a, dyn<Other, Ptr> const& b) noexcept;
 ```
 
-`operator bool` / `== nullptr`: non-null raw pointer, or `!expired()` on `weak_ptr`. Cross-Trait `==` compares `ptr()`. No declared `!=` (C++20 may rewrite). No `<=>`.
+`operator bool` / `== nullptr`: non-null raw pointer, or `!expired()` on `weak_ptr`. Cross-Trait `==` compares `raw()`. No declared `!=` (C++20 may rewrite). No `<=>`.
 
 When the Trait has a dyn `op_construct`, `size()` / `align()` are Storage `sizeof` / `alignof` from the vt tail after the method slots. Empty handle: 0. No `op_construct`: these members are absent.
 

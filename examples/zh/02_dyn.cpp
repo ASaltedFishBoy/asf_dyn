@@ -59,7 +59,7 @@ int main() {
   std::println("d ok = {}", static_cast<bool>(d));
 
   // 已知具体类型时取回裸指针
-  auto* raw = static_cast<Person*>(d.ptr());
+  auto* raw = static_cast<Person*>(d.raw());
   std::println("via ptr = {}", raw->name);
 
   // const 观察面
