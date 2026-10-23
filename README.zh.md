@@ -157,7 +157,7 @@ cmake -S . -B build -G Ninja -DCMAKE_CXX_COMPILER=g++ \
   -DASF_HAS_DYN_RTTI=ON -DASF_HAS_DYN_INTERMEDIATE=OFF
 ```
 
-细节：[docs/zh/spec/features.md](docs/zh/spec/features.md)。特性开关也按二进制标签编入 ABI 内联命名空间（`v0_1_3_b...`）。
+细节：[docs/zh/spec/features.md](docs/zh/spec/features.md)。特性开关也按二进制标签编入 ABI 内联命名空间（`v0_1_4_b...`）。
 
 ## 头文件
 

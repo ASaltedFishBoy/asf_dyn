@@ -16,7 +16,7 @@ asf::abi_namespace_name
 
 ## ABI 版本（`ASF_VERSION_*` / `ASF_ABI_NAMESPACE`）
 
-当前 **0.1.3**。内联 ABI 命名空间为 `v0_1_3_b` + **二进制特性标**（MSB→LSB： `RTTI` / `INTERMEDIATE` / `MULTI_VT` / `SINGLE_INHERIT`）。默认 (`0,1,1,0`) 得 `v0_1_3_b0110`。源码仍写 `asf::dyn` 等；mangling 带上该段，使同一进程内不同 ASF 版本**或选项组合** 编译出的 `.dll`/`.so` 不会在 slots / 虚表 / erased thunk 的 COMDAT 上静默合并。破坏 ABI 时抬 `ASF_VERSION_*`（及 `iface_config.hpp` 中 `vMAJOR_MINOR_PATCH` 令牌）。只有有意强制某个标签时才覆盖 `ASF_ABI_NAMESPACE`。运行时：`asf::abi_namespace_name` / `asf::dyn_feature_bits`。
+当前 **0.1.4**。内联 ABI 命名空间为 `v0_1_4_b` + **二进制特性标**（MSB→LSB： `RTTI` / `INTERMEDIATE` / `MULTI_VT` / `SINGLE_INHERIT`）。默认 (`0,1,1,0`) 得 `v0_1_4_b0110`。源码仍写 `asf::dyn` 等；mangling 带上该段，使同一进程内不同 ASF 版本**或选项组合** 编译出的 `.dll`/`.so` 不会在 slots / 虚表 / erased thunk 的 COMDAT 上静默合并。破坏 ABI 时抬 `ASF_VERSION_*`（及 `iface_config.hpp` 中 `vMAJOR_MINOR_PATCH` 令牌）。只有有意强制某个标签时才覆盖 `ASF_ABI_NAMESPACE`。运行时：`asf::abi_namespace_name` / `asf::dyn_feature_bits`。
 
 ---
 
