@@ -2493,32 +2493,26 @@ void* storage_addr_of(Handle const& h) noexcept {
 // Same-vt view on Layout's table. Mutable and const are separate types
 // (Layout is a template template, so it cannot carry const). Public handles
 // dyn_view / c_dyn_view follow this detail block.
-template <template <class> class Layout, template <class> class View>
+template <template <class> class Layout, template <class> class View,
+          bool ConstOnly>
 struct dyn_view_fn_box {
   struct data;
   consteval {
-    std::meta::define_aggregate(
-        ^^data,
-        dyn_like_fn_specs<View, false>(^^dyn_view<Layout, View>));
-  }
-};
-
-template <template <class> class Layout, template <class> class View>
-struct c_dyn_view_fn_box {
-  struct data;
-  consteval {
-    std::meta::define_aggregate(
-        ^^data,
-        dyn_like_fn_specs<View, true>(^^c_dyn_view<Layout, View>));
+    if constexpr (ConstOnly)
+      std::meta::define_aggregate(
+          ^^data,
+          dyn_like_fn_specs<View, true>(^^c_dyn_view<Layout, View>));
+    else
+      std::meta::define_aggregate(
+          ^^data,
+          dyn_like_fn_specs<View, false>(^^dyn_view<Layout, View>));
   }
 };
 
 template <template <class> class Layout, template <class> class View, bool Const,
           class Derived>
 class dyn_view_body {
-  using fns_type = std::conditional_t<
-      Const, typename c_dyn_view_fn_box<Layout, View>::data,
-      typename dyn_view_fn_box<Layout, View>::data>;
+  using fns_type = typename dyn_view_fn_box<Layout, View, Const>::data;
   vt_ptr vt_{};
   void* ptr_{};
 
@@ -2537,7 +2531,7 @@ class dyn_view_body {
   using c_proxy_t = std::conditional_t<
       Const, proxy_t,
       fn_proxy<c_dyn_view<Layout, View>,
-               typename c_dyn_view_fn_box<Layout, View>::data>>;
+               typename dyn_view_fn_box<Layout, View, true>::data>>;
 
   template <template <class> class To>
   using as_type =
@@ -2691,6 +2685,124 @@ struct sub_dyn_fn_box {
   }
 };
 
+// Const-unified sub_* 主体 + 观察 (slice / proxy / lock). Public shells:
+// sub_dyn / c_sub_dyn. SoftUptrDestroy kept true (SliceCall path).
+template <template <class> class Trait, bool Const, class Ptr, class Derived>
+class sub_dyn_body
+    : public dyn_ptr_core<Derived, Trait, Const, true, true, Ptr> {
+  using base = dyn_ptr_core<Derived, Trait, Const, true, true, Ptr>;
+
+ protected:
+  using typename base::ptr_type;
+  using vt_ptr = detail::vt_ptr;
+  using base::base;
+  using base::obj_;
+  using base::storage_addr;
+  using base::vt_;
+
+  template <template <class> class, bool, class, class>
+  friend class sub_dyn_body;
+  template <template <class> class T, class P>
+  friend class ::asf::sub_dyn;
+  template <template <class> class T, class P>
+  friend class ::asf::c_sub_dyn;
+
+  // Void* observation flavor of this Const (proxy host).
+  using Obs = std::conditional_t<Const, c_sub_dyn<Trait>, sub_dyn<Trait>>;
+  using Locked =
+      std::conditional_t<Const, c_sub_dyn<Trait, std::shared_ptr<void>>,
+                         sub_dyn<Trait, std::shared_ptr<void>>>;
+
+ public:
+  using base::raw;
+  using base::reset;
+
+  using proxy_t =
+      fn_proxy<Obs, typename sub_dyn_fn_box<Trait, Const>::data>;
+
+  sub_dyn_body() noexcept = default;
+  sub_dyn_body(std::nullptr_t) noexcept : sub_dyn_body() {}
+  sub_dyn_body(sub_dyn_body const&) = default;
+  sub_dyn_body(sub_dyn_body&&) = default;
+  sub_dyn_body& operator=(sub_dyn_body const&) = default;
+  sub_dyn_body& operator=(sub_dyn_body&&) = default;
+
+  // Slice from mut dyn (both Const flavors).
+  template <template <class> class Final>
+    requires(can_sub_slice<Final, Trait>())
+  explicit sub_dyn_body(dyn<Final, Ptr> const& handle) noexcept
+      : base(handle.vt_ + sub_slice_offset<Final, Trait>(), handle.obj_) {}
+
+  template <template <class> class Final>
+    requires(can_sub_slice<Final, Trait>())
+  explicit sub_dyn_body(dyn<Final, Ptr>&& handle) noexcept : base() {
+    // Sequence: unpublish source, then take payload (arg order is unspecified).
+    vt_ptr v = std::exchange(handle.vt_, nullptr);
+    this->obj_ = std::move(handle.obj_);
+    this->vt_ = v + sub_slice_offset<Final, Trait>();
+  }
+
+  // Slice from c_dyn: const surface only.
+  template <template <class> class Final>
+    requires(Const && can_sub_slice<Final, Trait>())
+  explicit sub_dyn_body(c_dyn<Final, Ptr> const& handle) noexcept
+      : base(handle.vt_ + sub_slice_offset<Final, Trait>(), handle.obj_) {}
+
+  template <template <class> class Final>
+    requires(Const && can_sub_slice<Final, Trait>())
+  explicit sub_dyn_body(c_dyn<Final, Ptr>&& handle) noexcept : base() {
+    vt_ptr v = std::exchange(handle.vt_, nullptr);
+    this->obj_ = std::move(handle.obj_);
+    this->vt_ = v + sub_slice_offset<Final, Trait>();
+  }
+
+  proxy_t operator->()
+    requires(!Const && !is_wptr_v<Ptr>) {
+    auto obs = observe(this->storage_addr(), this->vt_);
+    return proxy_t{&obs};
+  }
+  proxy_t operator*()
+    requires(!Const && !is_wptr_v<Ptr>) {
+    auto obs = observe(this->storage_addr(), this->vt_);
+    return proxy_t{&obs};
+  }
+
+  proxy_t operator->() const
+    requires(Const && !is_wptr_v<Ptr>) {
+    auto obs = observe(
+        const_cast<void*>(static_cast<const void*>(this->storage_addr())),
+        this->vt_);
+    return proxy_t{&obs};
+  }
+  proxy_t operator*() const
+    requires(Const && !is_wptr_v<Ptr>) {
+    auto obs = observe(
+        const_cast<void*>(static_cast<const void*>(this->storage_addr())),
+        this->vt_);
+    return proxy_t{&obs};
+  }
+
+  Locked lock() const
+    requires(is_wptr_v<Ptr>) {
+    auto p = this->obj_.lock();
+    if (!p)
+      return {};
+    return Locked::from_ptr(std::move(p), this->vt_);
+  }
+
+ protected:
+  // Internal observation factories (proxy/lock use only; not public API).
+  // Always Obs (void* Ptr); host Ptr may be unique_ptr / raw.
+  static Obs observe(void* p, vt_ptr vt) noexcept
+    requires(!is_sptr_v<Ptr> && !is_wptr_v<Ptr>) {
+    return Obs{vt, p};
+  }
+
+  static Derived from_ptr(ptr_type p, vt_ptr vt) noexcept {
+    return Derived{vt, std::move(p)};
+  }
+};
+
 }  // namespace detail
 
 // Isolated upcast slice of a leaf/final dyn's table onto Trait's own section.
@@ -2702,107 +2814,36 @@ struct sub_dyn_fn_box {
 // no bases). vt_destroy Ptr only if pointer_trait::release accepts *this.
 template <template <class> class Trait, class Ptr>
 class sub_dyn
-    : public detail::dyn_ptr_core<sub_dyn<Trait, Ptr>, Trait,
-                                  false, true, true, Ptr> {
-  using base =
-      detail::dyn_ptr_core<sub_dyn, Trait, false, true, true, Ptr>;
+    : public detail::sub_dyn_body<Trait, false, Ptr, sub_dyn<Trait, Ptr>> {
+  using base = detail::sub_dyn_body<Trait, false, Ptr, sub_dyn<Trait, Ptr>>;
   using typename base::ptr_type;
-  using vt_ptr = detail::vt_ptr;
+  using typename base::vt_ptr;
 
   template <template <class> class T, class P>
   friend class c_sub_dyn;
-  template <template <class> class T, class P>
-  friend class sub_dyn;
+  template <template <class> class T, bool C, class P, class D>
+  friend class detail::sub_dyn_body;
 
  public:
   using base::base;
-  using base::raw;
-  using base::reset;
-
-  // Trait-keyed observer proxy (always sub_dyn<Trait> / void*) -- like dyn_proxy.
-  using proxy_t = detail::fn_proxy<sub_dyn<Trait>,
-                                   typename detail::sub_dyn_fn_box<Trait, false>::data>;
-
-  sub_dyn() noexcept = default;
-  sub_dyn(std::nullptr_t) noexcept : sub_dyn() {}
-  sub_dyn(const sub_dyn&) = default;
-  sub_dyn(sub_dyn&&) = default;
-  sub_dyn& operator=(const sub_dyn&) = default;
-  sub_dyn& operator=(sub_dyn&&) = default;
-
-  template <template <class> class Final>
-    requires(detail::can_sub_slice<Final, Trait>())
-  explicit sub_dyn(dyn<Final, Ptr> const& handle) noexcept
-      : base(handle.vt_ + detail::sub_slice_offset<Final, Trait>(),
-             handle.obj_) {}
-
-  template <template <class> class Final>
-    requires(detail::can_sub_slice<Final, Trait>())
-  explicit sub_dyn(dyn<Final, Ptr>&& handle) noexcept : base() {
-    // Sequence: unpublish source, then take payload (arg order is unspecified).
-    vt_ptr v = std::exchange(handle.vt_, nullptr);
-    this->obj_ = std::move(handle.obj_);
-    this->vt_ = v + detail::sub_slice_offset<Final, Trait>();
-  }
-
-  proxy_t operator->()
-    requires(!detail::is_wptr_v<Ptr>) {
-    auto obs = sub_dyn<Trait>::observe(this->storage_addr(), this->vt_);
-    return proxy_t{&obs};
-  }
-  proxy_t operator*()
-    requires(!detail::is_wptr_v<Ptr>) {
-    auto obs = sub_dyn<Trait>::observe(this->storage_addr(), this->vt_);
-    return proxy_t{&obs};
-  }
-
-  sub_dyn<Trait, std::shared_ptr<void>> lock() const
-    requires(detail::is_wptr_v<Ptr>) {
-    auto p = this->obj_.lock();
-    if (!p)
-      return {};
-    return sub_dyn<Trait, std::shared_ptr<void>>::from_ptr(std::move(p),
-                                                           this->vt_);
-  }
-
- private:
-  // Internal observation factories (proxy/lock use only; not public API).
-  static sub_dyn observe(void* p, vt_ptr vt) noexcept
-    requires(!detail::is_sptr_v<Ptr> &&
-             !detail::is_wptr_v<Ptr>) {
-    return sub_dyn{vt, ptr_type{p}};
-  }
-
-  static sub_dyn from_ptr(ptr_type p, vt_ptr vt) noexcept {
-    return sub_dyn{vt, std::move(p)};
-  }
+  using base::proxy_t;
 };
 
 template <template <class> class Trait, class Ptr>
 class c_sub_dyn
-    : public detail::dyn_ptr_core<c_sub_dyn<Trait, Ptr>, Trait,
-                                  true, true, true, Ptr> {
-  using base =
-      detail::dyn_ptr_core<c_sub_dyn, Trait, true, true, true, Ptr>;
+    : public detail::sub_dyn_body<Trait, true, Ptr, c_sub_dyn<Trait, Ptr>> {
+  using base = detail::sub_dyn_body<Trait, true, Ptr, c_sub_dyn<Trait, Ptr>>;
   using typename base::ptr_type;
-  using vt_ptr = detail::vt_ptr;
+  using typename base::vt_ptr;
+
+  template <template <class> class T, bool C, class P, class D>
+  friend class detail::sub_dyn_body;
 
  public:
   using base::base;
-  using base::raw;
-  using base::reset;
+  using base::proxy_t;
 
-  using proxy_t =
-      detail::fn_proxy<c_sub_dyn<Trait>,
-                       typename detail::sub_dyn_fn_box<Trait, true>::data>;
-
-  c_sub_dyn() noexcept = default;
-  c_sub_dyn(std::nullptr_t) noexcept : c_sub_dyn() {}
-  c_sub_dyn(const c_sub_dyn&) = default;
-  c_sub_dyn(c_sub_dyn&&) = default;
-  c_sub_dyn& operator=(const c_sub_dyn&) = default;
-  c_sub_dyn& operator=(c_sub_dyn&&) = default;
-
+  // Mut sub -> const sub (same Ptr, or Ptr rebind).
   explicit c_sub_dyn(sub_dyn<Trait, Ptr> const& w) noexcept
       : base(w.vt_, w.obj_) {}
 
@@ -2830,68 +2871,6 @@ class c_sub_dyn
     if constexpr (!std::is_constructible_v<Ptr, SrcP const&>) {
       w.vt_ = nullptr;
     }
-  }
-
-  template <template <class> class Final>
-    requires(detail::can_sub_slice<Final, Trait>())
-  explicit c_sub_dyn(dyn<Final, Ptr> const& handle) noexcept
-      : base(handle.vt_ + detail::sub_slice_offset<Final, Trait>(),
-             handle.obj_) {}
-
-  template <template <class> class Final>
-    requires(detail::can_sub_slice<Final, Trait>())
-  explicit c_sub_dyn(dyn<Final, Ptr>&& handle) noexcept : base() {
-    vt_ptr v = std::exchange(handle.vt_, nullptr);
-    this->obj_ = std::move(handle.obj_);
-    this->vt_ = v + detail::sub_slice_offset<Final, Trait>();
-  }
-
-  template <template <class> class Final>
-    requires(detail::can_sub_slice<Final, Trait>())
-  explicit c_sub_dyn(c_dyn<Final, Ptr> const& handle) noexcept
-      : base(handle.vt_ + detail::sub_slice_offset<Final, Trait>(),
-             handle.obj_) {}
-
-  template <template <class> class Final>
-    requires(detail::can_sub_slice<Final, Trait>())
-  explicit c_sub_dyn(c_dyn<Final, Ptr>&& handle) noexcept : base() {
-    vt_ptr v = std::exchange(handle.vt_, nullptr);
-    this->obj_ = std::move(handle.obj_);
-    this->vt_ = v + detail::sub_slice_offset<Final, Trait>();
-  }
-
-  proxy_t operator->() const
-    requires(!detail::is_wptr_v<Ptr>) {
-    auto obs = c_sub_dyn<Trait>::observe(
-        const_cast<void*>(static_cast<const void*>(this->storage_addr())), this->vt_);
-    return proxy_t{&obs};
-  }
-  proxy_t operator*() const
-    requires(!detail::is_wptr_v<Ptr>) {
-    auto obs = c_sub_dyn<Trait>::observe(
-        const_cast<void*>(static_cast<const void*>(this->storage_addr())), this->vt_);
-    return proxy_t{&obs};
-  }
-
-  c_sub_dyn<Trait, std::shared_ptr<void>> lock() const
-    requires(detail::is_wptr_v<Ptr>) {
-    auto p = this->obj_.lock();
-    if (!p)
-      return {};
-    return c_sub_dyn<Trait, std::shared_ptr<void>>::from_ptr(std::move(p),
-                                                             this->vt_);
-  }
-
- private:
-  // Internal observation factories (proxy/lock use only; not public API).
-  static c_sub_dyn observe(void* p, vt_ptr vt) noexcept
-    requires(!detail::is_sptr_v<Ptr> &&
-             !detail::is_wptr_v<Ptr>) {
-    return c_sub_dyn{vt, ptr_type{p}};
-  }
-
-  static c_sub_dyn from_ptr(ptr_type p, vt_ptr vt) noexcept {
-    return c_sub_dyn{vt, std::move(p)};
   }
 };
 
@@ -2990,6 +2969,8 @@ class dyn_handle_base
   friend class ::asf::sub_dyn;
   template <template <class> class T, class P>
   friend class ::asf::c_sub_dyn;
+  template <template <class> class T, bool C, class P, class D>
+  friend class sub_dyn_body;
   template <template <class> class Tr, std::size_t Sz, std::size_t Al,
             bool AsRvalue, class... Extra>
   friend dyn<Tr, cache_ptr<Sz, Al, cache_ops_from_trait<Tr>>>

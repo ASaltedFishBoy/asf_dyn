@@ -113,25 +113,16 @@ struct signature_from_mp<R (C::*)(Args...)> {
 };
 
 template <class R, class C, class... Args>
-struct signature_from_mp<R (C::*)(Args...) const> {
-  static consteval std::meta::info fn() {
-    return ^^signature_probe_fn<R, Args...>;
-  }
-};
+struct signature_from_mp<R (C::*)(Args...) const>
+    : signature_from_mp<R (C::*)(Args...)> {};
 
 template <class R, class C, class... Args>
-struct signature_from_mp<R (C::*)(Args...) noexcept> {
-  static consteval std::meta::info fn() {
-    return ^^signature_probe_fn<R, Args...>;
-  }
-};
+struct signature_from_mp<R (C::*)(Args...) noexcept>
+    : signature_from_mp<R (C::*)(Args...)> {};
 
 template <class R, class C, class... Args>
-struct signature_from_mp<R (C::*)(Args...) const noexcept> {
-  static consteval std::meta::info fn() {
-    return ^^signature_probe_fn<R, Args...>;
-  }
-};
+struct signature_from_mp<R (C::*)(Args...) const noexcept>
+    : signature_from_mp<R (C::*)(Args...)> {};
 
 template <class R, class... Args>
 struct signature_from_mp<R (*)(Args...)> {
@@ -141,11 +132,8 @@ struct signature_from_mp<R (*)(Args...)> {
 };
 
 template <class R, class... Args>
-struct signature_from_mp<R (*)(Args...) noexcept> {
-  static consteval std::meta::info fn() {
-    return ^^signature_probe_fn<R, Args...>;
-  }
-};
+struct signature_from_mp<R (*)(Args...) noexcept>
+    : signature_from_mp<R (*)(Args...)> {};
 
 template <std::meta::info Method, class Self, std::size_t... I>
 consteval auto signature_mp(std::index_sequence<I...>)
@@ -165,6 +153,13 @@ consteval std::meta::info signature_decl() {
       std::make_index_sequence<N>{}));
   return signature_from_mp<MP>::fn();
 }
+
+// --- Display-string parsers (GCC escape hatch) -----------------------------
+// Preferred path is type/meta (`signature_decl_of` / `parameters_of`).
+// Substituting a dummy Self into a method template can instantiate the body
+// on GCC, so declaration-shape questions (placeholder return, auto arity,
+// self index, extras) scrape `display_string_of` when the type path cannot
+// run. Identifier catalogs (`op_*`) are separate and intentional.
 
 consteval bool display_is_auto_return(std::string_view t) {
   while (!t.empty() && (t.front() == ' ' || t.front() == '\t'))
@@ -232,16 +227,44 @@ consteval bool display_has_placeholder_return(std::string_view s) {
   return display_is_auto_return(display_strip_head(s));
 }
 
-template <std::meta::info Method>
-consteval bool has_placeholder_return() {
-  if constexpr (!std::meta::is_function_template(Method))
-    return false;
-  else {
-    try {
-      return display_has_placeholder_return(std::meta::display_string_of(Method));
-    } catch (std::meta::exception const&) {
-      return false;
+// Split `(...)` on top-level commas (depth-aware for `<` / `(`).
+consteval std::vector<std::string_view> display_param_parts(
+    std::string_view s) {
+  std::vector<std::string_view> parts;
+  auto lp = s.find('(');
+  auto rp = s.rfind(')');
+  if (lp == std::string_view::npos || rp == std::string_view::npos || rp <= lp)
+    return parts;
+  auto inside = s.substr(lp + 1, rp - lp - 1);
+  int depth = 0;
+  std::size_t start = 0;
+  for (std::size_t i = 0; i <= inside.size(); ++i) {
+    char c = i < inside.size() ? inside[i] : ',';
+    if (c == '<' || c == '(')
+      ++depth;
+    else if ((c == '>' || c == ')') && depth > 0)
+      --depth;
+    else if ((c == ',' && depth == 0) || i == inside.size()) {
+      auto part = inside.substr(start, i - start);
+      std::size_t a = 0, b = part.size();
+      while (a < b && (part[a] == ' ' || part[a] == '\t'))
+        ++a;
+      while (b > a && (part[b - 1] == ' ' || part[b - 1] == '\t'))
+        --b;
+      if (a < b)
+        parts.push_back(part.substr(a, b - a));
+      start = i + 1;
     }
+  }
+  return parts;
+}
+
+consteval std::vector<std::string_view> display_param_parts_of(
+    std::meta::info method) {
+  try {
+    return display_param_parts(std::meta::display_string_of(method));
+  } catch (std::meta::exception const&) {
+    return {};
   }
 }
 
@@ -253,6 +276,11 @@ consteval bool has_placeholder_return(std::meta::info method) {
   } catch (std::meta::exception const&) {
     return false;
   }
+}
+
+template <std::meta::info Method>
+consteval bool has_placeholder_return() {
+  return has_placeholder_return(Method);
 }
 
 consteval int display_auto_count(std::meta::info method) {
@@ -275,34 +303,7 @@ consteval int display_auto_count() {
 }
 
 consteval int display_param_count(std::meta::info method) {
-  try {
-    auto s = std::meta::display_string_of(method);
-    auto lp = s.find('(');
-    auto rp = s.rfind(')');
-    if (lp == std::string_view::npos || rp == std::string_view::npos || rp <= lp)
-      return 0;
-    auto inside = s.substr(lp + 1, rp - lp - 1);
-    std::size_t first = 0;
-    while (first < inside.size() &&
-           (inside[first] == ' ' || inside[first] == '\t'))
-      ++first;
-    if (first == inside.size())
-      return 0;
-    int n = 1;
-    int depth = 0;
-    for (std::size_t i = first; i < inside.size(); ++i) {
-      char c = inside[i];
-      if (c == '<' || c == '(')
-        ++depth;
-      else if ((c == '>' || c == ')') && depth > 0)
-        --depth;
-      else if (c == ',' && depth == 0)
-        ++n;
-    }
-    return n;
-  } catch (std::meta::exception const&) {
-    return 0;
-  }
+  return static_cast<int>(display_param_parts_of(method).size());
 }
 
 // Extra types from decltype(&template [:M:]<signature_self>). Trailing
@@ -350,34 +351,6 @@ struct mp_extras_of<R (*)(Self, Decl...)> {
     return mp_decl_extras<Decl...>::template match<Extra...>();
   }
 };
-
-consteval bool display_return_is(std::meta::info method, std::meta::info ty) {
-  try {
-    auto s = std::meta::display_string_of(method);
-    auto w = std::meta::display_string_of(std::meta::remove_cvref(ty));
-    if (w.empty())
-      return false;
-    auto starts_with_ty = [&](std::string_view rest) {
-      return rest.starts_with(w) &&
-             (rest.size() == w.size() || rest[w.size()] == ' ' ||
-              rest[w.size()] == '&');
-    };
-    for (std::size_t pos = s.find('>'); pos != std::string_view::npos;
-         pos = s.find('>', pos + 1)) {
-      std::size_t i = pos + 1;
-      while (i < s.size() && s[i] == ' ')
-        ++i;
-      if (starts_with_ty(s.substr(i)))
-        return true;
-    }
-    std::size_t i = 0;
-    while (i < s.size() && s[i] == ' ')
-      ++i;
-    return starts_with_ty(s.substr(i));
-  } catch (std::meta::exception const&) {
-    return false;
-  }
-}
 
 template <std::meta::info Method>
 struct signature_arity {
@@ -483,6 +456,7 @@ consteval void check_construct_return_decl();
 consteval bool is_rvalue_self_method(std::meta::info method);
 consteval bool is_const_self_method(std::meta::info method);
 consteval std::size_t self_param_index(std::meta::info method);
+consteval std::meta::info self_param_type_of(std::meta::info method);
 
 // Declaring Trait<void> (section). Trait-level annotations live here.
 consteval bool declaring_trait_has(std::meta::info member, std::meta::info tag) {
@@ -1723,39 +1697,12 @@ consteval int auto_param_count(std::meta::info method) {
 }
 
 consteval std::size_t display_self_index(std::meta::info method) {
-  try {
-    auto s = std::meta::display_string_of(method);
-    auto lp = s.find('(');
-    auto rp = s.rfind(')');
-    if (lp == std::string_view::npos || rp == std::string_view::npos || rp <= lp)
-      return 0;
-    auto inside = s.substr(lp + 1, rp - lp - 1);
-    std::size_t idx = 0;
-    int depth = 0;
-    std::size_t start = 0;
-    auto consider = [&](std::string_view part) {
-      if (part.find("auto:") != std::string_view::npos)
-        return true;
-      return false;
-    };
-    for (std::size_t i = 0; i <= inside.size(); ++i) {
-      char c = i < inside.size() ? inside[i] : ',';
-      if (c == '<' || c == '(')
-        ++depth;
-      else if ((c == '>' || c == ')') && depth > 0)
-        --depth;
-      else if ((c == ',' && depth == 0) || i == inside.size()) {
-        auto part = inside.substr(start, i - start);
-        if (consider(part))
-          return idx;
-        ++idx;
-        start = i + 1;
-      }
-    }
-    return 0;
-  } catch (std::meta::exception const&) {
-    return 0;
+  auto parts = display_param_parts_of(method);
+  for (std::size_t i = 0; i < parts.size(); ++i) {
+    if (parts[i].find("auto:") != std::string_view::npos)
+      return i;
   }
+  return 0;
 }
 
 // Index of the mirror/`auto` self parameter (the auto). Concrete Trait<T>
@@ -1836,45 +1783,18 @@ consteval bool method_args_match_arity(std::meta::info method,
 // Skip the auto self; compare the rest to Args display names.
 template <class... Args>
 consteval bool display_extras_match(std::meta::info method) {
+  auto parts = display_param_parts_of(method);
+  std::size_t self_i = display_self_index(method);
+  if (self_i >= parts.size())
+    return false;
+  std::vector<std::string_view> extras;
+  for (std::size_t i = 0; i < parts.size(); ++i) {
+    if (i != self_i)
+      extras.push_back(parts[i]);
+  }
+  if (extras.size() != sizeof...(Args))
+    return false;
   try {
-    auto s = std::meta::display_string_of(method);
-    auto lp = s.find('(');
-    auto rp = s.rfind(')');
-    if (lp == std::string_view::npos || rp == std::string_view::npos ||
-        rp <= lp)
-      return false;
-    auto inside = s.substr(lp + 1, rp - lp - 1);
-    std::vector<std::string_view> parts;
-    int depth = 0;
-    std::size_t start = 0;
-    for (std::size_t i = 0; i <= inside.size(); ++i) {
-      char c = i < inside.size() ? inside[i] : ',';
-      if (c == '<' || c == '(')
-        ++depth;
-      else if ((c == '>' || c == ')') && depth > 0)
-        --depth;
-      else if ((c == ',' && depth == 0) || i == inside.size()) {
-        auto part = inside.substr(start, i - start);
-        std::size_t a = 0, b = part.size();
-        while (a < b && (part[a] == ' ' || part[a] == '\t'))
-          ++a;
-        while (b > a && (part[b - 1] == ' ' || part[b - 1] == '\t'))
-          --b;
-        if (a < b)
-          parts.push_back(part.substr(a, b - a));
-        start = i + 1;
-      }
-    }
-    std::size_t self_i = display_self_index(method);
-    if (self_i >= parts.size())
-      return false;
-    std::vector<std::string_view> extras;
-    for (std::size_t i = 0; i < parts.size(); ++i) {
-      if (i != self_i)
-        extras.push_back(parts[i]);
-    }
-    if (extras.size() != sizeof...(Args))
-      return false;
     std::meta::info want[] = {^^std::remove_cvref_t<Args>...};
     for (std::size_t k = 0; k < extras.size(); ++k) {
       auto w = std::meta::display_string_of(want[k]);
@@ -1928,46 +1848,6 @@ consteval bool method_args_match_types(std::meta::info method) {
   }
 }
 
-// self_idx: 0 = handle on the left ((*h) op x / h op x); 1 = other operand
-// first (x op h). Dyn only collects self_idx 0. Reverse (idx 1) is iface-only
-// and must be `static` (iface-only).
-// const_self: -1 any, 0 mutable self, 1 const self.
-template <class... Args>
-consteval std::meta::info find_method_for_args(std::meta::info cls,
-                                               std::string_view name,
-                                               std::size_t self_idx = 0,
-                                               int const_self = -1) {
-  auto named = find_methods_named(cls, name);
-  std::vector<std::meta::info> at;
-  for (auto m : named) {
-    if (self_param_index(m) != self_idx)
-      continue;
-    if (const_self >= 0 &&
-        is_const_self_method(m) != static_cast<bool>(const_self))
-      continue;
-    at.push_back(m);
-  }
-  if (at.empty())
-    return std::meta::info{};
-  if (at.size() == 1)
-    return at[0];
-  constexpr std::size_t nargs = sizeof...(Args);
-  std::meta::info arity_hit = std::meta::info{};
-  std::size_t arity_hits = 0;
-  for (auto m : at) {
-    if (!method_args_match_arity(m, nargs))
-      continue;
-    ++arity_hits;
-    arity_hit = m;
-    if (method_args_match_types<Args...>(m))
-      return m;
-  }
-  // Ambiguous same-arity (e.g. int vs double) without a type match: fail.
-  if (arity_hits == 1)
-    return arity_hit;
-  return std::meta::info{};
-}
-
 template <std::meta::info Method, class... Args>
 consteval bool method_args_match_types_of() {
   if (!method_args_match_arity(Method, sizeof...(Args)))
@@ -1999,17 +1879,27 @@ consteval bool method_args_match_types_of() {
   }
 }
 
+// Name + self_idx + const_self gate (m itself stays from at<I> for NTTP use).
+consteval bool method_passes_lookup_gate(std::meta::info m,
+                                         std::string_view name,
+                                         std::size_t self_idx,
+                                         int const_self) {
+  if (!std::meta::has_identifier(m) || std::meta::identifier_of(m) != name)
+    return false;
+  if (self_param_index(m) != self_idx)
+    return false;
+  if (const_self >= 0 &&
+      is_const_self_method(m) != static_cast<bool>(const_self))
+    return false;
+  return true;
+}
+
 template <std::meta::info Cls, std::size_t I>
 consteval std::meta::info find_method_named_at(std::string_view name,
                                                std::size_t self_idx,
                                                int const_self) {
   constexpr auto m = trait_methods_t<typename [:Cls:]>::template at<I>();
-  if (!std::meta::has_identifier(m) || std::meta::identifier_of(m) != name)
-    return std::meta::info{};
-  if (self_param_index(m) != self_idx)
-    return std::meta::info{};
-  if (const_self >= 0 &&
-      is_const_self_method(m) != static_cast<bool>(const_self))
+  if (!method_passes_lookup_gate(m, name, self_idx, const_self))
     return std::meta::info{};
   return m;
 }
@@ -2019,12 +1909,7 @@ consteval std::meta::info find_method_hit(std::string_view name,
                                           std::size_t self_idx,
                                           int const_self) {
   constexpr auto m = trait_methods_t<typename [:Cls:]>::template at<I>();
-  if (!std::meta::has_identifier(m) || std::meta::identifier_of(m) != name)
-    return std::meta::info{};
-  if (self_param_index(m) != self_idx)
-    return std::meta::info{};
-  if (const_self >= 0 &&
-      is_const_self_method(m) != static_cast<bool>(const_self))
+  if (!method_passes_lookup_gate(m, name, self_idx, const_self))
     return std::meta::info{};
   if (!method_args_match_types_of<m, Args...>())
     return std::meta::info{};
@@ -2346,7 +2231,15 @@ consteval bool has_annotation(std::meta::info r, std::meta::info tag) {
 // Construct: only a declared mirror/rmirror self (value_of). Object-self
 // construct may touch fields; those tags wait for Src at invoke.
 // Other methods: void return only (`self.field` default bodies stay off).
+// Prefer typed return_type_of when already a function; templates scrape.
 consteval bool display_return_void(std::meta::info method) {
+  if (std::meta::is_function(method)) {
+    try {
+      return std::meta::remove_cvref(std::meta::return_type_of(method)) ==
+             ^^void;
+    } catch (std::meta::exception const&) {
+    }
+  }
   try {
     auto s = std::meta::display_string_of(method);
     std::size_t i = 0;
@@ -2380,13 +2273,22 @@ consteval bool display_return_void(std::meta::info method) {
   }
 }
 
+// Prefer typed self param (template_of == mirror); else self-param display.
 consteval bool display_self_is_mirror(std::meta::info method) {
-  try {
-    auto s = std::meta::display_string_of(method);
-    return s.find("mirror") != std::string_view::npos;
-  } catch (std::meta::exception const&) {
-    return false;
+  if (std::meta::is_function(method)) {
+    auto ty = self_param_type_of(method);
+    if (ty != std::meta::info{}) {
+      auto bare = std::meta::remove_cvref(ty);
+      return std::meta::has_template_arguments(bare) &&
+             std::meta::template_of(bare) == ^^mirror;
+    }
   }
+  auto parts = display_param_parts_of(method);
+  std::size_t self_i = display_self_index(method);
+  if (self_i >= parts.size())
+    return false;
+  // rmirror is alias of mirror<T&&>; both contain "mirror".
+  return parts[self_i].find("mirror") != std::string_view::npos;
 }
 
 consteval bool method_ann_should_probe(std::meta::info method,
@@ -2721,47 +2623,22 @@ enum class self_ref_kind { lvalue, const_lvalue, rvalue, const_rvalue };
 // Placeholder-return construct has no declaration inst; read cvref from
 // display_string_of (e.g. `const auto:6&` / `auto:6&&`).
 consteval self_ref_kind self_ref_from_display(std::meta::info method) {
-  try {
-    auto s = std::meta::display_string_of(method);
-    auto lp = s.find('(');
-    auto rp = s.rfind(')');
-    if (lp == std::string_view::npos || rp == std::string_view::npos || rp <= lp)
-      return self_ref_kind::const_lvalue;
-    auto inside = s.substr(lp + 1, rp - lp - 1);
-    std::string_view self_part = inside;
-    int depth = 0;
-    std::size_t start = 0;
-    std::size_t idx = 0;
-    std::size_t self_i = display_self_index(method);
-    for (std::size_t i = 0; i <= inside.size(); ++i) {
-      char c = i < inside.size() ? inside[i] : ',';
-      if (c == '<' || c == '(')
-        ++depth;
-      else if ((c == '>' || c == ')') && depth > 0)
-        --depth;
-      else if ((c == ',' && depth == 0) || i == inside.size()) {
-        if (idx == self_i) {
-          self_part = inside.substr(start, i - start);
-          break;
-        }
-        ++idx;
-        start = i + 1;
-      }
-    }
-    bool cnst = self_part.find("const") != std::string_view::npos;
-    if (self_part.find("rmirror") != std::string_view::npos)
-      return cnst ? self_ref_kind::const_rvalue : self_ref_kind::rvalue;
-    auto amp = self_part.rfind('&');
-    bool rval = amp != std::string_view::npos && amp > 0 &&
-                self_part[amp - 1] == '&';
-    if (rval)
-      return cnst ? self_ref_kind::const_rvalue : self_ref_kind::rvalue;
-    if (amp != std::string_view::npos)
-      return cnst ? self_ref_kind::const_lvalue : self_ref_kind::lvalue;
+  auto parts = display_param_parts_of(method);
+  std::size_t self_i = display_self_index(method);
+  if (self_i >= parts.size())
     return self_ref_kind::const_lvalue;
-  } catch (std::meta::exception const&) {
-    return self_ref_kind::const_lvalue;
-  }
+  auto self_part = parts[self_i];
+  bool cnst = self_part.find("const") != std::string_view::npos;
+  if (self_part.find("rmirror") != std::string_view::npos)
+    return cnst ? self_ref_kind::const_rvalue : self_ref_kind::rvalue;
+  auto amp = self_part.rfind('&');
+  bool rval = amp != std::string_view::npos && amp > 0 &&
+              self_part[amp - 1] == '&';
+  if (rval)
+    return cnst ? self_ref_kind::const_rvalue : self_ref_kind::rvalue;
+  if (amp != std::string_view::npos)
+    return cnst ? self_ref_kind::const_lvalue : self_ref_kind::lvalue;
+  return self_ref_kind::const_lvalue;
 }
 
 consteval self_ref_kind self_param_ref_kind(std::meta::info method) {
@@ -2824,11 +2701,10 @@ consteval bool is_rvalue_self_method_of() {
   return k == self_ref_kind::rvalue || k == self_ref_kind::const_rvalue;
 }
 
-// Erased dyn slot drops the self/`auto` parameter (found by type==signature_self
-// on a signature_self instantiation, else index 0).
-consteval std::meta::info erased_sig(std::meta::info inst) {
+// Non-self parameter types (self = signature_self match, else index 0).
+consteval std::vector<std::meta::info> drop_self_param_types(
+    std::meta::info inst) {
   std::vector<std::meta::info> args;
-  args.push_back(std::meta::return_type_of(inst));
   auto params = std::meta::parameters_of(inst);
   std::size_t self_i = 0;
   bool found = false;
@@ -2847,6 +2723,15 @@ consteval std::meta::info erased_sig(std::meta::info inst) {
       continue;
     args.push_back(std::meta::type_of(params[i]));
   }
+  return args;
+}
+
+// Erased dyn slot drops the self/`auto` parameter.
+consteval std::meta::info erased_sig(std::meta::info inst) {
+  std::vector<std::meta::info> args;
+  args.push_back(std::meta::return_type_of(inst));
+  for (auto t : drop_self_param_types(inst))
+    args.push_back(t);
   return std::meta::substitute(^^erased_fn, args);
 }
 
@@ -3105,22 +2990,6 @@ consteval std::vector<std::meta::info> src_methods_named_vec(
       out.push_back(member);
   }
   return out;
-}
-
-// Call-arg arity of a Trait method (excludes the self/`auto` parameter).
-consteval std::size_t trait_method_arg_arity(std::meta::info method) {
-  auto inst = instantiate(method, ^^signature_self);
-  if (inst == std::meta::info{}) {
-    int n = display_param_count(method);
-    if (n > 0)
-      return static_cast<std::size_t>(n - 1);
-    if (!std::meta::is_function(method))
-      return 0;
-    auto params = std::meta::parameters_of(method);
-    return params.empty() ? 0 : params.size() - 1;
-  }
-  auto params = std::meta::parameters_of(inst);
-  return params.empty() ? 0 : params.size() - 1;
 }
 
 // If ty is mirror<View>[cvref], kind from View's cvref (not the mirror
@@ -4399,25 +4268,7 @@ struct construct_erased_fn {
 
 // construct_erased_fn<declared extra types...> from an instantiated method.
 consteval std::meta::info construct_erased_sig(std::meta::info inst) {
-  std::vector<std::meta::info> args;
-  auto params = std::meta::parameters_of(inst);
-  std::size_t self_i = 0;
-  bool found = false;
-  for (std::size_t i = 0; i < params.size(); ++i) {
-    if (std::meta::remove_cvref(std::meta::type_of(params[i])) ==
-        ^^signature_self) {
-      self_i = i;
-      found = true;
-      break;
-    }
-  }
-  if (!found)
-    self_i = 0;
-  for (std::size_t i = 0; i < params.size(); ++i) {
-    if (i == self_i)
-      continue;
-    args.push_back(std::meta::type_of(params[i]));
-  }
+  auto args = drop_self_param_types(inst);
   if (args.empty())
     return ^^construct_erased_fn<>;
   return std::meta::substitute(^^construct_erased_fn, args);
