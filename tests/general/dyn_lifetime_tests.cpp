@@ -564,12 +564,27 @@ struct ProbeCAssignHdlOnly {
 };
 
 using ProbeOps =
-    asf::cache_ops<ProbeDestroy, ProbeCopy, ProbeMove, ProbeCAssign,
+    asf::pointer_ops<ProbeDestroy, ProbeCopy, ProbeMove, ProbeCAssign,
                    ProbeMAssign>;
-using ProbeOpsNoAssign = asf::cache_ops<ProbeDestroy, ProbeCopy, ProbeMove>;
+using ProbeOpsNoAssign = asf::pointer_ops<ProbeDestroy, ProbeCopy, ProbeMove>;
 using ProbeOpsHdlAssign =
-    asf::cache_ops<ProbeDestroy, ProbeCopy, ProbeMove, ProbeCAssignHdlOnly,
+    asf::pointer_ops<ProbeDestroy, ProbeCopy, ProbeMove, ProbeCAssignHdlOnly,
                    ProbeMAssign>;
+
+// Ops is structural: any type with the slot aliases (and call operators /
+// tags) works — not only asf::pointer_ops.
+struct ProbeDuckOps {
+  using destroy_type = ProbeDestroy;
+  using copy_type = ProbeCopy;
+  using move_type = ProbeMove;
+};
+static_assert(asf::is_pointer_ops_v<ProbeDuckOps>);
+static_assert(asf::is_pointer_ops_v<ProbeOpsNoAssign>);
+static_assert(std::is_same_v<asf::ops_copy_assign_t<ProbeDuckOps>,
+                             asf::op_unset>);
+static_assert(
+    std::is_constructible_v<asf::cache_ptr<16, 8, ProbeDuckOps>,
+                            asf::cache_ptr<16, 8, ProbeDuckOps> const&>);
 
 // ProbeView has no op_construct: typed copy/move survive as op_modified
 // (the Trait chain cannot construct), destroy is always vt[-1].
@@ -603,7 +618,7 @@ struct ProbeMake<Probe> final {
 };
 
 // Grow-only cache -> cache (compile-time; shrink is an error).
-using ProbeNatOps = asf::cache_ops_of<Probe>;
+using ProbeNatOps = asf::pointer_ops_of<Probe>;
 static_assert(
     std::is_constructible_v<asf::cache_ptr<32, 16, ProbeNatOps>,
                             asf::cache_ptr<16, 8, ProbeNatOps> const&>);
@@ -619,7 +634,7 @@ static_assert(
 static_assert(
     !std::is_constructible_v<asf::cache_ptr<32, 4, ProbeNatOps>,
                              asf::cache_ptr<16, 8, ProbeNatOps> const&>);
-using ProbeErasedOps = asf::cache_ops_erase_typed<ProbeNatOps>;
+using ProbeErasedOps = asf::pointer_ops_erase_typed<ProbeNatOps>;
 static_assert(
     std::is_constructible_v<asf::cache_ptr<32, 16, ProbeErasedOps>,
                             asf::cache_ptr<16, 8, ProbeNatOps> const&>);
@@ -639,7 +654,7 @@ static_assert(
             asf::detail::op_modified<asf::detail::op_modified<ProbeCopy>>>,
         ProbeCopy>);
 // Re-erasing an already-erased ops bundle keeps the slots usable.
-using ProbeReErasedOps = asf::cache_ops_erase_typed<ProbeErasedOps>;
+using ProbeReErasedOps = asf::pointer_ops_erase_typed<ProbeErasedOps>;
 static_assert(
     std::is_constructible_v<asf::cache_ptr<32, 16, ProbeReErasedOps>,
                             asf::cache_ptr<16, 8, ProbeErasedOps> const&>);
@@ -650,17 +665,17 @@ using ProbeSrcDyn = std::remove_cvref_t<decltype(
 // dyn-level vt construct (both sides op_from_trait for copy); move converts
 // through the same-ops cache_ptr converting ctor (op_modified move op).
 using ProbeBigDyn = asf::cache_dyn<ProbeMake, 32, 16,
-                                   asf::cache_ops_from_trait_or_t<ProbeMake,
+                                   asf::pointer_ops_from_trait_or_t<ProbeMake,
                                                                   Probe>>;
 static_assert(std::is_constructible_v<ProbeBigDyn, ProbeSrcDyn const&>);
 static_assert(std::is_constructible_v<ProbeBigDyn, ProbeSrcDyn&&>);
 using ProbeSmallDyn = asf::cache_dyn<ProbeMake, 8, 4,
-                                     asf::cache_ops_from_trait_or_t<ProbeMake,
+                                     asf::pointer_ops_from_trait_or_t<ProbeMake,
                                                                     Probe>>;
 static_assert(!std::is_constructible_v<ProbeSmallDyn, ProbeSrcDyn const&>);
 static_assert(!std::is_constructible_v<ProbeSmallDyn, ProbeSrcDyn&&>);
 using ProbeMisalDyn = asf::cache_dyn<ProbeMake, 32, 4,
-                                     asf::cache_ops_from_trait_or_t<ProbeMake,
+                                     asf::pointer_ops_from_trait_or_t<ProbeMake,
                                                                     Probe>>;
 static_assert(!std::is_constructible_v<ProbeMisalDyn, ProbeSrcDyn const&>);
 
@@ -984,14 +999,14 @@ static_assert(std::is_copy_constructible_v<asf::shared_dyn<ProbeMake>>);
 static_assert(std::is_move_constructible_v<asf::shared_dyn<ProbeMake>>);
 static_assert(std::is_copy_constructible_v<asf::dyn<ProbeView>>);
 using StripCopyOps =
-    asf::cache_ops<asf::op_destroy_of<Probe>, asf::op_unsupported,
+    asf::pointer_ops<asf::op_destroy_of<Probe>, asf::op_unsupported,
                    asf::op_move_of<Probe>>;
 static_assert(
     !std::is_copy_constructible_v<asf::cache_ptr<16, 8, StripCopyOps>>);
 static_assert(
     std::is_move_constructible_v<asf::cache_ptr<16, 8, StripCopyOps>>);
 using StripMoveOps =
-    asf::cache_ops<asf::op_destroy_of<Probe>, asf::op_copy_of<Probe>,
+    asf::pointer_ops<asf::op_destroy_of<Probe>, asf::op_copy_of<Probe>,
                    asf::op_unsupported>;
 static_assert(
     !std::is_move_constructible_v<asf::cache_ptr<16, 8, StripMoveOps>>);

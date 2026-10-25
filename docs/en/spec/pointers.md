@@ -32,6 +32,7 @@ A missing specialization, or a missing / unrecognized `kind`, is the observer.
 template <class P>
 struct pointer_trait {
   using kind = /* pointer_vt_destroy_tag | pointer_deleter_tag */;
+  using ops = /* optional Ops-shaped lifetime/bool slots for cache-style Ptr */;
   static void release(/* Handle& */);  // optional; library passes *this
 };
 ```
@@ -66,6 +67,7 @@ struct pointer_trait<cache_ptr<Size, Align, Ops>> {
   using kind = /* Ops::destroy_type:
                   op_unset            -> absent (observer)
                   otherwise           -> pointer_vt_destroy_tag */;
+  using ops = /* cache bool default + Ops slots */;
 };
 ```
 
@@ -183,11 +185,13 @@ Putting a value (or typed `cache_ptr`) into a `cache_dyn` first runs the weaken 
 3. Else if the Trait inheritance chain can perform that deep construct (`op_construct` copy or move) → `op_from_trait`.
 4. Else `op_trivial` stays; a wrap-able typed op rides along in the type; otherwise → `op_unsupported`.
 
+Step 3/4 must run at enter: after erase, `T` is gone, so a later call cannot recover a shallow `T` op. Upcast does not re-run this (Ops stay); a missing Trait slot fails when that `op_from_trait` path is later instantiated.
+
 **Destroy** — erased toward `op_from_trait` when the chain supplies teardown (`vt[-1]`); otherwise `op_trivial` or a typed destroy rides along. Never stripped.
 
 **Assign** — independent of the Trait: `op_unset` / `op_from_trait` → `op_unset`; `op_trivial` / `op_trivial_relocate` stay; anything else rides along in the type.
 
-If the Trait chain has no lifetime slots, a `cache_ptr` that itself can still copy, move, and destroy may enter. Downcast checks the Trait chain only when `cache_ops` does not supply lifetime itself.
+Weaken against `T` is required on enter (and is the only place `T` can still be checked). Downcast checks the Trait chain only when `cache_ops` does not supply lifetime itself.
 
 ### Relocation tiers
 

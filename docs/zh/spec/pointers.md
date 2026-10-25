@@ -32,6 +32,7 @@ struct pointer_trait {};
 template <class P>
 struct pointer_trait {
   using kind = /* pointer_vt_destroy_tag | pointer_deleter_tag */;
+  using ops = /* optional Ops-shaped lifetime/bool slots for cache-style Ptr */;
   static void release(/* Handle& */);  // optional; library passes *this
 };
 ```
@@ -66,6 +67,7 @@ struct pointer_trait<cache_ptr<Size, Align, Ops>> {
   using kind = /* Ops::destroy_type:
                   op_unset            -> absent (observer)
                   otherwise           -> pointer_vt_destroy_tag */;
+  using ops = /* cache bool default + Ops slots */;
 };
 ```
 
@@ -183,11 +185,13 @@ copy / move / destroy 各自从 `T` 取自然档、从 `Ops` 槽取请求档。�
 3. 否则若 Trait 继承链能做对应深构造（`op_construct` 拷/移） → `op_from_trait`。
 4. 否则 `op_trivial` 保留；可 wrap 的 typed 随类型携带；否则 → `op_unsupported`。
 
+第 3/4 步必须在进入时做完：擦除后 `T` 已不在类型里，调用点无法再找回 `T` 的浅槽。上行不重跑这套（Ops 不变）；若已是 `op_from_trait` 而目标 Trait 缺槽，在后续实例化该路径时报错。
+
 **Destroy** — 链提供拆解（`vt[-1]`）时擦向 `op_from_trait`；否则 `op_trivial` 或 typed destroy 随类型携带。从不剔掉。
 
 **Assign** — 与 Trait 无关：`op_unset` / `op_from_trait` → `op_unset`；`op_trivial` / `op_trivial_relocate` 保留；其余随类型携带。
 
-Trait 链没有生命周期槽时，只要 `cache_ptr` 自己仍能拷/移/析，仍可进入。下行只在 `cache_ops` 不自持生命周期时检查 Trait 链。
+进入时仍要求相对 `T` 的弱化检查（也是还能看见 `T` 的唯一时机）。下行只在 `cache_ops` 不自持生命周期时检查 Trait 链。
 
 ### 搬迁层次
 

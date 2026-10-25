@@ -4237,7 +4237,7 @@ consteval bool trait_has_dyn_construct() {
   return false;
 }
 
-// Exact self category for cache_ops matching Trait; no fallback to the other.
+// Exact self category for pointer_ops matching Trait; no fallback to the other.
 template <template <class> class Trait, bool Rvalue>
 consteval bool trait_has_dyn_construct_as() {
   for (auto m : dyn_methods_vec<Trait<void>>()) {

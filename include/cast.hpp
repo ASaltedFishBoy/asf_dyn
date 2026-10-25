@@ -61,7 +61,7 @@ inline constexpr bool
 
 template <class Spec>
 struct cache_spec_ops {
-  using type = cache_ops<>;
+  using type = pointer_ops<>;
 };
 template <std::size_t Size, std::size_t Align, class Ops>
 struct cache_spec_ops<cache_ptr<Size, Align, Ops>> {
@@ -71,12 +71,12 @@ struct cache_spec_ops<cache_ptr<Size, Align, Ops>> {
 template <template <class> class Trait, class Spec>
 using cache_dyn_t = dyn<Trait, cache_ptr<Spec::size, Spec::align>>;
 
-// Into cache_dyn: check Spec ops against Obj, then erase: Trait chain ->
-// op_from_trait, else usable source ops -> detail::op_modified / op_trivial.
+// Into cache_dyn: weaken Spec ops against Obj, then erase: Trait chain can
+// deep-construct -> op_from_trait, else keep usable source shallow ops.
 template <template <class> class Trait, class Spec, class Obj>
 using cache_dyn_ptr_for_t =
     cache_ptr<Spec::size, Spec::align,
-              resolve_cache_dyn_ops_t<
+              resolve_pointer_dyn_ops_t<
                   Trait, Obj, typename cache_spec_ops<Spec>::type>>;
 
 template <template <class> class Trait, class Spec, class Obj>
@@ -399,7 +399,7 @@ struct to_dyn_cache_ptr_t {
   template <detail::value_for_owning_ptr U>
   constexpr auto operator()(U& object) const {
     using Obj = std::remove_cvref_t<U>;
-    using Spec = CachePtr<sizeof(Obj), alignof(Obj), cache_ops<>>;
+    using Spec = CachePtr<sizeof(Obj), alignof(Obj), pointer_ops<>>;
     assert_cache_ptr_spec<Spec>();
     return detail::cache_forward_value<Trait, Spec>(object);
   }
@@ -408,7 +408,7 @@ struct to_dyn_cache_ptr_t {
     requires(!std::is_lvalue_reference_v<U>)
   constexpr auto operator()(U&& object) const {
     using Obj = std::remove_cvref_t<U>;
-    using Spec = CachePtr<sizeof(Obj), alignof(Obj), cache_ops<>>;
+    using Spec = CachePtr<sizeof(Obj), alignof(Obj), pointer_ops<>>;
     assert_cache_ptr_spec<Spec>();
     return detail::cache_forward_value<Trait, Spec>(
         std::forward<U>(object));
@@ -418,7 +418,7 @@ struct to_dyn_cache_ptr_t {
     requires(detail::is_proxy_wrap_v<std::remove_cvref_t<W>>)
   constexpr auto operator()(W&& w) const {
     using Ptr = typename std::remove_cvref_t<W>::pointer_type;
-    using Spec = CachePtr<sizeof(Ptr), alignof(Ptr), cache_ops<>>;
+    using Spec = CachePtr<sizeof(Ptr), alignof(Ptr), pointer_ops<>>;
     assert_cache_ptr_spec<Spec>();
     return detail::proxy_wrap_forward<Trait, Spec>(
         std::forward<W>(w).pointer());
@@ -428,7 +428,7 @@ struct to_dyn_cache_ptr_t {
     requires(is_sourced_mirror_v<mirror<T, Src>> && !std::is_const_v<T> &&
              detail::mirror_view_is_src_v<T, Src>)
   constexpr auto operator()(mirror<T, Src> m) const {
-    using Spec = CachePtr<sizeof(Src), alignof(Src), cache_ops<>>;
+    using Spec = CachePtr<sizeof(Src), alignof(Src), pointer_ops<>>;
     assert_cache_ptr_spec<Spec>();
     return detail::cache_forward_mirror<Trait, Spec, false>(std::move(m));
   }
@@ -437,7 +437,7 @@ struct to_dyn_cache_ptr_t {
     requires(is_sourced_mirror_v<mirror<T, Src>> && !std::is_const_v<T> &&
              detail::mirror_view_is_src_v<T, Src>)
   constexpr auto operator()(mirror<T, Src>&& m) const {
-    using Spec = CachePtr<sizeof(Src), alignof(Src), cache_ops<>>;
+    using Spec = CachePtr<sizeof(Src), alignof(Src), pointer_ops<>>;
     assert_cache_ptr_spec<Spec>();
     return detail::cache_forward_mirror<Trait, Spec, true>(std::move(m));
   }
@@ -901,7 +901,7 @@ constexpr auto construct(
       p, std::forward<Alloc>(alloc), std::forward<Extra>(extra)...);
 }
 
-// *dyn / rproxy -> cache_dyn with Trait-deduced cache_ops (empty vt if no fit).
+// *dyn / rproxy -> cache_dyn with Trait-deduced pointer_ops (empty vt if no fit).
 template <class Spec, template <class> class Trait, bool Const, class SrcP,
           bool Rvalue, class... Extra>
   requires(detail::is_cache_ptr_spec_v<Spec> &&

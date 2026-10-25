@@ -141,8 +141,8 @@ void run_relocate(const char* name, Vec& data) {
 }
 
 // Same-shell SBO as microsoft/proxy: 16 B payload. Small fits inline; Large
-// stores unique_ptr in that buffer (proxy_wrap + unique_cache_ops).
-using SboSpec = asf::cache_ptr<16, 8, asf::unique_cache_ops>;
+// stores unique_ptr in that buffer (proxy_wrap + unique_pointer_ops).
+using SboSpec = asf::cache_ptr<16, 8, asf::unique_pointer_ops>;
 
 template <template <int> class Impl, template <int> class VImpl,
           class CacheSpec>

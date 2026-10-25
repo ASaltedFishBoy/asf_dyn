@@ -94,7 +94,7 @@ int main() {
     auto hc = asf::to_dyn<Stringable, asf::cache_ptr>(val);
     ASF_CHECK(static_cast<bool>(hc));
     ASF_CHECK_EQ(hc->to_string(), asf_test::no_sso("S") + ":705");
-    ASF_CHECK_NE(asf::detail::vt_of(hp), asf::detail::vt_of(hc));
+    ASF_CHECK_NE(asf::vtable_of(hp), asf::vtable_of(hc));
   }
 
   // Move of proxy-wrap cache_dyn (Trait move -> Ptr move).
