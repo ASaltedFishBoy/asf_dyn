@@ -777,10 +777,6 @@ consteval std::size_t fn_member_count() {
   return std::meta::nonstatic_data_members_of(^^Fns, unchecked()).size();
 }
 
-consteval bool is_operator_name(std::string_view name) {
-  return name.starts_with("operator");
-}
-
 // Trait method names (legal identifiers). Proxy still exposes C++ operators.
 // Index 1 is TOKEN '-': maps to op_neg (unary) and/or op_sub (binary).
 inline constexpr std::string_view op_catalog[] = {

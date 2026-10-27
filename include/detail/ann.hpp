@@ -75,26 +75,6 @@ inline constexpr auto unchecked = [] {
   return std::meta::access_context::unchecked();
 };
 
-template <typename T>
-consteval std::string field_names() {
-  std::string out;
-  for (auto member : std::meta::nonstatic_data_members_of(^^T, unchecked())) {
-    if (!out.empty())
-      out += '\n';
-    out += std::meta::identifier_of(member);
-  }
-  return out;
-}
-
-template <typename Enum>
-consteval std::string_view enumerator_name(Enum value) {
-  for (auto enumerator : std::meta::enumerators_of(^^Enum)) {
-    if (std::meta::extract<Enum>(enumerator) == value)
-      return std::meta::identifier_of(enumerator);
-  }
-  return {};
-}
-
 ASF_END_NAMESPACE
 
 namespace asf_ann = asf::ann;

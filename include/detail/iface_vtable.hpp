@@ -282,21 +282,5 @@ vt_ptr dyn_object_slots() {
 }
 #endif  // ASF_HAS_DYN_INTERMEDIATE
 
-template <template <class> class Trait>
-consteval std::size_t trait_method_count() {
-  return trait_methods_t<Trait<void>>::size;
-}
-
-template <template <class> class Trait>
-consteval std::size_t c_dyn_count() {
-  std::size_t n = 0;
-  for (auto method : dyn_methods_vec<Trait<void>>()) {
-    if (is_const_self_method(method))
-      ++n;
-  }
-  return n;
-}
-
-
 }  // namespace detail
 ASF_END_NAMESPACE
