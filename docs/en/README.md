@@ -100,7 +100,7 @@ See [spec/iface.md](spec/iface.md) and [spec/dyn.md](spec/dyn.md).
 
 - **Same-table view**: `as<To>()` (member only) returns `dyn_view` / `c_dyn_view`.
 - **proxy**: `proxy<To>()` = `get_proxy<To>(h)` = `get_forward_proxy<To>(lvalue)`; `rproxy<To>()` = `get_rproxy<To>(h)` = `get_forward_proxy<To>(rvalue)`.
-- **Upcast / retarget**: converting constructor = `trait_cast`; `dyn` construction = `to_dyn` (not dyn-to-dyn upcast). May Redirect/cover (see `ASF_HAS_DYN_MULTI_VT`).
+- **Upcast / retarget**: dyn upcast = `dyn_cast` / converting constructor; iface = member `trait_cast`; `to_dyn` binds sources (not dyn-to-dyn upcast). May Redirect/cover (see `ASF_HAS_DYN_MULTI_VT`).
 - **Runtime downcast**: `dyn_cast<To>` (needs `ASF_HAS_DYN_RTTI`; experimental, over-accepts downcasts — see [features.md](spec/features.md)).
 - **Section slice**: `sub_dyn<To>(d)` = `to_sub_dyn<To>(d)`.
 

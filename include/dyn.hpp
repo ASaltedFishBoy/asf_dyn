@@ -1314,10 +1314,12 @@ consteval bool is_cache_adopt_wrapper() {
   if (!requires { typename U::pointer_type; }) {
     return false;
   }
-  return requires(U& w, U const& c, U&& wr) {
+  return requires(U& w, U const& c) {
     { w.adopt_storage() } -> std::same_as<typename U::pointer_type&>;
     { c.adopt_storage() } -> std::same_as<typename U::pointer_type const&>;
-    { std::move(w.adopt_storage()) } -> std::same_as<typename U::pointer_type>;
+    requires std::same_as<
+        std::remove_cvref_t<decltype(std::move(w.adopt_storage()))>,
+        typename U::pointer_type>;
     { U::pointee(std::declval<typename U::pointer_type const&>()) };
   };
 }

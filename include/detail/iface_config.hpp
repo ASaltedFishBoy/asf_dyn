@@ -29,14 +29,14 @@
 #define ASF_VERSION_MINOR 1
 #endif
 #ifndef ASF_VERSION_PATCH
-#define ASF_VERSION_PATCH 4
+#define ASF_VERSION_PATCH 5
 #endif
 
 #define ASF_VERSION                                                            \
   (ASF_VERSION_MAJOR * 10000 + ASF_VERSION_MINOR * 100 + ASF_VERSION_PATCH)
 
 #ifndef ASF_VERSION_STRING
-#define ASF_VERSION_STRING "0.1.4"
+#define ASF_VERSION_STRING "0.1.5"
 #endif
 
 #ifndef ASF_HAS_DYN_RTTI
@@ -81,9 +81,9 @@
                  ASF_HAS_DYN_MULTI_VT),                                        \
       ASF_HAS_DYN_SINGLE_INHERIT)
 
-// Keep the v0_1_4 token in sync with ASF_VERSION_* when bumping.
+// Keep the v0_1_5 token in sync with ASF_VERSION_* when bumping.
 #ifndef ASF_ABI_NAMESPACE
-#define ASF_ABI_NAMESPACE ASF_PP_CAT(v0_1_4_b, ASF_ABI_FEATURE_BITS)
+#define ASF_ABI_NAMESPACE ASF_PP_CAT(v0_1_5_b, ASF_ABI_FEATURE_BITS)
 #endif
 
 #define ASF_BEGIN_NAMESPACE                                                    \

@@ -8,6 +8,21 @@
 
 命名空间为 `asf`；概念上接近 Rust 的 `trait` / `dyn Trait`，但实现依赖 C++26 反射与虚表布局。
 
+
+## 相对其他擦除 /「代理」库的优势
+
+许多 C++ 多态方案只押一种模型：虚基类、`std::function` 式擦除，或小句柄代理（如 [P2530 `std::proxy`](https://wg21.link/p2530) / [microsoft/proxy](https://github.com/microsoft/proxy)）。ASF 用 **同一套 Trait 声明**，再按调用方式拆成 **iface（静态）** 与 **dyn（擦除）**：
+
+| 能力 | ASF |
+| --- | --- |
+| **自定义拥有 / 非拥有 `Ptr`** | `dyn<Trait, Ptr>` 的第二个模板参数是 **完整** 擦除指针类型（`void*`、`unique_ptr<void, Deleter>`、`shared_ptr`、`weak_ptr`、SBO **`cache_ptr`** 等）。[`pointer_trait`](docs/zh/spec/pointers.md) 区分 destroy / observer / deleter；可选 **`pointer_trait<P>::ops`** 在不动 Trait 虚表的前提下接浅层 copy/move/destroy/bool。 |
+| **不擦除的静态路径** | **`iface`** 保留具体 `Self`，热路径静态分派、无 dyn 虚表。需要运行时多态时再选 **`dyn`**。 |
+| **可选 `cache_deref`** | [`cache_deref<Ptr>`](docs/zh/spec/pointers.md#cache_deref) 配合 `to_dyn`：在 **`cache_dyn`** 缓冲里存**可解引用的智能指针**，虚表按 **pointee** 派发（Ptr 作存储的路径）。绑定值、mirror 或直接 storage `Ptr` 时可不用。 |
+| **Trait DAG 上的上行转换** | 默认 **`ASF_HAS_DYN_MULTI_VT`** 时，**`trait_cast` / 转换构造** 沿 **Redirect/cover** 布局走完整路径——多基 Trait 图上的上行不限于「同一虚表前缀」。单继承与 section-prefix 模式可编译期切换（[features.md](docs/zh/spec/features.md)）。 |
+
+代价是依赖 C++26 反射（目前以 GCC 16+ 为主）并为 Trait/叶节点生成虚表；换来的是 **指针类型可配置** 的统一 trait 系统，而不是把擦除硬编码在单一句柄上。
+
+
 ## 要点
 
 | 主题 | 说明 |
@@ -157,7 +172,7 @@ cmake -S . -B build -G Ninja -DCMAKE_CXX_COMPILER=g++ \
   -DASF_HAS_DYN_RTTI=ON -DASF_HAS_DYN_INTERMEDIATE=OFF
 ```
 
-细节：[docs/zh/spec/features.md](docs/zh/spec/features.md)。特性开关也按二进制标签编入 ABI 内联命名空间（`v0_1_4_b...`）。
+细节：[docs/zh/spec/features.md](docs/zh/spec/features.md)。特性开关也按二进制标签编入 ABI 内联命名空间（`v0_1_5_b...`）。
 
 ## 头文件
 

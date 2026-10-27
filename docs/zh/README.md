@@ -100,7 +100,7 @@ Trait 是一组可多态调用的方法，写成类模板（见上节示例）�
 
 - **同表视口**：`as<To>()`（仅成员）返回 `dyn_view` / `c_dyn_view`。
 - **proxy**：`proxy<To>()` = `get_proxy<To>(h)` = `get_forward_proxy<To>(左值)`；`rproxy<To>()` = `get_rproxy<To>(h)` = `get_forward_proxy<To>(右值)`。
-- **上行 / 改绑**：转换构造 = `trait_cast`；`dyn` 构造 = `to_dyn`（**不是** dyn 到 dyn 的上行）。可能 Redirect/cover（见 `ASF_HAS_DYN_MULTI_VT`）。
+- **上行 / 改绑**：dyn 上行 = `dyn_cast` / 转换构造；iface = 成员 `trait_cast`；`to_dyn` 绑定来源（**不是** dyn 到 dyn 的上行）。可能 Redirect/cover（见 `ASF_HAS_DYN_MULTI_VT`）。
 - **运行时下行**：`dyn_cast<To>`（需 `ASF_HAS_DYN_RTTI`；实验性，过度接受下行，见 [features.md](spec/features.md)）。
 - **section 切片**：`sub_dyn<To>(d)` = `to_sub_dyn<To>(d)`。
 

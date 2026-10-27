@@ -8,6 +8,19 @@ C++26 reflection-based **Trait** polymorphism: static handle **iface**, erased h
 
 Namespace `asf`. Conceptually close to Rust `trait` / `dyn Trait`, implemented with C++26 reflection and vtable layout.
 
+## Why ASF (vs. other erasure / “proxy” libraries)
+
+Many C++ polymorphism stacks pick one story: virtual bases, `std::function`-style erasure, or a small-handle proxy (e.g. [P2530 `std::proxy`](https://wg21.link/p2530) / [microsoft/proxy](https://github.com/microsoft/proxy)). ASF keeps one **Trait** definition and splits **how** you call it:
+
+| Capability | ASF |
+| --- | --- |
+| **Custom owning / non-owning `Ptr`** | `dyn<Trait, Ptr>` takes the **full** erased pointer type (`void*`, `unique_ptr<void, Deleter>`, `shared_ptr`, `weak_ptr`, SBO **`cache_ptr`**, …). [`pointer_trait`](docs/en/spec/pointers.md) describes destroy vs observer vs deleter; optional **`pointer_trait<P>::ops`** wires shallow copy/move/destroy/bool without changing Trait vtables. |
+| **Static path without erasure** | **`iface`** keeps `Self` concrete—no vtable on hot static dispatch. Erased **`dyn`** is opt-in when you need runtime polymorphism. |
+| **Optional `cache_deref`** | [`cache_deref<Ptr>`](docs/en/spec/pointers.md#cache_deref) + `to_dyn` stores a **dereferenceable smart pointer** inside **`cache_dyn`** while the vtable dispatches on the **pointee** (Ptr-as-storage path). Omit it when you bind values, mirrors, or a storage `Ptr` directly. |
+| **Upcast on the Trait DAG** | With default **`ASF_HAS_DYN_MULTI_VT`**, **`trait_cast` / converting ctors** follow **Redirect/cover** layout—multi-base Trait graphs upcast along the designed path, not only “same vtable prefix”. Single-inheritance and section-prefix modes are compile-time switches ([features.md](docs/en/spec/features.md)). |
+
+You still pay for C++26 reflection (GCC 16+ today) and generated vtables per Trait/leaf—but you get a single, pointer-flexible trait system instead of bolting erasure onto one hard-coded handle type.
+
 ## Highlights
 
 | Topic | Notes |
@@ -158,7 +171,7 @@ cmake -S . -B build -G Ninja -DCMAKE_CXX_COMPILER=g++ \
   -DASF_HAS_DYN_RTTI=ON -DASF_HAS_DYN_INTERMEDIATE=OFF
 ```
 
-Details: [docs/en/spec/features.md](docs/en/spec/features.md). Feature flags are also baked into the ABI inline namespace as a binary tag (`v0_1_4_b...`).
+Details: [docs/en/spec/features.md](docs/en/spec/features.md). Feature flags are also baked into the ABI inline namespace as a binary tag (`v0_1_5_b...`).
 
 ## Headers
 
