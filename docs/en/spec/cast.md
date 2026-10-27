@@ -91,11 +91,11 @@ to_dyn<Trait, cache_ptr>(U&& object);
 
 template <class Ptr>
 cache_dyn<Trait, Size, Align, /* erased ops for Ptr */>
-to_dyn<Trait, cache_ptr<Size, Align, Ops>>(proxy_wrap<Ptr> w);
+to_dyn<Trait, cache_ptr<Size, Align, Ops>>(cache_deref<Ptr> w);
 
 template <class Ptr>
 cache_dyn<Trait, sizeof(Ptr), alignof(Ptr), /* ... */>
-to_dyn<Trait>(proxy_wrap<Ptr> w);
+to_dyn<Trait>(cache_deref<Ptr> w);
 
 template <class U>
 unique_dyn<Trait> to_dyn<Trait, std::unique_ptr>(U&& object);
@@ -106,7 +106,7 @@ to_dyn<Trait, std::unique_ptr>(Alloc alloc, U&& object);
 
 Value (or sourced-mirror Src) is forward-constructed into the final storage. No intermediate dyn. Cache Spec fit (`sizeof` / `alignof` vs Size/Align) is a compile error. `Alloc` is an optional first argument. `std::allocator` stays the default `unique_dyn` (`::operator delete`), not `alloc_delete`.
 
-`proxy_wrap<Ptr>` holds a dereferenceable `Ptr`. Pass it to `to_dyn` with a `cache_ptr` Spec (or omit Spec to use `sizeof`/`alignof(Ptr)`). The Ptr is placed into the cache buffer; Spec fit is a compile error. The VT is keyed on `Ptr` with `As` = pointee: methods dereference; deep construct / destroy stay on `Ptr`. `meta.type` reports the pointee. If cache ops cover away copy and/or move, the matching deep `op_construct` slots stay empty.
+`cache_deref<Ptr>` holds a dereferenceable `Ptr`. Pass it to `to_dyn` with a `cache_ptr` Spec (or omit Spec to use `sizeof`/`alignof(Ptr)`). The Ptr is placed into the cache buffer; Spec fit is a compile error. The VT is keyed on `Ptr` with `As` = pointee: methods dereference; deep construct / destroy stay on `Ptr`. `meta.type` reports the pointee. If cache ops cover away copy and/or move, the matching deep `op_construct` slots stay empty.
 
 ```cpp
 template <template <class...> class Ptr, template <class> class From, class SrcP>

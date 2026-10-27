@@ -7,7 +7,7 @@
 //   to_dyn<Trait>(ptr|handle)                mirror only if ann::mirror
 //   to_dyn<Trait, cache_ptr>(value|mirror)   -> cache_dyn (fit is static_assert)
 //   to_dyn<Trait, cache_ptr<S,A,Ops>>(wrap)  -> cache holding Ptr; VT *Ptr
-//   to_dyn<Trait>(proxy_wrap{Ptr})           -> same, Spec=sizeof/alignof(Ptr)
+//   to_dyn<Trait>(cache_deref{Ptr})           -> same, Spec=sizeof/alignof(Ptr)
 //   to_dyn<Trait, uptr>([alloc, ]value)      forward into heap uptr
 //   instantiate_dyn<Trait, As>               type: ODR-use final-leaf object vt
 //     (explicit: template struct asf::instantiate_dyn<Trait, As>;)
@@ -42,11 +42,11 @@ template <class T>
 concept object_for_cast = !is_any_handle_v<T>;
 
 // Value that can be forwarded into an owning Ptr (not pointer/mirror/handle
-// / proxy_wrap -- wrap takes the cache+deref path).
+// / cache_deref -- wrap takes the cache+deref path).
 template <class T>
 concept value_for_owning_ptr =
     object_for_cast<T> && !dyn_bindable_ptr<std::remove_cvref_t<T>> &&
-    !is_mirror_like_v<T> && !is_proxy_wrap_v<std::remove_cvref_t<T>>;
+    !is_mirror_like_v<T> && !is_cache_deref_v<std::remove_cvref_t<T>>;
 
 template <template <class> class To, template <class> class From>
 consteval bool can_iface_cast() {
@@ -133,19 +133,19 @@ constexpr auto cache_forward_mirror(mirror<T, Src> m)
       });
 }
 
-// Place Ptr from proxy_wrap into cache_dyn; Spec is cache_ptr geometry/ops.
+// Place Ptr from cache_deref into cache_dyn; Spec is cache_ptr geometry/ops.
 // VT is (Storage=Ptr, As=pointee) with method deref.
 template <template <class> class Trait, class Spec, class P>
-constexpr auto proxy_wrap_forward(P&& ptr)
+constexpr auto cache_deref_forward(P&& ptr)
     -> cache_dyn_for_t<Trait, Spec, std::remove_cvref_t<P>> {
   using Ptr = std::remove_cvref_t<P>;
   using Elem = ptr_element_t<Ptr>;
   using Out = cache_dyn_for_t<Trait, Spec, Ptr>;
   static_assert(is_cache_ptr_spec_v<Spec>,
-                "proxy_wrap_forward requires cache_ptr Spec "
+                "cache_deref_forward requires cache_ptr Spec "
                 "(Size/Align/Ops)");
   static_assert(can_ptr_bind_as<Trait, Elem>(),
-                "proxy_wrap adopt requires Trait final for the pointee "
+                "cache_deref adopt requires Trait final for the pointee "
                 "(or ASF_HAS_DYN_INTERMEDIATE)");
   static_assert(sizeof(Ptr) <= Spec::size && alignof(Ptr) <= Spec::align,
                 "cache_ptr Spec is too small/narrow for the wrapped Ptr");
@@ -294,8 +294,8 @@ struct c_trait_cast_t {
 template <template <class> class Trait>
 inline constexpr c_trait_cast_t<Trait> c_trait_cast{};
 
-// Spec=void: adopt ptr / mirror / handle / proxy_wrap (default cache Spec).
-// Spec=cache_ptr: forward value into buf, or place Ptr from proxy_wrap.
+// Spec=void: adopt ptr / mirror / handle / cache_deref (default cache Spec).
+// Spec=cache_ptr: forward value into buf, or place Ptr from cache_deref.
 template <template <class> class Trait, class Spec>
 struct to_dyn_t {
   static constexpr bool cache = detail::is_cache_ptr_spec_v<Spec>;
@@ -316,18 +316,18 @@ struct to_dyn_t {
   }
 
   template <class W>
-    requires(cache && detail::is_proxy_wrap_v<std::remove_cvref_t<W>>)
+    requires(cache && detail::is_cache_deref_v<std::remove_cvref_t<W>>)
   constexpr auto operator()(W&& w) const {
-    return detail::proxy_wrap_forward<Trait, Spec>(
+    return detail::cache_deref_forward<Trait, Spec>(
         std::forward<W>(w).pointer());
   }
 
   template <class W>
-    requires(!cache && detail::is_proxy_wrap_v<std::remove_cvref_t<W>>)
+    requires(!cache && detail::is_cache_deref_v<std::remove_cvref_t<W>>)
   constexpr auto operator()(W&& w) const {
     using Wraw = std::remove_cvref_t<W>;
     using WrapSpec = typename Wraw::default_cache_spec;
-    return detail::proxy_wrap_forward<Trait, WrapSpec>(
+    return detail::cache_deref_forward<Trait, WrapSpec>(
         std::forward<W>(w).pointer());
   }
 
@@ -382,8 +382,8 @@ struct to_dyn_t {
   }
 };
 
-// to_dyn<Trait, cache_ptr>(value|mirror|proxy_wrap). Size/Align = sizeof/
-// alignof of the payload (value/Src) or of Ptr inside proxy_wrap.
+// to_dyn<Trait, cache_ptr>(value|mirror|cache_deref). Size/Align = sizeof/
+// alignof of the payload (value/Src) or of Ptr inside cache_deref.
 template <template <class> class Trait,
           template <std::size_t, std::size_t, class> class CachePtr>
 struct to_dyn_cache_ptr_t {
@@ -415,12 +415,12 @@ struct to_dyn_cache_ptr_t {
   }
 
   template <class W>
-    requires(detail::is_proxy_wrap_v<std::remove_cvref_t<W>>)
+    requires(detail::is_cache_deref_v<std::remove_cvref_t<W>>)
   constexpr auto operator()(W&& w) const {
     using Ptr = typename std::remove_cvref_t<W>::pointer_type;
     using Spec = CachePtr<sizeof(Ptr), alignof(Ptr), pointer_ops<>>;
     assert_cache_ptr_spec<Spec>();
-    return detail::proxy_wrap_forward<Trait, Spec>(
+    return detail::cache_deref_forward<Trait, Spec>(
         std::forward<W>(w).pointer());
   }
 

@@ -91,7 +91,7 @@ template <bool MaskNonConst, template <class> class Final, typename Storage,
           typename As, std::size_t... I>
 struct vtable_meta_holder_for<MaskNonConst, Final, Storage, As,
                               std::index_sequence<I...>> {
-  // proxy_wrap VT: Storage is Ptr, logical type stays the pointee (As).
+  // cache_deref VT: Storage is Ptr, logical type stays the pointee (As).
   using meta_type =
       std::conditional_t<storage_derefs_to_as<Storage, As>(),
                          std::remove_cvref_t<As>, std::remove_cvref_t<Storage>>;

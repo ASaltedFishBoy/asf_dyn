@@ -163,7 +163,7 @@ struct op_from_trait {
 };
 
 // Proxy (Trait-erased) shallow slots: same as op_from_trait; named for
-// proxy_wrap / smart-pointer cache Specs where copy/move go through the VT.
+// cache_deref / smart-pointer cache Specs where copy/move go through the VT.
 using op_proxy_copy = op_from_trait;
 using op_proxy_move = op_from_trait;
 
@@ -1208,31 +1208,31 @@ using unique_cache_ptr = cache_ptr_for<std::unique_ptr<T>, unique_pointer_ops>;
 template <class T>
 using shared_cache_ptr = cache_ptr_for<std::shared_ptr<T>, shared_pointer_ops>;
 
-// proxy_wrap<Ptr>: holds a dereferenceable Ptr for to_dyn into cache_dyn.
+// cache_deref<Ptr>: holds a dereferenceable Ptr for to_dyn into cache_dyn.
 // Cache geometry/ops come from cache_ptr Spec:
-//   to_dyn<Trait, cache_ptr<Size,Align,Ops>>(proxy_wrap{p})
-//   to_dyn<Trait>(proxy_wrap{p})  // Spec = cache_ptr<sizeof(Ptr), alignof(Ptr)>
+//   to_dyn<Trait, cache_ptr<Size,Align,Ops>>(cache_deref{p})
+//   to_dyn<Trait>(cache_deref{p})  // Spec = cache_ptr<sizeof(Ptr), alignof(Ptr)>
 // Not a dyn storage Ptr -- result is still cache_ptr holding the Ptr value;
 // VT is keyed on Ptr (methods dereference to the pointee).
 template <class Ptr>
-class proxy_wrap {
+class cache_deref {
   static_assert(
       requires(Ptr& p) {
         typename std::pointer_traits<Ptr>::element_type;
         { *p } -> std::convertible_to<
             typename std::pointer_traits<Ptr>::element_type&>;
       },
-      "proxy_wrap requires a dereferenceable Ptr with pointer_traits");
+      "cache_deref requires a dereferenceable Ptr with pointer_traits");
 
  public:
   using pointer_type = Ptr;
   using element_type = typename std::pointer_traits<Ptr>::element_type;
-  using proxy_wrap_tag = void;
+  using cache_deref_tag = void;
   using default_cache_spec =
       cache_ptr<sizeof(Ptr), alignof(Ptr), pointer_ops<>>;
 
-  proxy_wrap() = default;
-  proxy_wrap(Ptr p) noexcept(std::is_nothrow_move_constructible_v<Ptr>)
+  cache_deref() = default;
+  cache_deref(Ptr p) noexcept(std::is_nothrow_move_constructible_v<Ptr>)
       : ptr_(std::move(p)) {}
 
   Ptr& pointer() & noexcept { return ptr_; }
@@ -1244,14 +1244,14 @@ class proxy_wrap {
 };
 
 template <class Ptr>
-proxy_wrap(Ptr) -> proxy_wrap<Ptr>;
+cache_deref(Ptr) -> cache_deref<Ptr>;
 
 namespace detail {
 
 template <class T>
-inline constexpr bool is_proxy_wrap_v = false;
+inline constexpr bool is_cache_deref_v = false;
 template <class Ptr>
-inline constexpr bool is_proxy_wrap_v<proxy_wrap<Ptr>> = true;
+inline constexpr bool is_cache_deref_v<cache_deref<Ptr>> = true;
 
 template <class P>
 using ptr_element_t = typename std::pointer_traits<

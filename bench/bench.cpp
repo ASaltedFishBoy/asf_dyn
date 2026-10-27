@@ -141,7 +141,7 @@ void run_relocate(const char* name, Vec& data) {
 }
 
 // Same-shell SBO as microsoft/proxy: 16 B payload. Small fits inline; Large
-// stores unique_ptr in that buffer (proxy_wrap + unique_pointer_ops).
+// stores unique_ptr in that buffer (cache_deref + unique_pointer_ops).
 using SboSpec = asf::cache_ptr<16, 8, asf::unique_pointer_ops>;
 
 template <template <int> class Impl, template <int> class VImpl,
@@ -183,7 +183,7 @@ void run_size(const char* label) {
         return asf::to_dyn<Ops, SboSpec>(Impl<N>{seed});
       } else {
         return asf::to_dyn<Ops, SboSpec>(
-            asf::proxy_wrap{std::make_unique<Impl<N>>(seed)});
+            asf::cache_deref{std::make_unique<Impl<N>>(seed)});
       }
     });
     run_invoke("asf sbo (cache/uptr-in-cache)", sbo_asf);

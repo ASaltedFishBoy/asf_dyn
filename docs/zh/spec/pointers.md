@@ -267,18 +267,18 @@ using cache_dyn = dyn<Trait, cache_ptr<Size, Align, Ops>>;
 
 `unique_dyn<Trait>` 与 `unique_dyn<Trait, std::default_delete<void>>` 是同一类型。
 
-## `proxy_wrap`
+## `cache_deref`
 
-持有可解引用的 `Ptr`，用来派发进 `cache_dyn`。缓冲的 Size/Align/Ops 来自 `cache_ptr` Spec（不是 `proxy_wrap` 自己）。它不是 dyn 的存储 `Ptr`。
+持有可解引用的 `Ptr`，用来派发进 `cache_dyn`。缓冲的 Size/Align/Ops 来自 `cache_ptr` Spec（不是 `cache_deref` 自己）。它不是 dyn 的存储 `Ptr`。名称表示 **cache + 按 pointee 解引用虚表** 路径，与 iface/dyn 的 **`fn_proxy`**（`operator->` 调用包装）无关。
 
 ```cpp
 template <class Ptr>
-class proxy_wrap;
+class cache_deref;
 ```
 
 ```cpp
-to_dyn<Trait, cache_ptr<sizeof(P), alignof(P)>>(proxy_wrap{std::make_unique<T>(...)});
-to_dyn<Trait>(proxy_wrap{std::make_unique<T>(...)});  // Spec = sizeof/alignof(P)
+to_dyn<Trait, cache_ptr<sizeof(P), alignof(P)>>(cache_deref{std::make_unique<T>(...)});
+to_dyn<Trait>(cache_deref{std::make_unique<T>(...)});  // Spec = sizeof/alignof(P)
 ```
 
 拟合与 `Ops` 擦除都针对 **Ptr**（规则同 cache）。缓冲存 `Ptr`；`get()` 返回缓冲地址。虚表：`Storage=Ptr`，`As=pointee`；深构造 / 析构 / `storage_size` 走 `Ptr`；方法走 `*Ptr`。浅层 copy/move 被盖掉（`op_unsupported` 或调不到）时，对应的深 `op_construct` 槽可以空着。

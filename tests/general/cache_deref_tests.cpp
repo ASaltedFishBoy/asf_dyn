@@ -6,7 +6,7 @@
 #include <string>
 #include <utility>
 
-namespace proxy_wrap_tests_detail {
+namespace cache_deref_tests_detail {
 
 template <typename T = void>
 struct Stringable;
@@ -45,10 +45,10 @@ struct Stringable<Widget> final {
   }
 };
 
-}  // namespace proxy_wrap_tests_detail
+}  // namespace cache_deref_tests_detail
 
 int main() {
-  using namespace proxy_wrap_tests_detail;
+  using namespace cache_deref_tests_detail;
   using UPtr = std::unique_ptr<Widget>;
   using SPtr = std::shared_ptr<Widget>;
   constexpr std::size_t up_sz = sizeof(UPtr);
@@ -56,27 +56,27 @@ int main() {
   constexpr std::size_t sp_sz = sizeof(SPtr);
   constexpr std::size_t sp_al = alignof(SPtr);
 
-  // cache_ptr Spec + proxy_wrap<Ptr>: fits, method deref, move-only shallow ok.
+  // cache_ptr Spec + cache_deref<Ptr>: fits, method deref, move-only shallow ok.
   {
     using Spec = asf::cache_ptr<up_sz, up_al>;
-    auto h = asf::to_dyn<Stringable, Spec>(asf::proxy_wrap{
+    auto h = asf::to_dyn<Stringable, Spec>(asf::cache_deref{
         std::make_unique<Widget>(Widget{701, asf_test::no_sso("U")})});
     ASF_CHECK(static_cast<bool>(h));
     ASF_CHECK_EQ(h->to_string(), asf_test::no_sso("U") + ":701");
   }
 
-  // proxy_wrap alone: default Spec = sizeof/alignof(Ptr).
+  // cache_deref alone: default Spec = sizeof/alignof(Ptr).
   {
-    auto h = asf::to_dyn<Stringable>(asf::proxy_wrap{
+    auto h = asf::to_dyn<Stringable>(asf::cache_deref{
         std::make_unique<Widget>(Widget{702, asf_test::no_sso("W")})});
     ASF_CHECK(static_cast<bool>(h));
     ASF_CHECK_EQ(h->to_string(), asf_test::no_sso("W") + ":702");
   }
 
-  // Larger cache_ptr Spec + proxy_wrap.
+  // Larger cache_ptr Spec + cache_deref.
   {
     using Spec = asf::cache_ptr<up_sz + 8, up_al>;
-    auto h = asf::to_dyn<Stringable, Spec>(asf::proxy_wrap{
+    auto h = asf::to_dyn<Stringable, Spec>(asf::cache_deref{
         std::make_unique<Widget>(Widget{703, asf_test::no_sso("X")})});
     ASF_CHECK(static_cast<bool>(h));
     ASF_CHECK_EQ(h->to_string(), asf_test::no_sso("X") + ":703");
@@ -86,7 +86,7 @@ int main() {
   {
     using Spec = asf::cache_ptr<sp_sz, sp_al>;
     auto sp = std::make_shared<Widget>(Widget{705, asf_test::no_sso("S")});
-    auto hp = asf::to_dyn<Stringable, Spec>(asf::proxy_wrap{sp});
+    auto hp = asf::to_dyn<Stringable, Spec>(asf::cache_deref{sp});
     ASF_CHECK(static_cast<bool>(hp));
     ASF_CHECK_EQ(hp->to_string(), asf_test::no_sso("S") + ":705");
 
@@ -100,7 +100,7 @@ int main() {
   // Move of proxy-wrap cache_dyn (Trait move -> Ptr move).
   {
     using Spec = asf::cache_ptr<up_sz, up_al>;
-    auto h = asf::to_dyn<Stringable, Spec>(asf::proxy_wrap{
+    auto h = asf::to_dyn<Stringable, Spec>(asf::cache_deref{
         std::make_unique<Widget>(Widget{706, asf_test::no_sso("M")})});
     auto h2 = std::move(h);
     ASF_CHECK(static_cast<bool>(h2));
@@ -109,7 +109,7 @@ int main() {
 
   // to_dyn<Trait, cache_ptr>(wrap) template-template form.
   {
-    auto h = asf::to_dyn<Stringable, asf::cache_ptr>(asf::proxy_wrap{
+    auto h = asf::to_dyn<Stringable, asf::cache_ptr>(asf::cache_deref{
         std::make_unique<Widget>(Widget{707, asf_test::no_sso("T")})});
     ASF_CHECK(static_cast<bool>(h));
     ASF_CHECK_EQ(h->to_string(), asf_test::no_sso("T") + ":707");

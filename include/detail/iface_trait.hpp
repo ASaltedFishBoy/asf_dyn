@@ -48,7 +48,7 @@ using iface_src_obj_t =
 using vt_fn = void (*)();
 using vt_ptr = vt_fn const*;
 
-// VT Storage is an owning/observing Ptr; As is the pointee (proxy_wrap path).
+// VT Storage is an owning/observing Ptr; As is the pointee (cache_deref path).
 // Method slots dereference; construct/destroy stay on Storage.
 template <typename Storage, typename As>
 consteval bool storage_derefs_to_as() {
@@ -3861,7 +3861,7 @@ R erased_fn<R, Args...>::call(void* ptr, Args... args) {
       return result;
     }
   } else if constexpr (!lifetime_op && storage_derefs_to_as<Storage, As>()) {
-    // proxy_wrap VT: buffer holds Ptr; methods see the pointee.
+    // cache_deref VT: buffer holds Ptr; methods see the pointee.
     auto&& obj = **static_cast<Storage*>(ptr);
     if constexpr (std::is_void_v<R>) {
       invoke_wired<Trait, As, void, method>(

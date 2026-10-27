@@ -266,18 +266,18 @@ using cache_dyn = dyn<Trait, cache_ptr<Size, Align, Ops>>;
 
 `unique_dyn<Trait>` and `unique_dyn<Trait, std::default_delete<void>>` are the same type.
 
-## `proxy_wrap`
+## `cache_deref`
 
-Holds a dereferenceable `Ptr` for dispatch into `cache_dyn`. Cache Size/Align/Ops come from a `cache_ptr` Spec (not from `proxy_wrap`). Not a dyn storage `Ptr`.
+Holds a dereferenceable `Ptr` for dispatch into `cache_dyn`. Cache Size/Align/Ops come from a `cache_ptr` Spec (not from `cache_deref`). Not a dyn storage `Ptr`. The name marks the **cache + pointee-deref vtable** path; it is unrelated to iface/dyn **`fn_proxy`** (`operator->` call wrappers).
 
 ```cpp
 template <class Ptr>
-class proxy_wrap;
+class cache_deref;
 ```
 
 ```cpp
-to_dyn<Trait, cache_ptr<sizeof(P), alignof(P)>>(proxy_wrap{std::make_unique<T>(...)});
-to_dyn<Trait>(proxy_wrap{std::make_unique<T>(...)});  // Spec = sizeof/alignof(P)
+to_dyn<Trait, cache_ptr<sizeof(P), alignof(P)>>(cache_deref{std::make_unique<T>(...)});
+to_dyn<Trait>(cache_deref{std::make_unique<T>(...)});  // Spec = sizeof/alignof(P)
 ```
 
 Fit check and `Ops` erase target **Ptr** (same rules as cache). Buffer stores `Ptr`; `get()` is the buffer address. VT: `Storage=Ptr`, `As=pointee`; construct/destroy/`storage_size` use `Ptr`; methods `*Ptr`. When shallow copy/move is covered away (`op_unsupported` / unreachable), the matching deep `op_construct` slot is left empty.

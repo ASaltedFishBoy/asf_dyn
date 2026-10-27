@@ -101,14 +101,14 @@ to_dyn<Trait, std::unique_ptr>(Alloc alloc, U&& object);
 ```cpp
 template <class Ptr>
 cache_dyn<Trait, Size, Align, /* 按 Ptr 擦除的 ops */>
-to_dyn<Trait, cache_ptr<Size, Align, Ops>>(proxy_wrap<Ptr> w);
+to_dyn<Trait, cache_ptr<Size, Align, Ops>>(cache_deref<Ptr> w);
 
 template <class Ptr>
 cache_dyn<Trait, sizeof(Ptr), alignof(Ptr), /* ... */>
-to_dyn<Trait>(proxy_wrap<Ptr> w);
+to_dyn<Trait>(cache_deref<Ptr> w);
 ```
 
-`proxy_wrap<Ptr>` 持有可解引用的 `Ptr`。交给 `to_dyn` 时用 `cache_ptr` Spec（或不写 Spec，默认 `sizeof`/`alignof(Ptr)`）。Ptr 放进 cache 缓冲；Spec 拟合不够则编译错误。虚表键是 `Ptr`，`As` 为 pointee：方法解引用；深构造 / 析构仍在 `Ptr` 上。`meta.type` 报 pointee。若 cache ops 盖掉了 copy 和/或 move，对应的深 `op_construct` 槽可以空着。
+`cache_deref<Ptr>` 持有可解引用的 `Ptr`。交给 `to_dyn` 时用 `cache_ptr` Spec（或不写 Spec，默认 `sizeof`/`alignof(Ptr)`）。Ptr 放进 cache 缓冲；Spec 拟合不够则编译错误。虚表键是 `Ptr`，`As` 为 pointee：方法解引用；深构造 / 析构仍在 `Ptr` 上。`meta.type` 报 pointee。若 cache ops 盖掉了 copy 和/或 move，对应的深 `op_construct` 槽可以空着。
 
 ```cpp
 template <template <class...> class Ptr, template <class> class From, class SrcP>
