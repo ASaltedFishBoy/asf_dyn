@@ -99,16 +99,16 @@ to_dyn<Trait, std::unique_ptr>(Alloc alloc, U&& object);
 值（或 sourced-mirror 的 Src）转发构造到最终存储。无中间 dyn。Cache Spec 拟合（`sizeof` / `alignof` 对 Size/Align）不够则编译错误。`Alloc` 是可选的第一个实参。`std::allocator` 仍是默认 `unique_dyn`（`::operator delete`），不是 `alloc_delete`。
 
 ```cpp
-template <class Ptr>
+template <class W>
 cache_dyn<Trait, Size, Align, /* 按 Ptr 擦除的 ops */>
-to_dyn<Trait, cache_ptr<Size, Align, Ops>>(cache_deref<Ptr> w);
+to_dyn<Trait, cache_ptr<Size, Align, Ops>>(W&& w);
 
-template <class Ptr>
+template <class W>
 cache_dyn<Trait, sizeof(Ptr), alignof(Ptr), /* ... */>
-to_dyn<Trait>(cache_deref<Ptr> w);
+to_dyn<Trait>(W&& w);
 ```
 
-`cache_deref<Ptr>` 持有可解引用的 `Ptr`。交给 `to_dyn` 时用 `cache_ptr` Spec（或不写 Spec，默认 `sizeof`/`alignof(Ptr)`）。Ptr 放进 cache 缓冲；Spec 拟合不够则编译错误。虚表键是 `Ptr`，`As` 为 pointee：方法解引用；深构造 / 析构仍在 `Ptr` 上。`meta.type` 报 pointee。若 cache ops 盖掉了 copy 和/或 move，对应的深 `op_construct` 槽可以空着。
+带 **`using asf_adopt_proxy = void;`**（或同名成员，**只检存在性**）且符合 [pointers.md](pointers.md)#cache_deref adopt 协议的类型（含 **`cache_deref<Ptr>`**）持有可解引用的 `Ptr`。交给 **`to_dyn`**，用 `cache_ptr` Spec（或不写 Spec，用 `cache_ptr_for_storage<Ptr>`）。Ptr 放进 cache 缓冲；Spec 拟合不够则编译错误。虚表键是 `Ptr`，`As` 为 pointee。未声明 **`asf_adopt_proxy`** 的类型走普通 value/ptr 重载。
 
 ```cpp
 template <template <class...> class Ptr, template <class> class From, class SrcP>

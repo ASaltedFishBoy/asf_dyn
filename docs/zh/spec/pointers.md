@@ -267,18 +267,45 @@ using cache_dyn = dyn<Trait, cache_ptr<Size, Align, Ops>>;
 
 `unique_dyn<Trait>` 与 `unique_dyn<Trait, std::default_delete<void>>` 是同一类型。
 
+## `cache_storage_spec`
+
+把缓冲里存的 **Storage 值类型** 映射到几何与默认浅层 **Ops 对象**。特化 `cache_storage_spec<Storage>` 改 size/align/`ops_type`；需要时覆写 `ops()`。默认：`std::unique_ptr` → `unique_pointer_ops`，`std::shared_ptr` → `shared_pointer_ops`；否则有 `pointer_trait<P>::ops` 则用之，否则 `pointer_ops_of<P>`。
+
+```cpp
+template <class Storage>
+struct cache_storage_spec {
+  static constexpr std::size_t size = sizeof(Storage);
+  static constexpr std::size_t align = alignof(Storage);
+  using ops_type = /* ... */;
+  using cache_ptr_type = cache_ptr<size, align, ops_type>;
+  static consteval ops_type ops() noexcept { return ops_type{}; }
+};
+
+template <class Storage>
+consteval auto cache_storage_ops() noexcept;
+template <class Storage>
+using cache_ptr_for_storage = typename cache_storage_spec<Storage>::cache_ptr_type;
+```
+
 ## `cache_deref`
 
-持有可解引用的 `Ptr`，用来派发进 `cache_dyn`。缓冲的 Size/Align/Ops 来自 `cache_ptr` Spec（不是 `cache_deref` 自己）。它不是 dyn 的存储 `Ptr`。名称表示 **cache + 按 pointee 解引用虚表** 路径，与 iface/dyn 的 **`fn_proxy`**（`operator->` 调用包装）无关。
+**`to_dyn(...)`** 的**参考 adopt 包装**（用户类型可照着实现）。声明 **`using asf_adopt_proxy = void;`**（或任意同名成员，**只检存在性**）时走 cache 收口路径；**无关类型不要加该成员**。还需 **`pointer_type`**、**`adopt_storage()`**（mutable/const）、静态 **`pointee(Ptr const&)`**；收口用 **`std::move(w.adopt_storage())`** 拿走 **`Ptr`**。不是包装本体。不是 dyn 存储 `Ptr`。
+
+**`adopt_storage()`** 访问所存 `Ptr`。**`pointee(Ptr const& storage)`** 对应虚表解引（`*storage`）：**只有一个重载**，`Ptr const&` 表示 const **Storage**；非 const 的 `adopt_storage()` 仍可绑定。pointee 的 const 性随 **`Ptr::operator*`**，不再拆 `Ptr&` 重载。浅层 Ops：**`cache_storage_spec<Ptr>::ops()`**。默认 Spec：**`cache_ptr_for_storage<Ptr>`**。
 
 ```cpp
 template <class Ptr>
-class cache_deref;
+class cache_deref {
+  using asf_adopt_proxy = void;
+  Ptr& adopt_storage() noexcept;
+  Ptr const& adopt_storage() const noexcept;
+  static decltype(auto) pointee(Ptr const& storage) noexcept;
+};
 ```
 
 ```cpp
-to_dyn<Trait, cache_ptr<sizeof(P), alignof(P)>>(cache_deref{std::make_unique<T>(...)});
-to_dyn<Trait>(cache_deref{std::make_unique<T>(...)});  // Spec = sizeof/alignof(P)
+to_dyn<Trait, cache_ptr_for_storage<std::unique_ptr<T>>>(cache_deref{std::make_unique<T>(...)});
+to_dyn<Trait>(cache_deref{std::make_unique<T>(...)});  // Spec = cache_storage_spec<Ptr>
 ```
 
 拟合与 `Ops` 擦除都针对 **Ptr**（规则同 cache）。缓冲存 `Ptr`；`get()` 返回缓冲地址。虚表：`Storage=Ptr`，`As=pointee`；深构造 / 析构 / `storage_size` 走 `Ptr`；方法走 `*Ptr`。浅层 copy/move 被盖掉（`op_unsupported` 或调不到）时，对应的深 `op_construct` 槽可以空着。

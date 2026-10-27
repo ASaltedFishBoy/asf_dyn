@@ -266,18 +266,49 @@ using cache_dyn = dyn<Trait, cache_ptr<Size, Align, Ops>>;
 
 `unique_dyn<Trait>` and `unique_dyn<Trait, std::default_delete<void>>` are the same type.
 
+## `cache_storage_spec`
+
+Maps a **stored type** (the value placed in a `cache_ptr` buffer) to buffer geometry and shallow `Ops`. Independent of `cache_deref`; specialize for custom layouts or Ops. Defaults: `std::unique_ptr` → `unique_pointer_ops`, `std::shared_ptr` → `shared_pointer_ops`, else `pointer_trait<P>::ops` when present, else natural `pointer_ops_of<P>`.
+
+```cpp
+template <class Storage>
+struct cache_storage_spec {
+  using storage_type = Storage;
+  static constexpr std::size_t size = sizeof(Storage);
+  static constexpr std::size_t align = alignof(Storage);
+  using ops_type = /* default or your Ops pack */;
+  using cache_ptr_type = cache_ptr<size, align, ops_type>;
+  static consteval ops_type ops() noexcept { return ops_type{}; }
+};
+
+template <class Storage>
+using cache_ptr_for_storage = typename cache_storage_spec<Storage>::cache_ptr_type;
+
+template <class Storage>
+consteval std::size_t cache_storage_size() noexcept;
+template <class Storage>
+consteval std::size_t cache_storage_align() noexcept;
+template <class Storage>
+using cache_storage_ops = typename cache_storage_spec<Storage>::ops_type;
+```
+
 ## `cache_deref`
 
-Holds a dereferenceable `Ptr` for dispatch into `cache_dyn`. Cache Size/Align/Ops come from a `cache_ptr` Spec (not from `cache_deref`). Not a dyn storage `Ptr`. The name marks the **cache + pointee-deref vtable** path; it is unrelated to iface/dyn **`fn_proxy`** (`operator->` call wrappers).
+Reference **adopt wrapper** for `to_dyn(...)` (user types may mirror it). **`to_dyn`** selects the cache-adopt path when the type declares **`using asf_adopt_proxy = void;`** (or any same-named member type; **presence only** — the marker type is not checked). Do not add **`asf_adopt_proxy`** on unrelated types. The wrapper also needs **`pointer_type`**, **`adopt_storage()`** (mutable + const), and static **`pointee(Ptr const&)`** (VT deref); adoption moves the stored **`Ptr`** via **`std::move(w.adopt_storage())`**. Not a dyn storage `Ptr`. **`pointee`**: only one overload — `Ptr const&` means const **Storage**; pointee constness follows **`Ptr::operator*`**. Shallow **Ops**: **`cache_storage_spec<Ptr>::ops()`**. Default Spec: **`cache_ptr_for_storage<Ptr>`**.
 
 ```cpp
 template <class Ptr>
-class cache_deref;
+class cache_deref {
+  using asf_adopt_proxy = void;  // routing marker — opt-in; type not checked
+  Ptr& adopt_storage() noexcept;
+  Ptr const& adopt_storage() const noexcept;
+  static decltype(auto) pointee(Ptr const& storage) noexcept;
+};
 ```
 
 ```cpp
-to_dyn<Trait, cache_ptr<sizeof(P), alignof(P)>>(cache_deref{std::make_unique<T>(...)});
-to_dyn<Trait>(cache_deref{std::make_unique<T>(...)});  // Spec = sizeof/alignof(P)
+to_dyn<Trait, cache_ptr_for_storage<std::unique_ptr<T>>>(cache_deref{std::make_unique<T>(...)});
+to_dyn<Trait>(cache_deref{std::make_unique<T>(...)});  // Spec = cache_storage_spec<Ptr>
 ```
 
 Fit check and `Ops` erase target **Ptr** (same rules as cache). Buffer stores `Ptr`; `get()` is the buffer address. VT: `Storage=Ptr`, `As=pointee`; construct/destroy/`storage_size` use `Ptr`; methods `*Ptr`. When shallow copy/move is covered away (`op_unsupported` / unreachable), the matching deep `op_construct` slot is left empty.

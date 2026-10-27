@@ -1208,12 +1208,66 @@ using unique_cache_ptr = cache_ptr_for<std::unique_ptr<T>, unique_pointer_ops>;
 template <class T>
 using shared_cache_ptr = cache_ptr_for<std::shared_ptr<T>, shared_pointer_ops>;
 
-// cache_deref<Ptr>: holds a dereferenceable Ptr for to_dyn into cache_dyn.
-// Cache geometry/ops come from cache_ptr Spec:
-//   to_dyn<Trait, cache_ptr<Size,Align,Ops>>(cache_deref{p})
-//   to_dyn<Trait>(cache_deref{p})  // Spec = cache_ptr<sizeof(Ptr), alignof(Ptr)>
-// Not a dyn storage Ptr -- result is still cache_ptr holding the Ptr value;
-// VT is keyed on Ptr (methods dereference to the pointee).
+namespace detail {
+
+// Default shallow Ops when adopting Storage into cache_ptr (before Trait erase).
+template <class Storage>
+struct cache_storage_default_ops {
+  using type = pointer_ops_of<Storage>;
+};
+template <class T, class D>
+struct cache_storage_default_ops<std::unique_ptr<T, D>> {
+  using type = unique_pointer_ops;
+};
+template <class T>
+struct cache_storage_default_ops<std::shared_ptr<T>> {
+  using type = shared_pointer_ops;
+};
+template <class P>
+  requires(ptr_declares_ops_v<P>)
+struct cache_storage_default_ops<P> {
+  using type = ptr_ops_t<P>;
+};
+
+}  // namespace detail
+
+// Buffer Size/Align + shallow Ops for a stored type (independent of cache_deref).
+// Specialize cache_storage_spec<MyStorage> for custom geometry or Ops; defaults
+// cover smart pointers and pointer_trait<P>::ops when present.
+template <class Storage>
+struct cache_storage_spec {
+  using storage_type = Storage;
+  static constexpr std::size_t size = sizeof(Storage);
+  static constexpr std::size_t align = alignof(Storage);
+  using ops_type = typename detail::cache_storage_default_ops<Storage>::type;
+  using cache_ptr_type = cache_ptr<size, align, ops_type>;
+
+  static consteval ops_type ops() noexcept { return ops_type{}; }
+};
+
+template <class Storage>
+using cache_ptr_for_storage = typename cache_storage_spec<Storage>::cache_ptr_type;
+
+template <class Storage>
+inline constexpr std::size_t cache_storage_size_v =
+    cache_storage_spec<Storage>::size;
+template <class Storage>
+inline constexpr std::size_t cache_storage_align_v =
+    cache_storage_spec<Storage>::align;
+
+template <class Storage>
+consteval std::size_t cache_storage_size() noexcept {
+  return cache_storage_spec<Storage>::size;
+}
+template <class Storage>
+consteval std::size_t cache_storage_align() noexcept {
+  return cache_storage_spec<Storage>::align;
+}
+template <class Storage>
+using cache_storage_ops = typename cache_storage_spec<Storage>::ops_type;
+
+// cache_deref<Ptr>: reference adopt wrapper for to_dyn(...). Spec comes
+// from cache_storage_spec<Ptr> or an explicit cache_ptr template argument.
 template <class Ptr>
 class cache_deref {
   static_assert(
@@ -1225,19 +1279,25 @@ class cache_deref {
       "cache_deref requires a dereferenceable Ptr with pointer_traits");
 
  public:
+  using ptr_type = Ptr;
   using pointer_type = Ptr;
   using element_type = typename std::pointer_traits<Ptr>::element_type;
-  using cache_deref_tag = void;
-  using default_cache_spec =
-      cache_ptr<sizeof(Ptr), alignof(Ptr), pointer_ops<>>;
+  // to_dyn cache-adopt routing: member presence only (type not checked).
+  using asf_adopt_proxy = void;
 
   cache_deref() = default;
   cache_deref(Ptr p) noexcept(std::is_nothrow_move_constructible_v<Ptr>)
       : ptr_(std::move(p)) {}
 
-  Ptr& pointer() & noexcept { return ptr_; }
-  Ptr const& pointer() const& noexcept { return ptr_; }
-  Ptr&& pointer() && noexcept { return std::move(ptr_); }
+  Ptr& adopt_storage() noexcept { return ptr_; }
+  Ptr const& adopt_storage() const noexcept { return ptr_; }
+
+  // VT step: Storage (Ptr) then *storage. One overload: Ptr const& names const
+  // Storage only; non-const adopt_storage() still binds here. Pointee cv follows
+  // Ptr's operator*, not a second Ptr& overload.
+  static decltype(auto) pointee(Ptr const& storage) noexcept {
+    return *storage;
+  }
 
  private:
   Ptr ptr_{};
@@ -1249,9 +1309,41 @@ cache_deref(Ptr) -> cache_deref<Ptr>;
 namespace detail {
 
 template <class T>
-inline constexpr bool is_cache_deref_v = false;
-template <class Ptr>
-inline constexpr bool is_cache_deref_v<cache_deref<Ptr>> = true;
+consteval bool is_cache_adopt_wrapper() {
+  using U = std::remove_cvref_t<T>;
+  if (!requires { typename U::pointer_type; }) {
+    return false;
+  }
+  return requires(U& w, U const& c, U&& wr) {
+    { w.adopt_storage() } -> std::same_as<typename U::pointer_type&>;
+    { c.adopt_storage() } -> std::same_as<typename U::pointer_type const&>;
+    { std::move(w.adopt_storage()) } -> std::same_as<typename U::pointer_type>;
+    { U::pointee(std::declval<typename U::pointer_type const&>()) };
+  };
+}
+
+template <class T>
+inline constexpr bool is_cache_adopt_wrapper_v = is_cache_adopt_wrapper<T>();
+
+template <class T, class = void>
+struct has_asf_adopt_proxy : std::false_type {};
+template <class T>
+struct has_asf_adopt_proxy<T, std::void_t<typename T::asf_adopt_proxy>>
+    : std::true_type {};
+
+template <class T>
+inline constexpr bool has_asf_adopt_proxy_v =
+    has_asf_adopt_proxy<std::remove_cvref_t<T>>::value;
+
+template <class T>
+inline constexpr bool is_cache_deref_v = has_asf_adopt_proxy_v<T>;
+
+template <class W>
+  requires(has_asf_adopt_proxy_v<std::remove_cvref_t<W>> &&
+           is_cache_adopt_wrapper_v<std::remove_cvref_t<W>>)
+constexpr auto cache_deref_take_ptr(W&& w) {
+  return std::move(std::forward<W>(w).adopt_storage());
+}
 
 template <class P>
 using ptr_element_t = typename std::pointer_traits<

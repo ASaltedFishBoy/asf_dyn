@@ -38,6 +38,37 @@ struct Widget {
   std::string tag;
 };
 
+// User-defined adopt wrapper (same protocol + opt-in asf_adopt_proxy marker).
+template <class Ptr>
+class manual_cache_adopt {
+  static_assert(
+      requires(Ptr& p) {
+        typename std::pointer_traits<Ptr>::element_type;
+        { *p } -> std::convertible_to<
+            typename std::pointer_traits<Ptr>::element_type&>;
+      },
+      "manual_cache_adopt requires a dereferenceable Ptr with pointer_traits");
+
+ public:
+  using ptr_type = Ptr;
+  using pointer_type = Ptr;
+  using element_type = typename std::pointer_traits<Ptr>::element_type;
+  using asf_adopt_proxy = void;
+
+  manual_cache_adopt() = default;
+  explicit manual_cache_adopt(Ptr p) noexcept(
+      std::is_nothrow_move_constructible_v<Ptr>)
+      : ptr_(std::move(p)) {}
+
+  Ptr& adopt_storage() noexcept { return ptr_; }
+  Ptr const& adopt_storage() const noexcept { return ptr_; }
+
+  static decltype(auto) pointee(Ptr const& storage) noexcept { return *storage; }
+
+ private:
+  Ptr ptr_{};
+};
+
 template <>
 struct Stringable<Widget> final {
   static std::string to_string(ASF_TEST_CM(Widget) self) {
@@ -56,11 +87,26 @@ int main() {
   constexpr std::size_t sp_sz = sizeof(SPtr);
   constexpr std::size_t sp_al = alignof(SPtr);
 
+  static_assert(std::same_as<
+                    asf::cache_storage_ops<UPtr>,
+                    asf::unique_pointer_ops>);
+  static_assert(std::same_as<
+                    asf::cache_storage_ops<SPtr>,
+                    asf::shared_pointer_ops>);
+  static_assert(asf::cache_storage_size_v<UPtr> == up_sz);
+  static_assert(std::same_as<decltype(asf::cache_storage_spec<UPtr>::ops()),
+                             asf::unique_pointer_ops>);
+
   // cache_ptr Spec + cache_deref<Ptr>: fits, method deref, move-only shallow ok.
   {
     using Spec = asf::cache_ptr<up_sz, up_al>;
-    auto h = asf::to_dyn<Stringable, Spec>(asf::cache_deref{
-        std::make_unique<Widget>(Widget{701, asf_test::no_sso("U")})});
+    asf::cache_deref wrap{std::make_unique<Widget>(Widget{701, asf_test::no_sso("U")})};
+    static_assert(asf::detail::has_asf_adopt_proxy_v<decltype(wrap)>);
+    static_assert(asf::detail::is_cache_adopt_wrapper_v<decltype(wrap)>);
+    ASF_CHECK_EQ(asf::cache_deref<UPtr>::pointee(wrap.adopt_storage()).tag,
+                 asf_test::no_sso("U"));
+    ASF_CHECK_EQ(asf::cache_deref<UPtr>::pointee(wrap.adopt_storage()).id, 701);
+    auto h = asf::to_dyn<Stringable, Spec>(std::move(wrap));
     ASF_CHECK(static_cast<bool>(h));
     ASF_CHECK_EQ(h->to_string(), asf_test::no_sso("U") + ":701");
   }
@@ -71,6 +117,15 @@ int main() {
         std::make_unique<Widget>(Widget{702, asf_test::no_sso("W")})});
     ASF_CHECK(static_cast<bool>(h));
     ASF_CHECK_EQ(h->to_string(), asf_test::no_sso("W") + ":702");
+  }
+
+  // External adopt wrapper (manual_cache_adopt): same to_dyn path as cache_deref.
+  {
+    static_assert(asf::detail::has_asf_adopt_proxy_v<manual_cache_adopt<UPtr>>);
+    auto h = asf::to_dyn<Stringable>(manual_cache_adopt<UPtr>{
+        std::make_unique<Widget>(Widget{708, asf_test::no_sso("E")})});
+    ASF_CHECK(static_cast<bool>(h));
+    ASF_CHECK_EQ(h->to_string(), asf_test::no_sso("E") + ":708");
   }
 
   // Larger cache_ptr Spec + cache_deref.

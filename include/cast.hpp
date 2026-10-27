@@ -7,7 +7,7 @@
 //   to_dyn<Trait>(ptr|handle)                mirror only if ann::mirror
 //   to_dyn<Trait, cache_ptr>(value|mirror)   -> cache_dyn (fit is static_assert)
 //   to_dyn<Trait, cache_ptr<S,A,Ops>>(wrap)  -> cache holding Ptr; VT *Ptr
-//   to_dyn<Trait>(cache_deref{Ptr})           -> same, Spec=sizeof/alignof(Ptr)
+//   to_dyn<Trait>(cache_deref{Ptr})           -> cache_storage_spec<Ptr>
 //   to_dyn<Trait, uptr>([alloc, ]value)      forward into heap uptr
 //   instantiate_dyn<Trait, As>               type: ODR-use final-leaf object vt
 //     (explicit: template struct asf::instantiate_dyn<Trait, As>;)
@@ -42,7 +42,7 @@ template <class T>
 concept object_for_cast = !is_any_handle_v<T>;
 
 // Value that can be forwarded into an owning Ptr (not pointer/mirror/handle
-// / cache_deref -- wrap takes the cache+deref path).
+// / cache adopt wrapper -- cache+deref path; see has_asf_adopt_proxy).
 template <class T>
 concept value_for_owning_ptr =
     object_for_cast<T> && !dyn_bindable_ptr<std::remove_cvref_t<T>> &&
@@ -319,16 +319,16 @@ struct to_dyn_t {
     requires(cache && detail::is_cache_deref_v<std::remove_cvref_t<W>>)
   constexpr auto operator()(W&& w) const {
     return detail::cache_deref_forward<Trait, Spec>(
-        std::forward<W>(w).pointer());
+        detail::cache_deref_take_ptr(std::forward<W>(w)));
   }
 
   template <class W>
     requires(!cache && detail::is_cache_deref_v<std::remove_cvref_t<W>>)
   constexpr auto operator()(W&& w) const {
-    using Wraw = std::remove_cvref_t<W>;
-    using WrapSpec = typename Wraw::default_cache_spec;
+    using Ptr = typename std::remove_cvref_t<W>::pointer_type;
+    using WrapSpec = cache_ptr_for_storage<Ptr>;
     return detail::cache_deref_forward<Trait, WrapSpec>(
-        std::forward<W>(w).pointer());
+        detail::cache_deref_take_ptr(std::forward<W>(w)));
   }
 
   template <typename T, typename Src>
@@ -418,10 +418,10 @@ struct to_dyn_cache_ptr_t {
     requires(detail::is_cache_deref_v<std::remove_cvref_t<W>>)
   constexpr auto operator()(W&& w) const {
     using Ptr = typename std::remove_cvref_t<W>::pointer_type;
-    using Spec = CachePtr<sizeof(Ptr), alignof(Ptr), pointer_ops<>>;
+    using Spec = cache_ptr_for_storage<Ptr>;
     assert_cache_ptr_spec<Spec>();
     return detail::cache_deref_forward<Trait, Spec>(
-        std::forward<W>(w).pointer());
+        detail::cache_deref_take_ptr(std::forward<W>(w)));
   }
 
   template <typename T, typename Src>
