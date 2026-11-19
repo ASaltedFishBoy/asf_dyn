@@ -16,46 +16,44 @@ asf::abi_namespace_name
 
 ## ABI version (`ASF_VERSION_*` / `ASF_ABI_NAMESPACE`)
 
-Currently **0.1.5**. The inline ABI namespace is `v0_1_5_b` + a **binary feature tag** (MSB→LSB: `RTTI`, `INTERMEDIATE`, `MULTI_VT`, `SINGLE_INHERIT`). Defaults (`0,1,1,0`) yield `v0_1_5_b0110`. Source still writes `asf::dyn` and the rest; mangling includes that segment so `.dll` / `.so` files built with different ASF versions **or option mixes** in one process do not silently merge COMDAT symbols for slots, static vtable data, and erased thunks. Bump `ASF_VERSION_*` (and the `vMAJOR_MINOR_PATCH` token in `iface_config.hpp`) when breaking the dyn/vtable symbol ABI. Override `ASF_ABI_NAMESPACE` only if you intentionally force a tag. Runtime: `asf::abi_namespace_name`, `asf::dyn_feature_bits`.
+Currently **0.2.0**. The inline ABI namespace is `v0_2_0_b` + a **binary feature tag** (MSB→LSB: `RTTI`, `INTERMEDIATE`, `MULTI_VT`, `SINGLE_INHERIT`) + a `_tNN` suffix (the `ASF_DYN_VT_TAG_HI_BITS` value). Defaults (`0,1,1,0`, width 16) yield `v0_2_0_b0110_t16`. Source still writes `asf::dyn` and the rest; mangling includes that segment so `.dll` / `.so` files built with different ASF versions **or option mixes** in one process do not silently merge COMDAT symbols for slots, static vtable data, and erased thunks. Bump `ASF_VERSION_*` (and the `vMAJOR_MINOR_PATCH` token in `iface_config.hpp`) when breaking the dyn/vtable symbol ABI. Override `ASF_ABI_NAMESPACE` only if you intentionally force a tag. Runtime: `asf::abi_namespace_name`, `asf::dyn_feature_bits`.
 
 ---
 
 ## `ASF_HAS_DYN_RTTI`
-
-**Experimental.**
 
 | | |
 | --- | --- |
 | **Default** | `0` (CMake: `OFF`) |
 | **On** | Vtables carry a **meta header**; `dyn_cast` is available |
 
-**Experimental:** `dyn_cast` is **guaranteed only to the creation node and the nodes above it**. On a linear chain `1 → 2 → 3 → 4` bound at `3`, `3-1-2` is guaranteed; `3-1-4` may succeed or fail. The implementation looks up Traits in the leaf Final's layout / cover set. That is **not** a precise "is this object's dynamic type To?" test. A hit below the creation node (or on a cover) is **not** a promise. Prefer an implicit upcast / `trait_cast` / `as` on production paths; if you need a runtime downcast, prove the type yourself, or use `unsafe_downcast` and own the UB. The API and acceptance rules may still tighten or change.
+**Semantics:** a handle is anchored at a node of the construction Final's reachable-Trait tree: creation anchors at the Final leaf (an intermediate bind attaches the covering leaf's node), a section-prefix upcast keeps the node, and a Redirect upcast re-anchors at the cover node. The anchor is **construction-fixed** — a `dyn_cast` hit switches only the vtable, never the tag, so cast results are independent of cast history. The runtime test walks the **single-parent tree** from the anchor node toward the roots (parent = the largest-level live direct base, first base on ties), comparing identity only when the node level equals the target's static DAG depth — a smaller level aborts (the target lies deeper than the anchor), a larger one keeps climbing. A hit is **exact**: the object's dynamic type genuinely realizes `To` on that chain, so the handle switches to `To`'s own vtable. A miss is definitive: `To` is deeper than the anchor or on a same-level side branch (e.g. the other arm of a diamond), which is never on the chain. A tree wider than the tag capacity is a **compile-time error**, so `dyn_cast` has no UB path. Prefer an implicit upcast / `trait_cast` / `as` when the static type is known; `dyn_cast` is the exact runtime test otherwise.
 
-That caveat disappears with `ASF_HAS_DYN_INTERMEDIATE=OFF` (final-only binds): every dyn is then created at a final leaf, so the leaf is always the object's true dynamic type and a `meta.find` hit is exactly "`To` is an ancestor of that leaf". `dyn_cast` acceptance is fully defined in that configuration — static upcast when possible, exact downcast via meta otherwise.
-
-Meta, in short: one header `{ find, type }` (`find` a function pointer, `type` a `const std::type_info&` to Storage) with `tables[0..x)` as an immediate suffix (`this + 1`, not a pointer field). `tables[]` holds the x **distinct** physical vtables of the Final key (leaf + Redirect covers), indexed by physical table rather than by target — several targets may share an entry. `find` is generated per Final as x comparisons against compile-time `trait_id` addresses (`trait_id<T>::id` is one static inline `char` per Trait, identity by address) and returns the **tables index** (`(std::size_t)-1` on miss): a pure Final-level map that takes no `self`, one function shared by every key of the Final; the caller then indexes its own instance's `tables[k]`. Every compared address is a compile-time constant visible locally, and the vec is never written at runtime, so the comparison chain may be lowered to a switch by the compiler. Each physical vt key has its own meta copy (not a shared parent tree).
+Meta, in short: one header `{ type, node_count, walk, node_typeid }` (`type` a `const std::type_info&` to Storage) with `tables[0..x)` as an immediate suffix (`this + 1`). The x nodes are the Final's dyn-upcast-reachable Traits (`reachable_t<Final>`, self first) — one node per logical Trait, so `tables[]` may repeat a physical vt shared by section prefix. The cast tree is **code, not data**: `walk` is a per-Final dispatch (one function per Final, COMDAT-shared across the key's Storage/As/Mask variants) that switches on the node tag and climbs the constexpr-unrolled parent chain — levels and compared identities are constants, only `to_id` / `to_level` are runtime; `node_typeid` is a per-Final node → trait `typeid` dispatch. No `ids[]` / `links[]` arrays exist. A handle vt carries the **node tag** in a tag field of the pointer: the index of the construction anchor node (the attached leaf at bind, the cover node after a Redirect upcast); every vt producer (construction / redirect thunk / walk hit) returns a pre-tagged pointer — walk hits reuse the input tag — and slot accesses untag first. The tag feeds the `walk` / `node_typeid` dispatches and indexes this meta block's `tables[]`; the tag field occupies the pointer's top `ASF_DYN_VT_TAG_HI_BITS` bits (default 16 on 64-bit = 65536 nodes, assuming a 48-bit canonical VA — no compiler facility reports the VA width, so LA57-class machines must set it to 7; `0`, the 32-bit default, falls back to the low alignment bits `countr_zero(alignof(vt_fn))` = 3 bits = 8 nodes), and a block whose max node index exceeds `2^bits` is a **compile error** at meta instantiation — there is no runtime escape. Each physical vt key has its own meta copy (not a shared parent tree).
 
 ```
 vt[-2] --> +-------------------------------+  vtable_meta_inst<X>
-           | meta: find -------------------+--> rtti_find_index<Final> (one fn
-           |       type = typeid(Storage)  |    per Final, shared by all keys)
-           +-------------------------------+
-           | tables[0] --------------------+--> leaf vt
-           | tables[1] --------------------+--> cover vt
-           |  ...                          |
-           | tables[X-1] ------------------+--> cover vt
-           +-------------------------------+
+           | meta: type = typeid(Storage)  |
+           |       node_count = X          |
+           |       walk -------------+-----+--> rtti_walk_dispatch<Final>
+           |       node_typeid ------+     +--> rtti_node_typeid_dispatch<Final>
+           +-------------------------+
+           | tables[0] --------------+-----+--> leaf vt
+           | tables[1] --------------+-----+--> cover vt (may repeat)
+           |  ...                    |
+           | tables[X-1] ------------+-----+--> cover vt
+           +-------------------------+
             one instance per (Mask, Final, Storage, As) key; tables() = meta+1
+            walk / node_typeid: per-Final code, COMDAT-shared across keys
 
-rtti_find_index<Final>(to_id):             // no self; pure Final-level map
-  to_id == &trait_id<T0>::id ?  return k0   // k consteval (Final layout)
-  to_id == &trait_id<T1>::id ?  return k1
-  ...                               constant address chain; may lower to a switch
-  otherwise                    ?  (size_t)-1
-caller: k = meta->find(to_id);  vt = (k != -1) ? meta->tables()[k] : nullptr
+walk_cast(vt, to_id, to_level):            // to_level = trait_level_v<To>
+  i = meta->walk(node_of(vt), to_id, to_level)
+      // tag picks the start node; the parent chain is a constexpr unroll:
+      // levels and compared identities are constants, to_id / to_level runtime
+  i < 0 -> miss; otherwise tag_vt(meta->tables()[i], i)
 ```
 
-`dyn_cast`: a static upcast uses the converting constructor (`upcast_vt`); otherwise a meta lookup. Empty only when the Trait is missing (see above: finding it is not the same as semantic correctness).
+`dyn_cast`: a static upcast uses the converting constructor (`upcast_vt`); otherwise a meta tree walk from the handle's node. Empty when the walk misses (see above: a hit is not the same as semantic correctness).
 
 Independent of **MULTI_VT**, and complementary: a full-path implicit upcast / `trait_cast` does **not** need meta. A non-section-prefix `dyn_cast` target still depends on Redirect (cover vtables).
 
@@ -173,7 +171,7 @@ comparison with microsoft/proxy: [bench/README.md](../../bench/README.md).
 | `to_dyn` owning a value | One allocation + construction | `::operator new` / Alloc; `cache_dyn` is allocation-free (the value moves into the traveling buffer) |
 | Upcast view (`as<To>`) | Pure type-level rewrap, same vt (free) | Never switches the vt pointer |
 | Upcast cast (`trait_cast`) | Compile-time index, at most one vt pointer swap | No typeid / string lookup; MULTI_VT Redirect tables are static addresses too |
-| `dyn_cast` (RTTI on) | `meta.find`: x compile-time `trait_id` address comparisons (may lower to a switch), then one direct `tables[k]` index | Experimental |
+| `dyn_cast` (RTTI on) | Per-Final walk dispatch: tag-selected start, constant level/identity compares along the unrolled parent chain; one `tables[]` load + retag on hit | No memory tree (`ids[]`/`links[]` unrolled into code); OFF by default |
 | Teardown | One indirect `vt[-1]` call | Deleter-kind adds the `Free` call (default is `::operator delete`) |
 | Proxy (`h->` / `*h`) | Small pointer wrapper | Zero-cost after inlining |
 | `mirror` construction / field access | Fields are references | Construction packs pointers; only `value_of` copies field-wise |

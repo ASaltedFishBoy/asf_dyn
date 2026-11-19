@@ -677,6 +677,7 @@ decltype(auto) handle_cast_special(void* ptr, vt_ptr vt,
                                    auto&&... args) {
   constexpr auto index = dyn_special_op_index<Trait, Key, Op>();
   constexpr auto method = dyn_method_at<Trait, index>();
+  vt = untag_vt(vt);
   // Construct (ann::imple or custom default): void(dst) into Key-sized buffer.
   if constexpr (Op == special_op::construct) {
     using Erased = erased_fn<void, void*>;
@@ -710,6 +711,7 @@ decltype(auto) handle_call(void* ptr, vt_ptr vt,
   (void)AllowReset;
   (void)reset_ptr;
   (void)reset_vt;
+  vt = untag_vt(vt);
   constexpr auto inst = signature_decl_of<Method>();
   static_assert(inst != std::meta::info{},
                 "cannot determine dyn method signature");
@@ -730,6 +732,7 @@ decltype(auto) handle_call_in(void* ptr, vt_ptr vt,
   if constexpr (RequireConst)
     static_assert(is_const_self_method(Method),
                   "const view cannot call a non-const Interface method");
+  vt = untag_vt(vt);
   constexpr auto inst = signature_decl_of<Method>();
   static_assert(inst != std::meta::info{},
                 "cannot determine dyn method signature");
@@ -750,6 +753,7 @@ decltype(auto) handle_call_own_slice(void* ptr, vt_ptr vt, auto&&... args) {
   if constexpr (RequireConst)
     static_assert(is_const_self_method(Method),
                   "const sub_dyn cannot call a non-const Interface method");
+  vt = untag_vt(vt);
   constexpr auto inst = signature_decl_of<Method>();
   static_assert(inst != std::meta::info{},
                 "cannot determine dyn method signature");

@@ -2290,6 +2290,16 @@ struct dyn_typeid_facet<Core, Trait, true> {
       return typeid(void);
     return meta_of<Trait>(s.vt_)->typeid_of();
   }
+
+  // Identity of the trait owning the bound physical table: the node tag on
+  // vt_ feeds the meta node-typeid dispatch. Intermediate binds report the
+  // leaf the ADL lookup actually attached. Empty -> typeid(void).
+  const std::type_info& node_typeid_of() const noexcept {
+    auto const& s = static_cast<Core const&>(*this);
+    if (!s)
+      return typeid(void);
+    return meta_of<Trait>(s.vt_)->node_typeid_of(s.vt_);
+  }
 };
 #endif
 
@@ -3218,7 +3228,8 @@ try_construct_cache(void* ptr, vt_ptr vt, Extra&&... extra)
 
 // dyn / c_dyn surface on dyn_ptr_core.
 // Handle = public handle type (template template). Const=true: c_* .
-// RTTI: meta.find is switch-style id->one of meta.tables[0..x).
+// RTTI: meta tree walk dispatches on the handle node tag to a tables[] hit
+// (see vtable_meta::walk_cast).
 // Casts rebind Trait only - same complete Ptr.
 template <template <template <class> class, class> class Handle,
           template <class> class Trait, bool Const, class Ptr>
@@ -3304,7 +3315,8 @@ class dyn_handle_base
     return make<To>(vt, ptr_type{ptr});
   }
 
-  // Section-prefix: same physical vt. Else MULTI_VT Redirect slot -> cover.
+  // Section-prefix: same physical vt (same node: tag preserved). Else
+  // MULTI_VT Redirect slot -> cover (thunk returns a pre-tagged vt).
   template <template <class> class To>
   static vt_ptr upcast_vt(vt_ptr vt) noexcept {
     if constexpr (is_section_prefix_of<To, Trait>()) {
@@ -3313,7 +3325,7 @@ class dyn_handle_base
       constexpr auto idx = find_redirect_slot_v<Trait<void>, To<void>>;
       static_assert(idx != static_cast<std::size_t>(-1),
                     "no shared redirect path to target interface");
-      return from_vt_fn<vt_ptr()>(vt[idx])();
+      return from_vt_fn<vt_ptr()>(untag_vt(vt)[idx])();
     }
   }
 
@@ -4145,7 +4157,8 @@ c_dyn<To, Ptr> unsafe_downcast(c_dyn<From, Ptr>&& handle) {
 }
 
 #if ASF_HAS_DYN_RTTI
-// Upcast: static upcast_vt (no meta). Else meta.find -> physical vt.
+// Upcast: static upcast_vt (no meta). Else meta cast-tree walk: climb
+// parent links from the handle's node, level-pruned, to a tagged node vt.
 template <template <class> class To, template <class> class From, class Ptr>
 dyn<To, Ptr> rtti_cast(dyn<From, Ptr> const& handle) {
   using Src = dyn_handle_base<dyn, From, false, Ptr>;
@@ -4158,7 +4171,10 @@ dyn<To, Ptr> rtti_cast(dyn<From, Ptr> const& handle) {
                        !dyn_downcast_chain_ok<To, From>()) {
     return dyn<To, Ptr>{};
   } else {
-    auto* new_vt = meta_of<From>(vtable_of(b))->find_vt(&trait_id<To>::id);
+    auto* new_vt =
+        meta_of<From>(vtable_of(b))
+            ->walk_cast(vtable_of(b), &typeid(To<void>),
+                        trait_level_v<To<void>>);
     if (!new_vt)
       return dyn<To, Ptr>{};
     return dyn_factory_access::clone_retype_vt<To>(b, new_vt);
@@ -4177,7 +4193,10 @@ dyn<To, Ptr> rtti_cast(dyn<From, Ptr>&& handle) {
                        !dyn_downcast_chain_ok<To, From>()) {
     return dyn<To, Ptr>{};
   } else {
-    auto* new_vt = meta_of<From>(vtable_of(b))->find_vt(&trait_id<To>::id);
+    auto* new_vt =
+        meta_of<From>(vtable_of(b))
+            ->walk_cast(vtable_of(b), &typeid(To<void>),
+                        trait_level_v<To<void>>);
     if (!new_vt)
       return dyn<To, Ptr>{};
     return dyn_factory_access::move_retype_vt<To>(b, new_vt);
@@ -4196,7 +4215,10 @@ c_dyn<To, Ptr> rtti_cast(c_dyn<From, Ptr> const& handle) {
                        !dyn_downcast_chain_ok<To, From>()) {
     return c_dyn<To, Ptr>{};
   } else {
-    auto* new_vt = meta_of<From>(vtable_of(b))->find_vt(&trait_id<To>::id);
+    auto* new_vt =
+        meta_of<From>(vtable_of(b))
+            ->walk_cast(vtable_of(b), &typeid(To<void>),
+                        trait_level_v<To<void>>);
     if (!new_vt)
       return c_dyn<To, Ptr>{};
     return dyn_factory_access::clone_retype_vt<To>(b, new_vt);
@@ -4215,7 +4237,10 @@ c_dyn<To, Ptr> rtti_cast(c_dyn<From, Ptr>&& handle) {
                        !dyn_downcast_chain_ok<To, From>()) {
     return c_dyn<To, Ptr>{};
   } else {
-    auto* new_vt = meta_of<From>(vtable_of(b))->find_vt(&trait_id<To>::id);
+    auto* new_vt =
+        meta_of<From>(vtable_of(b))
+            ->walk_cast(vtable_of(b), &typeid(To<void>),
+                        trait_level_v<To<void>>);
     if (!new_vt)
       return c_dyn<To, Ptr>{};
     return dyn_factory_access::move_retype_vt<To>(b, new_vt);

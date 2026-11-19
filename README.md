@@ -159,7 +159,8 @@ MSVC / Clang C++26 reflection support is still evolving; this tree currently tra
 
 | Macro | Default | Meaning |
 | --- | --- | --- |
-| `ASF_HAS_DYN_RTTI` | OFF | Vtable meta header / `dyn_cast` (**experimental**; see [features.md](docs/en/spec/features.md)) |
+| `ASF_HAS_DYN_RTTI` | OFF | Vtable meta header / `dyn_cast` runtime downcast (see [features.md](docs/en/spec/features.md)) |
+| `ASF_DYN_VT_TAG_HI_BITS` | 16 (64-bit) / 0 (32-bit) | `dyn_cast` vt node-tag width in the pointer high bits (RTTI only; LA57 machines: set 7) |
 | `ASF_HAS_DYN_INTERMEDIATE` | ON | Non-`final` intermediate Trait may bind dyn; **needs final-leaf inject**; [dyn.md](docs/en/spec/dyn.md) |
 | `ASF_HAS_DYN_MULTI_VT` | ON | Redirect/cover, full-path `trait_cast` upcast; mutex with `ASF_HAS_DYN_SINGLE_INHERIT` |
 | `ASF_HAS_DYN_SINGLE_INHERIT` | OFF | Live-edge single inheritance (checked at dyn generation; `[[=truncate]]`/`[[=truncated]]` allowed); mutex with MULTI_VT (upcast then follows the MULTI_VT-off section-prefix rule) |
@@ -171,7 +172,7 @@ cmake -S . -B build -G Ninja -DCMAKE_CXX_COMPILER=g++ \
   -DASF_HAS_DYN_RTTI=ON -DASF_HAS_DYN_INTERMEDIATE=OFF
 ```
 
-Details: [docs/en/spec/features.md](docs/en/spec/features.md). Feature flags are also baked into the ABI inline namespace as a binary tag (`v0_1_5_b...`).
+Details: [docs/en/spec/features.md](docs/en/spec/features.md). Feature flags are also baked into the ABI inline namespace as a binary tag (`v0_2_0_b...`).
 
 ## Headers
 

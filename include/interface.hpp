@@ -166,12 +166,16 @@
 //   RTTI prefix     meta
 //   method slots    include op_construct overloads (by-args dispatch).
 //                   Destroy is vt[-1] (~Src), not a method slot.
-//   meta            find(trait_id)->one of tables[0..x) (distinct physical
-//                   vts); type info; per physical-vt-key copy.
+//   meta            cast tree over reachable_t<Final> nodes (node index
+//                   merged into the vt low bits); tables[0..x) + identity
+//                   thunks ids[0..x) + parent/level links[0..x); type info;
+//                   per physical-vt-key copy. The node tag on a handle vt
+//                   indexes tables/ids/links.
 //   vtable key      (Mask, Final, Trait, Storage, As): cover tables belong to
 //                   the final root (Redirect I9->I8 -> vtable<...,I9,I8,...>);
 //                   not type-linked to a bare intermediate Trait table
-//   dyn_cast        RTTI: static upcast (upcast_vt) else meta.find; empty miss
+//   dyn_cast        RTTI: static upcast (upcast_vt) else meta tree walk
+//                   (level-pruned); empty miss
 //   unsafe_downcast  retype Trait only; same ptr + same vt pointer (no adjust).
 //                   Not static_cast. Safe only when the handle already sits on
 //                   the leaf/final (or same physical) table you mean to name.

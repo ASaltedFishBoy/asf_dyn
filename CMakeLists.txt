@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.28)
-project(asf_dyn VERSION 0.1.5 LANGUAGES CXX)
+project(asf_dyn VERSION 0.2.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -8,7 +8,7 @@ set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(ASF_HAS_DYN_RTTI
-  "Experimental: dyn vtable RTTI / dyn_cast (over-accepts downcasts; see docs)"
+  "dyn vtable RTTI / dyn_cast (meta node tag + per-Final walk dispatch; see docs)"
   OFF)
 option(ASF_HAS_DYN_INTERMEDIATE
   "non-final Trait may bind dyn (needs covering final leaf inject; final ancestor forbids derived). See docs/*/spec/dyn.md. OFF => final-only."
@@ -38,6 +38,12 @@ if(ASF_HAS_DYN_SINGLE_INHERIT)
   add_compile_definitions(ASF_HAS_DYN_SINGLE_INHERIT=1)
 else()
   add_compile_definitions(ASF_HAS_DYN_SINGLE_INHERIT=0)
+endif()
+# vt node-tag high-bit width: empty = header default (64-bit 16 / 32-bit 0).
+set(ASF_DYN_VT_TAG_HI_BITS "" CACHE STRING
+    "vt node-tag width in the pointer high bits; empty = header default (64-bit: 16, 32-bit: 0 = low alignment bits). LA57 machines: set 7.")
+if(NOT ASF_DYN_VT_TAG_HI_BITS STREQUAL "")
+  add_compile_definitions(ASF_DYN_VT_TAG_HI_BITS=${ASF_DYN_VT_TAG_HI_BITS})
 endif()
 link_libraries(stdc++exp)
 # MinGW defaults to shared libgcc/libstdc++/winpthread; without mingw64/bin on
@@ -180,6 +186,21 @@ foreach(dir_name IN ITEMS
     EXCLUDE_FROM_ALL TRUE EXCLUDE_FROM_DEFAULT_BUILD TRUE)
   list(APPEND ASF_COMPILE_FAIL_TGTS ${tgt})
 endforeach()
+
+# Compile-fail (RTTI): reachable trait tree wider than the vt tag capacity.
+add_executable(rtti_node_overflow tests/general/compile_fail/rtti_node_overflow.cpp)
+target_include_directories(rtti_node_overflow PRIVATE include tests)
+asf_target_defs(rtti_node_overflow)
+target_compile_definitions(rtti_node_overflow PRIVATE ASF_HAS_DYN_RTTI=1)
+# Pin the tag capacity to 8 (hi-bit field of 3) so the 9-node chain
+# overflows regardless of the platform default. A global override wins
+# instead; the in-source capacity guard then fails with the reason.
+if(ASF_DYN_VT_TAG_HI_BITS STREQUAL "")
+  target_compile_definitions(rtti_node_overflow PRIVATE ASF_DYN_VT_TAG_HI_BITS=3)
+endif()
+set_target_properties(rtti_node_overflow PROPERTIES
+  EXCLUDE_FROM_ALL TRUE EXCLUDE_FROM_DEFAULT_BUILD TRUE)
+list(APPEND ASF_COMPILE_FAIL_TGTS rtti_node_overflow)
 
 # Verify the compile-fail targets actually fail: building them must error.
 foreach(t IN LISTS ASF_COMPILE_FAIL_TGTS)

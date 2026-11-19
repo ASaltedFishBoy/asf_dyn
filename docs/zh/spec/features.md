@@ -16,44 +16,43 @@ asf::abi_namespace_name
 
 ## ABI 版本（`ASF_VERSION_*` / `ASF_ABI_NAMESPACE`）
 
-当前 **0.1.5**。内联 ABI 命名空间为 `v0_1_5_b` + **二进制特性标**（MSB→LSB： `RTTI` / `INTERMEDIATE` / `MULTI_VT` / `SINGLE_INHERIT`）。默认 (`0,1,1,0`) 得 `v0_1_5_b0110`。源码仍写 `asf::dyn` 等；mangling 带上该段，使同一进程内不同 ASF 版本**或选项组合** 编译出的 `.dll`/`.so` 不会在 slots / 虚表 / erased thunk 的 COMDAT 上静默合并。破坏 ABI 时抬 `ASF_VERSION_*`（及 `iface_config.hpp` 中 `vMAJOR_MINOR_PATCH` 令牌）。只有有意强制某个标签时才覆盖 `ASF_ABI_NAMESPACE`。运行时：`asf::abi_namespace_name` / `asf::dyn_feature_bits`。
+当前 **0.2.0**。内联 ABI 命名空间为 `v0_2_0_b` + **二进制特性标**（MSB→LSB： `RTTI` / `INTERMEDIATE` / `MULTI_VT` / `SINGLE_INHERIT`）+ `_tNN` 后缀（`ASF_DYN_VT_TAG_HI_BITS` 值）。默认 (`0,1,1,0`) 加默认 16 位 tag 位宽得 `v0_2_0_b0110_t16`。源码仍写 `asf::dyn` 等；mangling 带上该段，使同一进程内不同 ASF 版本**或选项组合** 编译出的 `.dll`/`.so` 不会在 slots / 虚表 / erased thunk 的 COMDAT 上静默合并。破坏 ABI 时抬 `ASF_VERSION_*`（及 `iface_config.hpp` 中 `vMAJOR_MINOR_PATCH` 令牌）。只有有意强制某个标签时才覆盖 `ASF_ABI_NAMESPACE`。运行时：`asf::abi_namespace_name` / `asf::dyn_feature_bits`。
 
 ---
 
-## `ASF_HAS_DYN_RTTI`**（实验性）**
+## `ASF_HAS_DYN_RTTI`
 
 | | |
 | --- | --- |
 | **默认** | `0`（CMake：`OFF`） |
 | **开启** | 虚表带 **meta 头**；提供 `dyn_cast` |
 
-**实验性**：`dyn_cast` **只保证创建节点及其上方的节点**。纯链 `1-2-3-4` 绑在 `3`：`3-1-2` 受保证；`3-1-4` 可能过也可能不过。实现按叶 Final 的布局 / cover 集合查 Trait，不是精确的「此对象动态类型是否为 To」判定。创建节点之下或 cover 上查到不是承诺。生产路径请优先隐式上行 / `trait_cast` / `as`；需要运行时下行时自证类型，或用 `unsafe_downcast` 并自行承担 UB。API 与判定规则仍可能收紧或改掉。
+**语义保证**：句柄锚定在创建 Final 可达 Trait 树的某个节点：创建锚在 Final 叶（中间节点绑定附着覆盖叶的节点）；section-prefix 上行保持节点；Redirect 上行重新锚定在 cover 节点。锚点**构造即固定**——`dyn_cast` 命中只换虚表、不动 tag，cast 结果与历史无关。运行时判定从锚点节点沿**单父树**向根爬（parent = 层数最大的存活直接基，并列取第一），只在节点层数等于目标静态 DAG 层数时比对身份——层数更小即中止（目标比锚点更深），更大继续上爬。命中是**精确**的：对象动态类型确实在该链上实现 `To`，句柄随之换到 `To` 自己的虚表。miss 是确定的：`To` 比锚点更深，或位于同层侧枝（如菱形另一支）——侧枝不在链上。树宽于 tag 容量是**编译期错误**，`dyn_cast` 没有 UB 路径。静态类型已知时优先隐式上行 / `trait_cast` / `as`；运行时情形由 `dyn_cast` 精确回答。
 
-开启 `ASF_HAS_DYN_INTERMEDIATE=OFF`（仅 final 绑定）后上述保留消失：每个 dyn 都创建于 final 叶，叶即对象的真实动态类型，`meta.find` 的命中恰为「`To` 是否该叶的祖先」。此时 `dyn_cast` 完全确定——能静态上行则静态上行，否则经 meta 精确下行。
-
-meta 结构：一个 `{ find, type }` 头（`find` 是函指，`type` 是指向 Storage 的 `const std::type_info&`），`tables[0..x)` 紧随该头（`this + 1`，不是指针字段）。`tables[]` 装 Final 键下 x 张**互不相同**的物理虚表（叶 + 各 Redirect cover），按物理表索引而非按目标——多个目标可共享同一项。`find` 按 Final 生成为 x 次对编译期 `trait_id` 地址的比较（`trait_id<T>::id` 是每个 Trait 一个 static inline `char`，以地址为身份），返回 **tables 下标**（未命中为 `(std::size_t)-1`）：不传 `self` 的纯 Final 级映射，其下所有键共享一个函数；调用方再索引自己实例的 `tables[k]`。所有被比地址都是局部可见的编译期常量，该 vec 运行时从不改写，比较链可能被编译器编成 switch。每个物理虚表键各有一份 meta（非共享父树）。
+meta 结构：一个 `{ type, node_count, walk, node_typeid }` 头（`type` 是指向 Storage 的 `const std::type_info&`），`tables[0..x)` 紧随该头（`this + 1`）。x 个节点是 Final 的 dyn 上行可达 Trait（`reachable_t<Final>`，自身在前）——每个逻辑 Trait 一个节点，与后代 cover section-prefix 共享表时 `tables[]` 会重复同一物理虚表。cast 树是**代码而非数据**：`walk` 是 per-Final 分派（每个 Final 一个函数，跨 Storage/As/Mask 键 COMDAT 共享），按节点 tag 选起点后沿 constexpr 展开的父链爬升——level 与被比对的身份都是常量，只有 `to_id` / `to_level` 是运行期入参；`node_typeid` 是 per-Final 的节点 → Trait `typeid` 分派。不再有 `ids[]` / `links[]` 数组。句柄 vt 在指针 tag 位段携带**节点 tag**：构造锚点节点的下标（绑定时为附着的叶，Redirect 上行后为 cover 节点）；产出 vt 的入口（构造 / redirect thunk / walk 命中）都返回预打 tag 的指针——walk 命中沿用输入 tag——槽位访问前摘 tag。tag 喂给 `walk` / `node_typeid` 分派并索引本 meta 块的 `tables[]`。tag 位段位于指针顶部 `ASF_DYN_VT_TAG_HI_BITS` 位（64 位默认 16 即 65536 个节点，假设 48 位规范形虚拟地址——没有任何编译器设施上报 VA 位宽，LA57 类机器须设为 7；`0`（32 位默认）回落对齐低位 `countr_zero(alignof(vt_fn))` = 3 位 = 8 个节点）；**最大节点下标超出 2^位宽 在 meta 实例化处直接报编译错误**，没有运行时逃逸。每个物理虚表键各有一份 meta（非共享父树）。
 
 ```
 vt[-2] --> +-------------------------------+  vtable_meta_inst<X>
-           | meta: find -------------------+--> rtti_find_index<Final>（每个
-           |       type = typeid(Storage)  |    Final 一个函数，所有键共享）
-           +-------------------------------+
-           | tables[0] --------------------+--> 叶表
-           | tables[1] --------------------+--> cover 表
-           |  ...                          |
-           | tables[X-1] ------------------+--> cover 表
-           +-------------------------------+
+           | meta: type = typeid(Storage)  |
+           |       node_count = X          |
+           |       walk -------------+-----+--> rtti_walk_dispatch<Final>
+           |       node_typeid ------+     +--> rtti_node_typeid_dispatch<Final>
+           +-------------------------+
+           | tables[0] --------------+-----+--> 叶表
+           | tables[1] --------------+-----+--> cover 表（可能重复）
+           |  ...                    |
+           | tables[X-1] ------------+-----+--> cover 表
+           +-------------------------+
             每 (Mask, Final, Storage, As) 键一份实例；tables() = meta + 1
+            walk / node_typeid：per-Final 代码，跨键 COMDAT 共享
 
-rtti_find_index<Final>(to_id):                // 不传 self；纯 Final 级映射
-  to_id == &trait_id<T0>::id ?  return k0      // k 编译期（只看 Final 布局）
-  to_id == &trait_id<T1>::id ?  return k1
-  ...                               常量地址比较链；可能被编成 switch
-  否则                           ?  (size_t)-1
-调用方：k = meta->find(to_id);  vt = (k != -1) ? meta->tables()[k] : nullptr
+walk_cast(vt, to_id, to_level):                 // to_level = trait_level_v<To>
+  i = meta->walk(node_of(vt), to_id, to_level)   // tag 选起点；父链是
+      // constexpr 展开：level 与比对身份是常量，to_id / to_level 是运行期
+  i < 0 -> miss；否则 tag_vt(meta->tables()[i], i)
 ```
 
-`dyn_cast`：能静态上行则走转换构造（`upcast_vt`）；否则查 meta；找不到时为空（见上：查到 ≠ 语义正确）。
+`dyn_cast`：能静态上行则走转换构造（`upcast_vt`）；否则从句柄当前节点走 meta 树爬升；walk miss 时为空（见上：查到 ≠ 语义正确）。
 
 与 **MULTI_VT** 独立但互补：全路径隐式上行 / `trait_cast` **不**需要 meta；非 section-prefix 的 `dyn_cast` 目标仍依赖 Redirect（cover 虚表）。
 

@@ -160,7 +160,8 @@ MSVC / Clang 的 C++26 反射支持仍在演进；当前仓库仅以 GCC 16.x �
 
 | 宏 | 默认 | 含义 |
 | --- | --- | --- |
-| `ASF_HAS_DYN_RTTI` | OFF | 虚表 meta 头 / `dyn_cast`（**实验性**，见 [features.md](docs/zh/spec/features.md)） |
+| `ASF_HAS_DYN_RTTI` | OFF | 虚表 meta 头 / `dyn_cast` 运行时下行（见 [features.md](docs/zh/spec/features.md)） |
+| `ASF_DYN_VT_TAG_HI_BITS` | 16（64 位）/ 0（32 位） | `dyn_cast` vt 节点 tag 的指针高位位宽（仅 RTTI；LA57 机器设为 7） |
 | `ASF_HAS_DYN_INTERMEDIATE` | ON | 允许非 `final` 中间 Trait 建 dyn；**须 final 叶注入**；见 [dyn.md](docs/zh/spec/dyn.md) |
 | `ASF_HAS_DYN_MULTI_VT` | ON | Redirect/cover，多路径 `trait_cast` 上行；与 `ASF_HAS_DYN_SINGLE_INHERIT` 互斥 |
 | `ASF_HAS_DYN_SINGLE_INHERIT` | OFF | 活边单继承（dyn 生成时检查；允许 `[[=truncate]]`/`[[=truncated]]`）；与 MULTI_VT 互斥（此时上行走关闭 MULTI_VT 的 section-prefix 规则） |
@@ -172,7 +173,7 @@ cmake -S . -B build -G Ninja -DCMAKE_CXX_COMPILER=g++ \
   -DASF_HAS_DYN_RTTI=ON -DASF_HAS_DYN_INTERMEDIATE=OFF
 ```
 
-细节：[docs/zh/spec/features.md](docs/zh/spec/features.md)。特性开关也按二进制标签编入 ABI 内联命名空间（`v0_1_5_b...`）。
+细节：[docs/zh/spec/features.md](docs/zh/spec/features.md)。特性开关也按二进制标签编入 ABI 内联命名空间（`v0_2_0_b...`）。
 
 ## 头文件
 

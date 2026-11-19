@@ -148,7 +148,7 @@ auto s = asf::trait_cast<Sealed>(doc);          // Sealed cover
 // asf::unsafe_downcast<Document>(s);             // UB
 ```
 
-With RTTI, a downcast or a cross-branch cast uses `dyn_cast` (switches to the physical vt from meta). That test is experimental and over-accepts; see [features.md](features.md)#asf_has_dyn_rtti. Without MULTI_VT there is no cover; the usual case is a same-table section prefix, and going from a prefix tag back to the leaf is the same table.
+With RTTI, a downcast or a cross-branch cast uses `dyn_cast` (switches to the physical vt from meta). That test over-accepts downcasts; the exact guarantee is in [features.md](features.md)#asf_has_dyn_rtti. Without MULTI_VT there is no cover; the usual case is a same-table section prefix, and going from a prefix tag back to the leaf is the same table.
 
 `cache_dyn`: the target chain must not add copy/move `op_construct` that the source chain does not have (destroy is always `vt[-1]`). See [cast.md](cast.md).
 
@@ -161,4 +161,4 @@ Tables are keyed by `(Mask, Final, Trait, Storage, As)`. A cover belongs to the 
 | RTTI prefix | RTTI macro on | meta |
 | Method slots | always (per Trait) | each method (including `op_construct` overloads) and Redirect |
 
-With RTTI on, the negative prefix of the leaf and of each cover under the same Final points at meta. `tables[]` lists those physical tables. `find(trait_id)` returns one of them, so `dyn_cast` switches `vt`. `unsafe_downcast` keeps the current `vt`.
+With RTTI on, the negative prefix of the leaf and of each cover under the same Final points at meta. `tables[]` lists those physical tables (repeated for Traits sharing one by section prefix). The `dyn_cast` tree walk returns one of them tagged with the hit node (index merged into the pointer tag field), so `dyn_cast` switches `vt`. `unsafe_downcast` keeps the current `vt`.

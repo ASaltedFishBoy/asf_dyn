@@ -1,8 +1,9 @@
 #pragma once
 
 // Feature macros + runtime-visible flags for the iface/dyn stack.
-//   ASF_HAS_DYN_RTTI         0 (default): no meta / dyn_cast (experimental when
-//     on: dyn_cast over-accepts downcasts; see docs/*/spec/features.md)
+//   ASF_HAS_DYN_RTTI         0 (default): no meta / dyn_cast. 1 => vt[-2]
+//     meta + node tag + per-Final walk dispatch (dyn_cast downcast
+//     guarantees: docs/*/spec/features.md)
 //   ASF_HAS_DYN_INTERMEDIATE 1 (default): to_dyn from non-final via ADL friend;
 //     only dyn final injects (same-TU STMP first wins; multi-TU ODR/COMDAT, no
 //     weak). See docs/en/spec/features.md. 0 => final-only object-bind.
@@ -14,6 +15,13 @@
 //     generation static_asserts SI among live dyn bases (truncate/truncated
 //     edges allowed). Mutex with ASF_HAS_DYN_MULTI_VT. Not an extra upcast
 //     switch; MULTI_VT-off is still section-prefix / same vt.
+//   ASF_DYN_VT_TAG_HI_BITS      16 on 64-bit / 0 on 32-bit (default): vt node
+//     tag width in the pointer's high bits (RTTI only). No compiler facility
+//     reports the VA width (verified GCC 16.2 x86-64: only pointer-width
+//     macros like __SIZEOF_POINTER__ / __INTPTR_WIDTH__ exist), so this is a
+//     platform assumption (48-bit canonical VA; LA57 machines: set 7). 0 =>
+//     tag falls back to the low alignment bits. ABI-tagged via the _tNN
+//     inline-namespace suffix below.
 //
 // ABI version (semver triple) + feature bitstring. Encoded in mangled names
 // via inline namespace ASF_ABI_NAMESPACE so a .dll/.so built against one ASF
@@ -26,17 +34,17 @@
 #define ASF_VERSION_MAJOR 0
 #endif
 #ifndef ASF_VERSION_MINOR
-#define ASF_VERSION_MINOR 1
+#define ASF_VERSION_MINOR 2
 #endif
 #ifndef ASF_VERSION_PATCH
-#define ASF_VERSION_PATCH 5
+#define ASF_VERSION_PATCH 0
 #endif
 
 #define ASF_VERSION                                                            \
   (ASF_VERSION_MAJOR * 10000 + ASF_VERSION_MINOR * 100 + ASF_VERSION_PATCH)
 
 #ifndef ASF_VERSION_STRING
-#define ASF_VERSION_STRING "0.1.5"
+#define ASF_VERSION_STRING "0.2.0"
 #endif
 
 #ifndef ASF_HAS_DYN_RTTI
@@ -50,6 +58,15 @@
 #endif
 #ifndef ASF_HAS_DYN_SINGLE_INHERIT
 #define ASF_HAS_DYN_SINGLE_INHERIT 0
+#endif
+
+// 64-bit default: 16 high tag bits; 32-bit default: 0 (low-bit fallback).
+#ifndef ASF_DYN_VT_TAG_HI_BITS
+#if defined(__SIZEOF_POINTER__) && (__SIZEOF_POINTER__ >= 8)
+#define ASF_DYN_VT_TAG_HI_BITS 16
+#else
+#define ASF_DYN_VT_TAG_HI_BITS 0
+#endif
 #endif
 
 #if ASF_HAS_DYN_SINGLE_INHERIT && ASF_HAS_DYN_MULTI_VT
@@ -81,9 +98,13 @@
                  ASF_HAS_DYN_MULTI_VT),                                        \
       ASF_HAS_DYN_SINGLE_INHERIT)
 
-// Keep the v0_1_5 token in sync with ASF_VERSION_* when bumping.
+// The vt tag hi-bit width rides along as a _tNN suffix: TUs built with
+// different tag widths must not COMDAT-merge vt / meta instances.
+// Keep the v0_2_0 token in sync with ASF_VERSION_* when bumping.
 #ifndef ASF_ABI_NAMESPACE
-#define ASF_ABI_NAMESPACE ASF_PP_CAT(v0_1_5_b, ASF_ABI_FEATURE_BITS)
+#define ASF_ABI_NAMESPACE                                                    \
+  ASF_PP_CAT(ASF_PP_CAT(v0_2_0_b, ASF_ABI_FEATURE_BITS),                     \
+             ASF_PP_CAT(_t, ASF_DYN_VT_TAG_HI_BITS))
 #endif
 
 #define ASF_BEGIN_NAMESPACE                                                    \
@@ -105,6 +126,7 @@ inline constexpr bool dyn_rtti_v = ASF_HAS_DYN_RTTI != 0;
 inline constexpr bool dyn_intermediate_v = ASF_HAS_DYN_INTERMEDIATE != 0;
 inline constexpr bool dyn_multi_vt_v = ASF_HAS_DYN_MULTI_VT != 0;
 inline constexpr bool dyn_single_inherit_v = ASF_HAS_DYN_SINGLE_INHERIT != 0;
+inline constexpr unsigned dyn_vt_tag_hi_bits = ASF_DYN_VT_TAG_HI_BITS;
 
 // Same bit order as ASF_ABI_FEATURE_BITS / the `_bXXXX` namespace suffix.
 inline constexpr unsigned dyn_feature_bits =

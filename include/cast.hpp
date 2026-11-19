@@ -985,6 +985,20 @@ const std::type_info& dyn_typeid(c_dyn<Trait, Ptr> const& h) {
   return h.typeid_of();
 }
 
+// Identity of the trait owning the bound physical table (the construction
+// Final tree node carried as a tag on the vt feeds the per-Final
+// node-typeid dispatch). Intermediate binds report the leaf the ADL lookup
+// actually attached. Empty -> typeid(void).
+template <template <class> class Trait, class Ptr>
+const std::type_info& dyn_node_typeid(dyn<Trait, Ptr> const& h) {
+  return h.node_typeid_of();
+}
+
+template <template <class> class Trait, class Ptr>
+const std::type_info& dyn_node_typeid(c_dyn<Trait, Ptr> const& h) {
+  return h.node_typeid_of();
+}
+
 #endif  // ASF_HAS_DYN_RTTI
 
 ASF_END_NAMESPACE

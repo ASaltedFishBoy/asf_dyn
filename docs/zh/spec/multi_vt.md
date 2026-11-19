@@ -146,7 +146,7 @@ auto s = asf::trait_cast<Sealed>(doc);          // Sealed cover
 // asf::unsafe_downcast<Document>(s);             // UB
 ```
 
-有 RTTI 时，下行和交叉转换用 `dyn_cast`（换到 meta 里那张物理 vt）。判定仍是实验性的，会过度接受，见 [features.md](features.md)#asf_has_dyn_rtti。无 MULTI_VT 时没有 cover，常见只剩同表 section-prefix；从叶的前缀标签回到叶是同一张表。
+有 RTTI 时，下行和交叉转换用 `dyn_cast`（换到 meta 里那张物理 vt）。判定会过度接受；确切的语义保证见 [features.md](features.md)#asf_has_dyn_rtti。无 MULTI_VT 时没有 cover，常见只剩同表 section-prefix；从叶的前缀标签回到叶是同一张表。
 
 `cache_dyn` 另有一条链约束：目标链不能多出源链没有的复制 / 移动 `op_construct`（destroy 恒为 `vt[-1]`）。见 [cast.md](cast.md)。
 
@@ -159,4 +159,4 @@ auto s = asf::trait_cast<Sealed>(doc);          // Sealed cover
 | RTTI 前缀 | RTTI 宏开启 | meta |
 | 方法槽 | 始终（按 Trait） | 各方法（含 `op_construct` 重载）及 Redirect |
 
-打开 RTTI 时，同一 Final 下叶和 cover 的负前缀指向 meta；`tables[]` 列出这些物理表。`find(trait_id)` 返回其中一张，`dyn_cast` 因此会换 vt。`unsafe_downcast` 留在当前 vt。
+打开 RTTI 时，同一 Final 下叶和 cover 的负前缀指向 meta；`tables[]` 列出这些物理表（section-prefix 共享的 Trait 会重复同一项）。`dyn_cast` 树爬升返回其中一张并打上命中节点 tag（下标合并进指针 tag 位段），因此会换 vt。`unsafe_downcast` 留在当前 vt。

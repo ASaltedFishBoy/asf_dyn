@@ -6,6 +6,7 @@
 #include "iface_config.hpp"
 #include "mirror.hpp"
 
+#include <bit>
 #include <cassert>
 #include <concepts>
 #include <cstddef>
@@ -47,6 +48,74 @@ using iface_src_obj_t =
 // signature (fn-to-fn). Object pointers are not stored in the table.
 using vt_fn = void (*)();
 using vt_ptr = vt_fn const*;
+
+// vt node tag (RTTI builds): index of the handle's construction anchor
+// node in the construction Final's reachable_t cast tree — the attached
+// leaf at bind, the cover node after a Redirect upcast; dyn_cast hits
+// switch tables but never move it — packed into a tag field of the vt_ptr
+// itself. Every slot read must untag first; producers return
+// pre-tagged pointers. Non-RTTI builds never tag (identity, zero cost). A
+// meta block whose max node index exceeds the representable range (node
+// count > capacity) is a compile error at meta instantiation; there is no
+// runtime escape.
+//
+// Tag field placement: with ASF_DYN_VT_TAG_HI_BITS > 0 (64-bit default 16)
+// the tag occupies the pointer's top bits (capacity 2^bits). This assumes
+// vtables live in the low canonical VA half, so untag simply clears the
+// top field; the width is a platform assumption, not a derivation — no
+// compiler facility reports the VA width (LA57-class machines keep real
+// address bits in 48..56 and must lower it to 7; see iface_config.hpp).
+// With ASF_DYN_VT_TAG_HI_BITS == 0 (32-bit default) the tag falls back to
+// the low alignment-guaranteed bits: log2 of the slot stride via
+// std::countr_zero, the sizeof term capping the width so sub_dyn
+// whole-slot slice arithmetic keeps the tag.
+inline constexpr unsigned vt_ptr_bits =
+    static_cast<unsigned>(sizeof(std::uintptr_t)) * 8u;
+
+static_assert(ASF_DYN_VT_TAG_HI_BITS >= 0 &&
+              ASF_DYN_VT_TAG_HI_BITS < static_cast<int>(vt_ptr_bits / 2),
+              "ASF_DYN_VT_TAG_HI_BITS must lie in [0, pointer_bits / 2)");
+
+consteval unsigned vt_low_tag_width() {
+  constexpr std::size_t a =
+      alignof(vt_fn) < sizeof(vt_fn) ? alignof(vt_fn) : sizeof(vt_fn);
+  return static_cast<unsigned>(std::countr_zero(a));
+}
+inline constexpr unsigned vt_tag_bits =
+    ASF_DYN_VT_TAG_HI_BITS > 0
+        ? static_cast<unsigned>(ASF_DYN_VT_TAG_HI_BITS)
+        : vt_low_tag_width();
+// Tag field position: top bits with HI_BITS > 0, low bits otherwise.
+inline constexpr unsigned vt_tag_shift =
+    ASF_DYN_VT_TAG_HI_BITS > 0 ? vt_ptr_bits - vt_tag_bits : 0u;
+inline constexpr std::uintptr_t vt_tag_mask =
+    ((std::uintptr_t{1} << vt_tag_bits) - 1) << vt_tag_shift;
+// Distinct values the tag field represents (max direct node index + 1).
+inline constexpr std::size_t vt_tag_capacity = std::size_t{1} << vt_tag_bits;
+
+#if ASF_HAS_DYN_RTTI
+// Producers guarantee node < vt_tag_capacity: the meta block instantiation
+// static_asserts its node count fits the tag range. Clear-then-insert, so
+// re-tagging an already tagged vt replaces the field.
+inline vt_ptr tag_vt(vt_ptr vt, std::size_t node) noexcept {
+  auto bits = reinterpret_cast<std::uintptr_t>(vt);
+  bits = (bits & ~vt_tag_mask) |
+         (static_cast<std::uintptr_t>(node) << vt_tag_shift);
+  return reinterpret_cast<vt_ptr>(bits);
+}
+inline vt_ptr untag_vt(vt_ptr vt) noexcept {
+  return reinterpret_cast<vt_ptr>(reinterpret_cast<std::uintptr_t>(vt) &
+                                  ~vt_tag_mask);
+}
+inline std::size_t vt_node_tag(vt_ptr vt) noexcept {
+  return (reinterpret_cast<std::uintptr_t>(vt) & vt_tag_mask) >>
+         vt_tag_shift;
+}
+#else
+inline vt_ptr tag_vt(vt_ptr vt, std::size_t) noexcept { return vt; }
+inline vt_ptr untag_vt(vt_ptr vt) noexcept { return vt; }
+inline std::size_t vt_node_tag(vt_ptr) noexcept { return 0; }
+#endif
 
 // VT Storage is an owning/observing Ptr; As is the pointee (cache_deref path).
 // Method slots dereference; construct/destroy stay on Storage.
@@ -1506,38 +1575,63 @@ consteval bool can_dyn_downcast() {
 
 #if ASF_HAS_DYN_RTTI
 
-template <template <class> class Trait>
-struct trait_id {
-  static constexpr char id{};
-};
-
-template <template <class> class Trait>
-consteval const void* trait_id_addr() {
-  return &trait_id<Trait>::id;
-}
+// Tree walk / node-typeid dispatch signatures. The cast tree is CODE, not
+// data: each Final gets a generated dispatch (a node-tag switch selecting
+// the start node, then a constexpr-unrolled parent climb whose levels and
+// compared identities are constants; only to_id / to_level are runtime).
+// One dispatch per Final — COMDAT-shared across the key's Storage/As/Mask
+// variants; a meta block carries no ids[] / links[] arrays.
+using rtti_walk_fn = int (*)(std::size_t, const std::type_info*,
+                             std::uint32_t);
+using rtti_node_typeid_fn = const std::type_info& (*)(std::size_t);
 
 // RTTI meta (per physical vt key; not a shared parent tree).
-// Layout: { find, type } header, then a suffix of x distinct vt pointers
-// (leaf + Redirect covers) -- not a separate pointer, not one slot per
-// trait_id target. find: pure Final-level map trait_id -> tables index
-// ((std::size_t)-1 on miss); no self, one fn shared by every key of a
-// Final. type: typeid(Storage) reference (proxy_typeid analogue).
+// Layout: { type, node_count, walk, node_typeid } header, then tables[0..x)
+// (per-node physical vts; section-prefix traits repeat the sharing cover's
+// vt). Nodes are the dyn-upcast-reachable traits (reachable_t<Final>, self
+// first). type: typeid(Storage) reference (proxy_typeid analogue). walk:
+// per-Final tree-walk dispatch (node -> hit node index, -1 on miss).
+// node_typeid: per-Final node -> trait typeid dispatch. The node tag on a
+// handle vt is the dispatch input; a walk hit's return index selects
+// tables[] of the queried meta block (the tag itself never changes).
 struct vtable_meta {
-  using find_fn = std::size_t (*)(const void* to_id);
-  find_fn find;
   const std::type_info& type;
+  std::size_t node_count;
+  rtti_walk_fn walk;
+  rtti_node_typeid_fn node_typeid;
 
-  // tables[0..x) immediately after this header (see vtable_meta_inst).
+  // tables[0..x) immediately after this header (see vtable_meta_inst): a
+  // single object-pointer reinterpret_cast; the pointees at that address
+  // genuinely are vt_ptr array elements.
   vt_ptr const* tables() const noexcept {
     return reinterpret_cast<vt_ptr const*>(this + 1);
   }
 
-  vt_ptr find_vt(const void* to_id) const noexcept {
-    std::size_t k = find(to_id);
-    return k == static_cast<std::size_t>(-1) ? nullptr : tables()[k];
+  const std::type_info& typeid_of() const noexcept { return type; }
+
+  // Node of a tagged vt: the tag itself. Every block is compile-time
+  // guaranteed to fit the tag range (vtable_meta_holder static_assert).
+  std::size_t node_of(vt_ptr vt) const noexcept { return vt_node_tag(vt); }
+
+  // Identity of the trait of the node this vt is tagged with. For
+  // intermediate binds this is the leaf the ADL lookup actually attached
+  // (docs: meta/dyn_cast attach to the obtained leaf table).
+  const std::type_info& node_typeid_of(vt_ptr vt) const noexcept {
+    return node_typeid(node_of(vt));
   }
 
-  const std::type_info& typeid_of() const noexcept { return type; }
+  // Tree cast from this vt's node toward the roots via the per-Final walk
+  // dispatch; a hit lands on its tables[] entry. The node tag is the
+  // construction anchor (leaf at bind, cover after a Redirect upcast) and
+  // is construction-fixed: a walk hit switches only the table, never the
+  // tag, so cast results are independent of cast history.
+  vt_ptr walk_cast(vt_ptr vt, const std::type_info* to_id,
+                   std::uint32_t to_level) const noexcept {
+    const int i = walk(node_of(vt), to_id, to_level);
+    return i < 0 ? nullptr
+                 : tag_vt(tables()[static_cast<std::size_t>(i)],
+                          node_of(vt));
+  }
 };
 
 // Negative prefix (relative to method-region origin ptr):
@@ -1545,9 +1639,10 @@ struct vtable_meta {
 //   RTTI:                [-2]=meta
 // Storage size trails methods only when Trait has op_construct.
 // op_construct overloads are method slots (rproxy selects rvalue overload).
+// In RTTI builds the vt carries a node tag: untag before any slot access.
 template <template <class> class Trait>
 inline const vtable_meta* meta_of(vt_ptr vt) {
-  return from_vt_fn<const vtable_meta*()>(vt[-2])();
+  return from_vt_fn<const vtable_meta*()>(untag_vt(vt)[-2])();
 }
 
 #endif  // ASF_HAS_DYN_RTTI
@@ -1556,7 +1651,7 @@ using vt_destroy_fn = void (*)(void* p);
 using vt_construct_fn = void (*)(void*, void*);
 
 inline vt_destroy_fn dyn_vt_destroy(vt_ptr vt) {
-  return from_vt_fn<void(void*)>(vt[-1]);
+  return from_vt_fn<void(void*)>(untag_vt(vt)[-1]);
 }
 
 // Size value slot: sizeof in low bits, log2(alignof) in high bits (not a
@@ -1753,41 +1848,80 @@ consteval std::size_t vtable_instance_count() {
 }
 
 #if ASF_HAS_DYN_RTTI
-// trait_id switch targets: Final first, then each dyn-upcast-reachable
-// section that has a cover under Final. find returns one of the x distinct
-// tables (vtable_traits_t), not a per-target slot.
-template <typename F, typename Acc, typename Rest>
-struct rtti_collect {
-  using type = Acc;
+// Cast tree: nodes are the dyn-upcast-reachable traits under Final
+// (reachable_t<Final>, self first so node 0 is Final). Every logical trait
+// gets a node, even when its table is section-prefix-shared with a
+// descendant cover. The per-Final walk dispatch (iface_vtable.hpp) switches
+// on the handle's node tag and climbs the constexpr-unrolled parent chain,
+// pruning by the target's static DAG depth.
+
+// Static DAG depth of a trait: 0 for a root trait, else 1 + max over its
+// direct bases. Dominated bases never win the max (a dominator is a
+// descendant), so all direct bases count; dead (cut) edges only inflate,
+// never break the strict decrease along live parent links.
+template <typename T>
+struct trait_level_resident;
+
+template <typename T, typename Seq>
+struct trait_level_impl;
+template <typename T>
+struct trait_level_impl<T, std::index_sequence<>> {
+  static constexpr std::uint32_t value = 0;
 };
-template <typename F, typename Acc, typename S0, typename... Ss>
-struct rtti_collect<F, Acc, tlist<S0, Ss...>> {
-  static constexpr bool keep =
-      !std::is_same_v<F, S0> && tlist_has<reachable_t<F>, S0>::value &&
-      !std::is_void_v<convert_cover_t<F, S0>>;
-  using next =
-      std::conditional_t<keep, typename tlist_append_unique<Acc, S0>::type,
-                         Acc>;
-  using type = typename rtti_collect<F, next, tlist<Ss...>>::type;
+template <typename T, std::size_t... I>
+struct trait_level_impl<T, std::index_sequence<I...>> {
+  static consteval std::uint32_t max_base() {
+    std::uint32_t m = 0;
+    ((void)(m = trait_level_resident<base_t<T, I>>::value > m
+                    ? trait_level_resident<base_t<T, I>>::value
+                    : m),
+     ...);
+    return m;
+  }
+  static constexpr std::uint32_t value = 1 + max_base();
+};
+template <typename T>
+struct trait_level_resident
+    : trait_level_impl<T, std::make_index_sequence<n_direct_bases<T>()>> {};
+
+template <typename T>
+inline constexpr std::uint32_t trait_level_v = trait_level_resident<T>::value;
+
+// Tree parent: the live (non-dominated) direct base with the largest level,
+// first such on ties; void for a base-less trait. A single-parent chain:
+// side branches at the same level (diamond siblings) are not reached.
+template <typename Rest, typename Cand, bool Live, bool RestVoid>
+struct tree_parent_pick {
+  using type = Rest;
+};
+template <typename Rest, typename Cand>
+struct tree_parent_pick<Rest, Cand, true, true> {
+  using type = Cand;
+};
+template <typename Rest, typename Cand>
+struct tree_parent_pick<Rest, Cand, true, false> {
+  using type = std::conditional_t<(trait_level_resident<Cand>::value >=
+                                   trait_level_resident<Rest>::value),
+                                  Cand, Rest>;
+};
+
+template <typename T, typename Seq>
+struct tree_parent_impl;
+template <typename T>
+struct tree_parent_impl<T, std::index_sequence<>> {
+  using type = void;
+};
+template <typename T, std::size_t I0, std::size_t... Is>
+struct tree_parent_impl<T, std::index_sequence<I0, Is...>> {
+  using rest = typename tree_parent_impl<T, std::index_sequence<Is...>>::type;
+  using type = typename tree_parent_pick<rest, base_t<T, I0>,
+                                         live_base_at<T, I0>(),
+                                         std::is_void_v<rest>>::type;
 };
 
 template <typename T>
-struct rtti_targets_resident {
-  using type = typename rtti_collect<T, tlist<T>, sections_t<T>>::type;
-};
-
-template <typename T>
-using rtti_targets_t = typename rtti_targets_resident<T>::type;
-
-// Index of convert_cover(Final, target) within vtable_traits_t<Final>.
-template <typename F, typename Target>
-consteval std::size_t rtti_table_index_t() {
-  using C = convert_cover_t<F, Target>;
-  if constexpr (std::is_void_v<C>)
-    return static_cast<std::size_t>(-1);
-  else
-    return tlist_index_of<vtable_traits_t<F>, C>;
-}
+using tree_parent_t = typename tree_parent_impl<
+    T, std::make_index_sequence<n_direct_bases<T>()>>::type;
 #endif
 
 // How many deduced template params the method has (`auto` or template <class>).
@@ -4232,19 +4366,20 @@ consteval std::size_t dyn_method_slot_count() {
 template <template <class> class Trait>
 inline std::size_t dyn_storage_size(vt_ptr vt)
   requires(trait_has_dyn_construct<Trait>()) {
-  return storage_size_from_slot(vt[dyn_method_slot_count<Trait>()]);
+  return storage_size_from_slot(untag_vt(vt)[dyn_method_slot_count<Trait>()]);
 }
 
 template <template <class> class Trait>
 inline std::size_t dyn_storage_align(vt_ptr vt)
   requires(trait_has_dyn_construct<Trait>()) {
-  return storage_align_from_slot(vt[dyn_method_slot_count<Trait>()]);
+  return storage_align_from_slot(untag_vt(vt)[dyn_method_slot_count<Trait>()]);
 }
 
 template <template <class> class Trait>
 inline std::size_t dyn_storage_align_log(vt_ptr vt)
   requires(trait_has_dyn_construct<Trait>()) {
-  return storage_align_log_from_slot(vt[dyn_method_slot_count<Trait>()]);
+  return storage_align_log_from_slot(
+      untag_vt(vt)[dyn_method_slot_count<Trait>()]);
 }
 
 // Erased construct thunk from the matching 0-extra op_construct method slot
@@ -4254,7 +4389,7 @@ template <template <class> class Trait, bool AsRvalue>
 inline vt_construct_fn dyn_construct_of(vt_ptr vt)
   requires(trait_has_dyn_construct<Trait>()) {
   constexpr auto idx = dyn_construct_slot_index<Trait, AsRvalue>();
-  return from_vt_fn<void(void*, void*)>(vt[idx]);
+  return from_vt_fn<void(void*, void*)>(untag_vt(vt)[idx]);
 }
 
 // Section-local variant (sub_dyn): index within Trait's own section; vt is
@@ -4266,7 +4401,7 @@ inline vt_construct_fn dyn_construct_of_own_slice(vt_ptr vt)
   constexpr auto idx = own_dyn_method_index<Trait>(m);
   static_assert(idx != static_cast<std::size_t>(-1),
                 "no op_construct overload on this section");
-  return from_vt_fn<void(void*, void*)>(vt[idx]);
+  return from_vt_fn<void(void*, void*)>(untag_vt(vt)[idx]);
 }
 
 // Deep construct into a sourced-mirror Storage is only defined when the
@@ -4302,6 +4437,7 @@ inline void dyn_construct_into(vt_ptr vt, void* ptr, void* dst,
                 "no op_construct overload matches these arguments");
   constexpr auto idx = dyn_index_of_method<Trait>(method);
   constexpr auto decl = signature_decl_of<method>();
+  vt = untag_vt(vt);
   if constexpr (decl != std::meta::info{}) {
     using Ctor = [:construct_erased_sig(decl):];
     Ctor::dispatch(*vt[idx], ptr, dst, std::forward<Extra>(extra)...);
@@ -4394,8 +4530,8 @@ vt_fn make_slot_ptr() {
 // Tables keyed by (Mask, Final, Trait, Storage, As). Final is the dyn bind
 // root (Trait of a Trait<T> `final` bind); Trait is the physical table owner
 // (root or cover). Redirect(I9->I8) -> vtable<...,I9,I8,...>; same cover under
-// another final is a distinct specialization. meta.find: switch-style
-// id -> one of meta.tables[0..x) (distinct physical vts).
+// another final is a distinct specialization. meta walk_cast: climbs the
+// cast-tree links from the handle's node to a tables[] hit.
 template <bool MaskNonConst, template <class> class Final,
           template <class> class Trait, typename Storage, typename As>
 vt_ptr redirect_cover();

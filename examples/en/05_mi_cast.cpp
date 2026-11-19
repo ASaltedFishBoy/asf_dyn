@@ -102,8 +102,9 @@ int main() {
 #endif
 
 #if ASF_HAS_DYN_RTTI
-  // dyn_cast: guaranteed only to the creation node and above it.
-  // Chain 1-2-3-4 bound at 3: 3-1-2 is guaranteed; 3-1-4 may or may not succeed.
+  // dyn_cast: the handle stays anchored at the construction leaf; the walk
+  // climbs the tree-parent chain. A hit is exact and switches only the
+  // table (the anchor tag is construction-fixed).
   asf::dyn<Readable> base = doc;
   if (auto back = asf::dyn_cast<Document>(base))
     std::println("dyn_cast back = {}", back->tag());

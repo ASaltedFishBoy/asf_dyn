@@ -102,7 +102,7 @@ int main() {
 #endif
 
 #if ASF_HAS_DYN_RTTI
-  // dyn_cast：只保证创建节点及其上方。链 1-2-3-4 绑在 3：3-1-2 受保证，3-1-4 不一定。
+  // dyn_cast：句柄锚在创建叶；walk 沿树父链上爬，命中即精确（只换表，锚点构造即固定）。
   asf::dyn<Readable> base = doc;
   if (auto back = asf::dyn_cast<Document>(base))
     std::println("dyn_cast back = {}", back->tag());
