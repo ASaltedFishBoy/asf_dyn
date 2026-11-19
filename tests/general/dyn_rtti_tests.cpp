@@ -179,6 +179,17 @@ void TestDynCast_IntermediateMiss() {
   ASF_CHECK(!leaf);
 }
 
+// Empty handle: both the static-upcast path and the meta-walk path return
+// an empty handle (the dynamic_cast nullptr analogue).
+void TestDynCast_Empty() {
+  asf::dyn<I3> e;
+  auto up = asf::dyn_cast<I1>(e);  // static upcast branch
+  ASF_CHECK(!up);
+  asf::dyn<I1> e1;
+  auto down = asf::dyn_cast<I2>(e1);  // meta walk branch
+  ASF_CHECK(!down);
+}
+
 // Section-prefix upcast keeps the same physical table: node tag unchanged.
 void TestNodeTypeid_UpcastKeepsNode() {
   Obj o{};
@@ -324,6 +335,7 @@ int main() {
   ASF_RUN(dyn_rtti_tests_detail::TestNodeTypeid_Leaf);
   ASF_RUN(dyn_rtti_tests_detail::TestNodeTypeid_IntermediateBind);
   ASF_RUN(dyn_rtti_tests_detail::TestDynCast_IntermediateMiss);
+  ASF_RUN(dyn_rtti_tests_detail::TestDynCast_Empty);
   ASF_RUN(dyn_rtti_tests_detail::TestNodeTypeid_UpcastKeepsNode);
   ASF_RUN(dyn_rtti_tests_detail::TestNodeTypeid_CastHit);
   ASF_RUN(dyn_rtti_tests_detail::TestNodeTypeid_Empty);

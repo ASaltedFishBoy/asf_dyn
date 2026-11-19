@@ -276,7 +276,7 @@ template <template <class> class Trait, class Ptr>
 const std::type_info& dyn_node_typeid(dyn<Trait, Ptr> const& h);
 ```
 
-Static upcast when possible, otherwise an ancestor-closure scan from the handle's anchor node. Empty when the scan misses. `dyn_node_typeid` reports the identity of the Trait at the handle's anchor node (the vt node tag feeds the per-Final node-typeid dispatch; intermediate binds report the construction trait; the tag is construction-fixed — `dyn_cast` does not move it). Empty handle -> `typeid(void)`.
+Static upcast when possible, otherwise an ancestor-closure scan from the handle's anchor node. Empty when the scan misses; casting an empty handle yields an empty handle. `dyn_node_typeid` reports the identity of the Trait at the handle's anchor node (the vt node tag feeds the per-Final node-typeid dispatch; intermediate binds report the construction trait; the tag is construction-fixed — `dyn_cast` does not move it). Empty handle -> `typeid(void)`.
 
 ## See also
 

@@ -987,8 +987,8 @@ const std::type_info& dyn_typeid(c_dyn<Trait, Ptr> const& h) {
 
 // Identity of the trait owning the bound physical table (the construction
 // Final tree node carried as a tag on the vt feeds the per-Final
-// node-typeid dispatch). Intermediate binds report the leaf the ADL lookup
-// actually attached. Empty -> typeid(void).
+// node-typeid dispatch). Intermediate binds report the construction trait.
+// Empty -> typeid(void).
 template <template <class> class Trait, class Ptr>
 const std::type_info& dyn_node_typeid(dyn<Trait, Ptr> const& h) {
   return h.node_typeid_of();

@@ -4157,12 +4157,15 @@ c_dyn<To, Ptr> unsafe_downcast(c_dyn<From, Ptr>&& handle) {
 }
 
 #if ASF_HAS_DYN_RTTI
-// Upcast: static upcast_vt (no meta). Else meta cast-tree walk: climb
-// parent links from the handle's node, level-pruned, to a tagged node vt.
+// Upcast: static upcast_vt (no meta). Else meta walk: scan the handle
+// node's live-ancestor closure to a tables[] hit (tag kept). Empty -> empty
+// (the dynamic_cast nullptr analogue).
 template <template <class> class To, template <class> class From, class Ptr>
 dyn<To, Ptr> rtti_cast(dyn<From, Ptr> const& handle) {
   using Src = dyn_handle_base<dyn, From, false, Ptr>;
   auto const& b = static_cast<Src const&>(handle);
+  if (vtable_of(b) == nullptr)
+    return dyn<To, Ptr>{};
   if constexpr (can_dyn_upcast<To, From>()) {
     return dyn_factory_access::clone_retype_vt<To>(
         b, Src::template upcast_vt<To>(vtable_of(b)));
@@ -4185,6 +4188,8 @@ template <template <class> class To, template <class> class From, class Ptr>
 dyn<To, Ptr> rtti_cast(dyn<From, Ptr>&& handle) {
   using Src = dyn_handle_base<dyn, From, false, Ptr>;
   auto& b = static_cast<Src&>(handle);
+  if (vtable_of(b) == nullptr)
+    return dyn<To, Ptr>{};
   if constexpr (can_dyn_upcast<To, From>()) {
     return dyn_factory_access::move_retype_vt<To>(
         b, Src::template upcast_vt<To>(vtable_of(b)));
@@ -4207,6 +4212,8 @@ template <template <class> class To, template <class> class From, class Ptr>
 c_dyn<To, Ptr> rtti_cast(c_dyn<From, Ptr> const& handle) {
   using Src = dyn_handle_base<c_dyn, From, true, Ptr>;
   auto const& b = static_cast<Src const&>(handle);
+  if (vtable_of(b) == nullptr)
+    return c_dyn<To, Ptr>{};
   if constexpr (can_dyn_upcast<To, From>()) {
     return dyn_factory_access::clone_retype_vt<To>(
         b, Src::template upcast_vt<To>(vtable_of(b)));
@@ -4229,6 +4236,8 @@ template <template <class> class To, template <class> class From, class Ptr>
 c_dyn<To, Ptr> rtti_cast(c_dyn<From, Ptr>&& handle) {
   using Src = dyn_handle_base<c_dyn, From, true, Ptr>;
   auto& b = static_cast<Src&>(handle);
+  if (vtable_of(b) == nullptr)
+    return c_dyn<To, Ptr>{};
   if constexpr (can_dyn_upcast<To, From>()) {
     return dyn_factory_access::move_retype_vt<To>(
         b, Src::template upcast_vt<To>(vtable_of(b)));

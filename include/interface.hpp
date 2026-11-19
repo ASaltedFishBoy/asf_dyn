@@ -174,8 +174,8 @@
 //   vtable key      (Mask, Final, Trait, Storage, As): cover tables belong to
 //                   the final root (Redirect I9->I8 -> vtable<...,I9,I8,...>);
 //                   not type-linked to a bare intermediate Trait table
-//   dyn_cast        RTTI: static upcast (upcast_vt) else meta tree walk
-//                   (level-pruned); empty miss
+//   dyn_cast        RTTI: static upcast (upcast_vt) else meta ancestor-
+//                   closure scan; empty handle or walk miss -> empty
 //   unsafe_downcast  retype Trait only; same ptr + same vt pointer (no adjust).
 //                   Not static_cast. Safe only when the handle already sits on
 //                   the leaf/final (or same physical) table you mean to name.

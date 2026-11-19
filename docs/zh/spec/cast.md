@@ -280,7 +280,7 @@ template <template <class> class Trait, class Ptr>
 const std::type_info& dyn_node_typeid(dyn<Trait, Ptr> const& h);
 ```
 
-能静态上行则静态上行，否则从句柄锚点节点走祖先闭包扫描。miss 时为空。`dyn_node_typeid` 返回句柄锚点节点的 Trait 身份（vt 节点 tag 喂给 per-Final node_typeid 分派；中间节点绑定报告构造 Trait；tag 构造即固定，`dyn_cast` 不动它），空句柄为 `typeid(void)`。
+能静态上行则静态上行，否则从句柄锚点节点走祖先闭包扫描。miss 时为空；空句柄转换得空句柄。`dyn_node_typeid` 返回句柄锚点节点的 Trait 身份（vt 节点 tag 喂给 per-Final node_typeid 分派；中间节点绑定报告构造 Trait；tag 构造即固定，`dyn_cast` 不动它），空句柄为 `typeid(void)`。
 
 ## 参见
 

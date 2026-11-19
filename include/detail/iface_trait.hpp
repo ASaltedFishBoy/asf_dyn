@@ -1615,8 +1615,8 @@ struct vtable_meta {
   std::size_t node_of(vt_ptr vt) const noexcept { return vt_node_tag(vt); }
 
   // Identity of the trait of the node this vt is tagged with. For
-  // intermediate binds this is the leaf the ADL lookup actually attached
-  // (docs: meta/dyn_cast attach to the obtained leaf table).
+  // intermediate binds this is the construction trait's own node (docs:
+  // the anchor is the construction trait, not the covering leaf).
   const std::type_info& node_typeid_of(vt_ptr vt) const noexcept {
     return node_typeid(node_of(vt));
   }
