@@ -103,8 +103,8 @@ int main() {
 
 #if ASF_HAS_DYN_RTTI
   // dyn_cast: the handle stays anchored at the construction leaf; the walk
-  // climbs the tree-parent chain. A hit is exact and switches only the
-  // table (the anchor tag is construction-fixed).
+  // scans the anchor's live-ancestor closure. A hit is exact and switches
+  // only the table (the anchor tag is construction-fixed).
   asf::dyn<Readable> base = doc;
   if (auto back = asf::dyn_cast<Document>(base))
     std::println("dyn_cast back = {}", back->tag());

@@ -255,7 +255,7 @@ c_dyn<Trait, Ptr> unsafe_downcast(c_dyn<From, Ptr>&&);
 
 Free function only. Same ptr, same `vt`. Misuse is UB. After a Redirect upcast the handle may hold a cover `vt`; naming a more-derived Trait is then UB. [multi_vt.md](multi_vt.md). For `cache_dyn`, the target chain must not add copy/move `op_construct` the source chain lacked.
 
-`#if ASF_HAS_DYN_RTTI` (exact hit / definitive miss over the construction Final's reachable tree; see [features.md](features.md)):
+`#if ASF_HAS_DYN_RTTI` (exact hit / definitive miss over the anchor's live-ancestor closure; see [features.md](features.md)):
 
 ```cpp
 template <template <class> class Trait>
@@ -276,7 +276,7 @@ template <template <class> class Trait, class Ptr>
 const std::type_info& dyn_node_typeid(dyn<Trait, Ptr> const& h);
 ```
 
-Static upcast when possible, otherwise a meta tree walk from the handle's anchor node. Empty when the walk misses. `dyn_node_typeid` reports the identity of the Trait at the handle's anchor node (the vt node tag feeds the per-Final node-typeid dispatch; intermediate binds report the attached leaf; the tag is construction-fixed — `dyn_cast` does not move it). Empty handle -> `typeid(void)`.
+Static upcast when possible, otherwise an ancestor-closure scan from the handle's anchor node. Empty when the scan misses. `dyn_node_typeid` reports the identity of the Trait at the handle's anchor node (the vt node tag feeds the per-Final node-typeid dispatch; intermediate binds report the construction trait; the tag is construction-fixed — `dyn_cast` does not move it). Empty handle -> `typeid(void)`.
 
 ## See also
 

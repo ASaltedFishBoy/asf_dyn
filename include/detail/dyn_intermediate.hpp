@@ -28,6 +28,26 @@ struct dyn_vt_state {
   friend consteval auto dyn_vt_gen(dyn_vt_state);
 };
 
+// Intermediate bind construction vt: the covering Final's leaf table,
+// tagged with the construction Trait's own node so the runtime cast
+// closure is the requested Trait's ancestry (not the leaf's). A Base
+// outside the Final's reachable set (a cut section) keeps node 0.
+// RTTI-only: non-RTTI builds have no node tag and return the plain vt
+// (identity tag_vt would fold to the same code; the explicit gate also
+// skips the reachable_t instantiation).
+template <bool MaskNonConst, template <class> class Final,
+          template <class> class Base, typename Storage, typename As>
+vt_ptr intermediate_construction_vt() {
+  vt_ptr vt = vtable<MaskNonConst, Final, Final, Storage, As>::slots();
+#if ASF_HAS_DYN_RTTI
+  constexpr std::size_t k =
+      tlist_index_of<reachable_t<Final<void>>, Base<void>>;
+  if constexpr (k != static_cast<std::size_t>(-1))
+    return tag_vt(vt, k);
+#endif
+  return vt;
+}
+
 template <bool MaskNonConst, template <class> class Final,
           template <class> class Base, typename Storage, typename As>
 struct dyn_vt_inject {
@@ -42,12 +62,14 @@ struct dyn_vt_inject {
 #if defined(__GNUC__)
   friend vt_ptr __attribute__((used))
       adl_dyn_object_vt(dyn_vt_tag<MaskNonConst, Base, Storage, As>) {
-    return vtable<MaskNonConst, Final, Final, Storage, As>::slots();
+    return intermediate_construction_vt<MaskNonConst, Final, Base, Storage,
+                                        As>();
   }
 #else
   friend vt_ptr adl_dyn_object_vt(
       dyn_vt_tag<MaskNonConst, Base, Storage, As>) {
-    return vtable<MaskNonConst, Final, Final, Storage, As>::slots();
+    return intermediate_construction_vt<MaskNonConst, Final, Base, Storage,
+                                        As>();
   }
 #endif
 };

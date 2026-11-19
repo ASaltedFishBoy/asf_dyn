@@ -35,9 +35,10 @@ template <typename T = void>
 struct Unrelated;
 
 #if ASF_HAS_DYN_MULTI_VT
-// Diamond: ID : IB1, IB2; IB1/IB2 : IA. The cast tree picks a single parent
-// chain (largest level, first base on ties), so the walk from ID runs
-// ID -> IB1 -> IA; IB2 is a same-level side branch off that chain.
+// Diamond: ID : IB1, IB2; IB1/IB2 : IA. The runtime cast scans the
+// anchor's live-ancestor closure: from the ID leaf anchor all of
+// {ID, IB1, IB2, IA} are reachable; from an IB1/IB2 anchor only that
+// branch and IA are.
 // (MI Trait DAG + cover upcasts: MULTI_VT configs only.)
 template <typename T = void>
 struct IA;
@@ -156,13 +157,26 @@ void TestNodeTypeid_Leaf() {
   ASF_CHECK(asf::dyn_node_typeid(leaf) == typeid(I3<void>));
 }
 
-// Intermediate bind: the ADL lookup attaches the covering leaf's table, so
-// the node identity is the leaf, not the requested intermediate trait.
+// Intermediate bind: the anchor is the construction Trait's own node, not
+// the covering leaf — the runtime closure is the requested ancestry.
 void TestNodeTypeid_IntermediateBind() {
   Obj o{};
   auto leaf = asf_test::to_dyn<I3>(o);  // same-TU final leaf injects first
   auto mid = asf_test::to_dyn<I1>(o);
-  ASF_CHECK(asf::dyn_node_typeid(mid) == typeid(I3<void>));
+  ASF_CHECK(asf::dyn_node_typeid(mid) == typeid(I1<void>));
+}
+
+// An intermediate bind sees only its own ancestry: the covering leaf and
+// the chain nodes below the construction trait are definitive misses.
+void TestDynCast_IntermediateMiss() {
+  Obj o{};
+  auto mid = asf_test::to_dyn<I1>(o);  // covering leaf I3
+  auto self = asf::dyn_cast<I1>(mid);
+  ASF_CHECK(static_cast<bool>(self));
+  auto m2 = asf::dyn_cast<I2>(mid);
+  ASF_CHECK(!m2);
+  auto leaf = asf::dyn_cast<I3>(mid);
+  ASF_CHECK(!leaf);
 }
 
 // Section-prefix upcast keeps the same physical table: node tag unchanged.
@@ -189,9 +203,9 @@ void TestNodeTypeid_Empty() {
 }
 
 #if ASF_HAS_DYN_MULTI_VT
-// Tree walk from a prefix-upcast view (tag still the attached leaf ID):
-// climbs ID -> IB1 (level 2 -> 1), identity compared at the target level.
-// The hit switches only the table; the anchor tag stays the leaf.
+// Closure scan from a prefix-upcast view (tag still the leaf node ID):
+// ID's ancestors include IB1 (level 1), identity compared at the target
+// level. The hit switches only the table; the anchor tag stays the leaf.
 void TestTreeCast_BranchHit() {
   Obj o{};
   auto leaf = asf_test::to_dyn<ID>(o);
@@ -216,6 +230,35 @@ void TestTreeCast_BackToLeafHit() {
   ASF_CHECK_EQ(id->md(), 104);
 }
 
+// Full-DAG runtime upcast: from the leaf anchor every live ancestor is
+// reachable, including the other arm of the diamond (a miss under the old
+// single-parent walk).
+void TestTreeCast_LeafSideBranchHit() {
+  Obj o{};
+  auto leaf = asf_test::to_dyn<ID>(o);
+  asf::dyn<IA> base = leaf;
+  auto b2 = asf::dyn_cast<IB2>(base);
+  ASF_CHECK(static_cast<bool>(b2));
+  ASF_CHECK_EQ(b2->mb2(), 103);
+  ASF_CHECK(asf::dyn_node_typeid(b2) == typeid(ID<void>));
+}
+
+// Intermediate bind anchors at the construction trait: the closure is the
+// trait's own ancestors, so a sibling branch (IB2) and the covering leaf
+// below the construction (ID) are definitive misses.
+void TestTreeCast_IntermediateScope() {
+  Obj o{};
+  auto mid = asf_test::to_dyn<IB1>(o);  // covering leaf ID injects
+  ASF_CHECK(asf::dyn_node_typeid(mid) == typeid(IB1<void>));
+  auto a = asf::dyn_cast<IA>(mid);
+  ASF_CHECK(static_cast<bool>(a));
+  ASF_CHECK_EQ(a->ma(), 101);
+  auto b2 = asf::dyn_cast<IB2>(mid);
+  ASF_CHECK(!b2);
+  auto id = asf::dyn_cast<ID>(mid);
+  ASF_CHECK(!id);
+}
+
 // Tree walk from a Redirect-upcast view (tag is the IB2 cover node): the
 // parent link of IB2 reaches the common base IA; level pruning skips the
 // level-1 comparison and lands at level 0.
@@ -228,8 +271,8 @@ void TestTreeCast_CommonBaseHit() {
   ASF_CHECK_EQ(a->ma(), 101);
 }
 
-// Same-level side branch: IB1 is not on the parent chain of the IB2 node
-// (level equal, identity differs -> miss), matching the single-parent tree.
+// Sibling of the anchor: IB1 is not an ancestor of the IB2 node, so the
+// closure scan misses (level equal, identity differs).
 void TestTreeCast_SideBranchMiss() {
   Obj o{};
   auto leaf = asf_test::to_dyn<ID>(o);
@@ -280,12 +323,15 @@ int main() {
   ASF_RUN(dyn_rtti_tests_detail::TestTypeid);
   ASF_RUN(dyn_rtti_tests_detail::TestNodeTypeid_Leaf);
   ASF_RUN(dyn_rtti_tests_detail::TestNodeTypeid_IntermediateBind);
+  ASF_RUN(dyn_rtti_tests_detail::TestDynCast_IntermediateMiss);
   ASF_RUN(dyn_rtti_tests_detail::TestNodeTypeid_UpcastKeepsNode);
   ASF_RUN(dyn_rtti_tests_detail::TestNodeTypeid_CastHit);
   ASF_RUN(dyn_rtti_tests_detail::TestNodeTypeid_Empty);
 #if ASF_HAS_DYN_MULTI_VT
   ASF_RUN(dyn_rtti_tests_detail::TestTreeCast_BranchHit);
   ASF_RUN(dyn_rtti_tests_detail::TestTreeCast_BackToLeafHit);
+  ASF_RUN(dyn_rtti_tests_detail::TestTreeCast_LeafSideBranchHit);
+  ASF_RUN(dyn_rtti_tests_detail::TestTreeCast_IntermediateScope);
   ASF_RUN(dyn_rtti_tests_detail::TestTreeCast_CommonBaseHit);
   ASF_RUN(dyn_rtti_tests_detail::TestTreeCast_SideBranchMiss);
 #endif

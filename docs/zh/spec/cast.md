@@ -259,7 +259,7 @@ c_dyn<Trait, Ptr> unsafe_downcast(c_dyn<From, Ptr>&&);
 
 仅自由函数。同 ptr、同 `vt`。误用即 UB。 Redirect 上行后句柄可能握 cover `vt`；再命名更派生 Trait 即 UB。[multi_vt.md](multi_vt.md)。`cache_dyn` 的目标链不能多出源链没有的复制/移动 `op_construct`。
 
-`#if ASF_HAS_DYN_RTTI`（在创建 Final 可达树上精确命中 / 确定 miss；见 [features.md](features.md)）：
+`#if ASF_HAS_DYN_RTTI`（在锚点的存活祖先闭包上精确命中 / 确定 miss；见 [features.md](features.md)）：
 
 ```cpp
 template <template <class> class Trait>
@@ -280,7 +280,7 @@ template <template <class> class Trait, class Ptr>
 const std::type_info& dyn_node_typeid(dyn<Trait, Ptr> const& h);
 ```
 
-能静态上行则静态上行，否则从句柄锚点节点走 meta 树爬升。walk miss 时为空。`dyn_node_typeid` 返回句柄锚点节点的 Trait 身份（vt 节点 tag 喂给 per-Final node_typeid 分派；中间节点绑定报告实际附着的叶；tag 构造即固定，`dyn_cast` 不动它），空句柄为 `typeid(void)`。
+能静态上行则静态上行，否则从句柄锚点节点走祖先闭包扫描。miss 时为空。`dyn_node_typeid` 返回句柄锚点节点的 Trait 身份（vt 节点 tag 喂给 per-Final node_typeid 分派；中间节点绑定报告构造 Trait；tag 构造即固定，`dyn_cast` 不动它），空句柄为 `typeid(void)`。
 
 ## 参见
 

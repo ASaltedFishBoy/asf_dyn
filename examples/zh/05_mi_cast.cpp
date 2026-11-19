@@ -102,7 +102,7 @@ int main() {
 #endif
 
 #if ASF_HAS_DYN_RTTI
-  // dyn_cast：句柄锚在创建叶；walk 沿树父链上爬，命中即精确（只换表，锚点构造即固定）。
+  // dyn_cast：句柄锚在创建叶；walk 扫描锚点的存活祖先闭包，命中即精确（只换表，锚点构造即固定）。
   asf::dyn<Readable> base = doc;
   if (auto back = asf::dyn_cast<Document>(base))
     std::println("dyn_cast back = {}", back->tag());

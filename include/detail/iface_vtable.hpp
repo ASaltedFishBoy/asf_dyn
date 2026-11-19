@@ -48,54 +48,56 @@ vt_ptr rtti_table_at() {
   return [:slots_helper:]();
 }
 
-// Cast-tree link of one node: parent = node of the tree parent trait (-1 at
-// a base-less trait); level = static DAG depth of the node's trait (root
-// trait = 0), consteval per trait and identical at the cast call site.
-// Compile-time only: the tree unrolls into the walk dispatch code; no
-// links[] array is materialized.
-struct node_link {
-  std::uint32_t parent;
-  std::uint32_t level;
-};
-
-// Cast-tree link for node I: parent = tree parent trait's node (-1 at a
-// base-less trait); level = static DAG depth of the node's trait.
-template <template <class> class Final, std::size_t I>
-consteval node_link rtti_node_link() {
-  using node_t = tlist_at<reachable_t<Final<void>>, I>;
-  using parent_t = tree_parent_t<node_t>;
-  if constexpr (std::is_void_v<parent_t>) {
-    return node_link{static_cast<std::uint32_t>(-1),
-                     trait_level_resident<node_t>::value};
-  } else {
-    constexpr std::size_t p =
-        tlist_index_of<reachable_t<Final<void>>, parent_t>;
-    static_assert(p != static_cast<std::size_t>(-1),
-                  "tree parent not reachable under Final");
-    return node_link{static_cast<std::uint32_t>(p),
-                     trait_level_resident<node_t>::value};
-  }
+// Ancestor-closure cast: node K's searchable set is reachable_t of its own
+// trait (self first, DFS over live direct bases, deduped) — the same
+// live-ancestor closure the static upcast rules use. Members are remapped
+// into the Final node numbering; each is reachable under Final by
+// transitivity. Compile-time only: the closure unrolls into the walk
+// dispatch code; no ids[] / links[] arrays are materialized.
+template <template <class> class Final, typename T>
+consteval std::size_t rtti_anc_index() {
+  constexpr std::size_t k = tlist_index_of<reachable_t<Final<void>>, T>;
+  static_assert(k != static_cast<std::size_t>(-1),
+                "live ancestor not reachable under Final");
+  return k;
 }
 
-// Tree walk from node K toward the roots: the parent chain is a constexpr
-// unroll (levels and compared identities are constants); only to_id /
-// to_level are runtime. Same check sequence as a links[] loop, as
-// straight-line code.
+template <template <class> class Final, typename Closure>
+struct rtti_anc_seq;
+template <template <class> class Final, typename... Ts>
+struct rtti_anc_seq<Final, tlist<Ts...>> {
+  using type = std::index_sequence<rtti_anc_index<Final, Ts>()...>;
+};
+
+// One closure member: level gate + identity, both constants per node; only
+// to_id / to_level are runtime.
+template <template <class> class Final, std::size_t A>
+bool rtti_anc_match(const std::type_info* to_id,
+                    std::uint32_t to_level) noexcept {
+  using node_t = tlist_at<reachable_t<Final<void>>, A>;
+  return trait_level_v<node_t> == to_level && &typeid(node_t) == to_id;
+}
+
+// Walk from node K: straight-line scan of K's ancestor closure. A trait
+// owns exactly one node, so the first match is the only possible hit.
+template <template <class> class Final, std::size_t... A>
+int rtti_walk_scan(std::index_sequence<A...>, const std::type_info* to_id,
+                   std::uint32_t to_level) noexcept {
+  int r = -1;
+  (void)(((r < 0 && rtti_anc_match<Final, A>(to_id, to_level))
+              ? (r = static_cast<int>(A), true)
+              : false) ||
+         ...);
+  return r;
+}
+
 template <template <class> class Final, std::size_t K>
 int rtti_walk_from(const std::type_info* to_id,
                    std::uint32_t to_level) noexcept {
-  constexpr node_link ln = rtti_node_link<Final, K>();
-  if (ln.level < to_level)
-    return -1;
-  if (ln.level == to_level)
-    return &typeid(tlist_at<reachable_t<Final<void>>, K>) == to_id
-               ? static_cast<int>(K)
-               : -1;
-  if constexpr (ln.parent == static_cast<std::uint32_t>(-1)) {
-    return -1;
-  } else {
-    return rtti_walk_from<Final, ln.parent>(to_id, to_level);
-  }
+  using node_t = tlist_at<reachable_t<Final<void>>, K>;
+  return rtti_walk_scan<Final>(
+      typename rtti_anc_seq<Final, reachable_t<node_t>>::type{}, to_id,
+      to_level);
 }
 
 template <template <class> class Final, std::size_t... I>
@@ -109,8 +111,9 @@ int rtti_walk_dispatch_impl(std::size_t node, const std::type_info* to_id,
   return r;
 }
 
-// Per-Final walk dispatch: node tag -> hit node index (-1 on miss). One
-// function per Final; meta blocks of all keys under Final point at it.
+// Per-Final walk dispatch: node tag -> hit node index (-1 on miss; the
+// tag node's live-ancestor closure is searched). One function per Final;
+// meta blocks of all keys under Final point at it.
 template <template <class> class Final>
 int rtti_walk_dispatch(std::size_t node, const std::type_info* to_id,
                        std::uint32_t to_level) noexcept {

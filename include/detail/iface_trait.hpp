@@ -50,10 +50,11 @@ using vt_fn = void (*)();
 using vt_ptr = vt_fn const*;
 
 // vt node tag (RTTI builds): index of the handle's construction anchor
-// node in the construction Final's reachable_t cast tree — the attached
-// leaf at bind, the cover node after a Redirect upcast; dyn_cast hits
-// switch tables but never move it — packed into a tag field of the vt_ptr
-// itself. Every slot read must untag first; producers return
+// node in the construction Final's reachable_t cast tree — the
+// construction Trait's node at bind (the Final leaf, node 0, for final
+// binds; untagged pointers read as node 0), the cover node after a
+// Redirect upcast; dyn_cast hits switch tables but never move it —
+// packed into a tag field of the vt_ptr itself. Every slot read must untag first; producers return
 // pre-tagged pointers. Non-RTTI builds never tag (identity, zero cost). A
 // meta block whose max node index exceeds the representable range (node
 // count > capacity) is a compile error at meta instantiation; there is no
@@ -1620,10 +1621,11 @@ struct vtable_meta {
     return node_typeid(node_of(vt));
   }
 
-  // Tree cast from this vt's node toward the roots via the per-Final walk
-  // dispatch; a hit lands on its tables[] entry. The node tag is the
-  // construction anchor (leaf at bind, cover after a Redirect upcast) and
-  // is construction-fixed: a walk hit switches only the table, never the
+  // Cast from this vt's anchor over its live-ancestor closure via the
+  // per-Final walk dispatch; a hit lands on its tables[] entry. The node
+  // tag is the construction anchor (the construction Trait's node at
+  // bind, the cover node after a Redirect upcast) and is
+  // construction-fixed: a walk hit switches only the table, never the
   // tag, so cast results are independent of cast history.
   vt_ptr walk_cast(vt_ptr vt, const std::type_info* to_id,
                    std::uint32_t to_level) const noexcept {
@@ -1852,8 +1854,9 @@ consteval std::size_t vtable_instance_count() {
 // (reachable_t<Final>, self first so node 0 is Final). Every logical trait
 // gets a node, even when its table is section-prefix-shared with a
 // descendant cover. The per-Final walk dispatch (iface_vtable.hpp) switches
-// on the handle's node tag and climbs the constexpr-unrolled parent chain,
-// pruning by the target's static DAG depth.
+// on the handle's node tag and scans the tag node's live-ancestor closure
+// (reachable_t of the node's trait), comparing identity at the target's
+// static DAG depth.
 
 // Static DAG depth of a trait: 0 for a root trait, else 1 + max over its
 // direct bases. Dominated bases never win the max (a dominator is a
@@ -1887,41 +1890,6 @@ struct trait_level_resident
 template <typename T>
 inline constexpr std::uint32_t trait_level_v = trait_level_resident<T>::value;
 
-// Tree parent: the live (non-dominated) direct base with the largest level,
-// first such on ties; void for a base-less trait. A single-parent chain:
-// side branches at the same level (diamond siblings) are not reached.
-template <typename Rest, typename Cand, bool Live, bool RestVoid>
-struct tree_parent_pick {
-  using type = Rest;
-};
-template <typename Rest, typename Cand>
-struct tree_parent_pick<Rest, Cand, true, true> {
-  using type = Cand;
-};
-template <typename Rest, typename Cand>
-struct tree_parent_pick<Rest, Cand, true, false> {
-  using type = std::conditional_t<(trait_level_resident<Cand>::value >=
-                                   trait_level_resident<Rest>::value),
-                                  Cand, Rest>;
-};
-
-template <typename T, typename Seq>
-struct tree_parent_impl;
-template <typename T>
-struct tree_parent_impl<T, std::index_sequence<>> {
-  using type = void;
-};
-template <typename T, std::size_t I0, std::size_t... Is>
-struct tree_parent_impl<T, std::index_sequence<I0, Is...>> {
-  using rest = typename tree_parent_impl<T, std::index_sequence<Is...>>::type;
-  using type = typename tree_parent_pick<rest, base_t<T, I0>,
-                                         live_base_at<T, I0>(),
-                                         std::is_void_v<rest>>::type;
-};
-
-template <typename T>
-using tree_parent_t = typename tree_parent_impl<
-    T, std::make_index_sequence<n_direct_bases<T>()>>::type;
 #endif
 
 // How many deduced template params the method has (`auto` or template <class>).
@@ -4530,8 +4498,8 @@ vt_fn make_slot_ptr() {
 // Tables keyed by (Mask, Final, Trait, Storage, As). Final is the dyn bind
 // root (Trait of a Trait<T> `final` bind); Trait is the physical table owner
 // (root or cover). Redirect(I9->I8) -> vtable<...,I9,I8,...>; same cover under
-// another final is a distinct specialization. meta walk_cast: climbs the
-// cast-tree links from the handle's node to a tables[] hit.
+// another final is a distinct specialization. meta walk_cast: scans the
+// handle node's live-ancestor closure to a tables[] hit.
 template <bool MaskNonConst, template <class> class Final,
           template <class> class Trait, typename Storage, typename As>
 vt_ptr redirect_cover();

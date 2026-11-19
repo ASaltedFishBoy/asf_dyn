@@ -3228,8 +3228,8 @@ try_construct_cache(void* ptr, vt_ptr vt, Extra&&... extra)
 
 // dyn / c_dyn surface on dyn_ptr_core.
 // Handle = public handle type (template template). Const=true: c_* .
-// RTTI: meta tree walk dispatches on the handle node tag to a tables[] hit
-// (see vtable_meta::walk_cast).
+// RTTI: the meta ancestor-closure scan dispatches on the handle node tag
+// to a tables[] hit (see vtable_meta::walk_cast).
 // Casts rebind Trait only - same complete Ptr.
 template <template <template <class> class, class> class Handle,
           template <class> class Trait, bool Const, class Ptr>

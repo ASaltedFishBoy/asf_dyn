@@ -159,4 +159,4 @@ auto s = asf::trait_cast<Sealed>(doc);          // Sealed cover
 | RTTI 前缀 | RTTI 宏开启 | meta |
 | 方法槽 | 始终（按 Trait） | 各方法（含 `op_construct` 重载）及 Redirect |
 
-打开 RTTI 时，同一 Final 下叶和 cover 的负前缀指向 meta；`tables[]` 列出这些物理表（section-prefix 共享的 Trait 会重复同一项）。`dyn_cast` 树爬升返回其中一张并打上命中节点 tag（下标合并进指针 tag 位段），因此会换 vt。`unsafe_downcast` 留在当前 vt。
+打开 RTTI 时，同一 Final 下叶和 cover 的负前缀指向 meta；`tables[]` 列出这些物理表（section-prefix 共享的 Trait 会重复同一项）。`dyn_cast` 祖先闭包扫描返回其中一张，句柄保持构造即固定的 tag 不变，因此会换 vt。`unsafe_downcast` 留在当前 vt。

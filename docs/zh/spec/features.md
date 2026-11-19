@@ -27,9 +27,9 @@ asf::abi_namespace_name
 | **默认** | `0`（CMake：`OFF`） |
 | **开启** | 虚表带 **meta 头**；提供 `dyn_cast` |
 
-**语义保证**：句柄锚定在创建 Final 可达 Trait 树的某个节点：创建锚在 Final 叶（中间节点绑定附着覆盖叶的节点）；section-prefix 上行保持节点；Redirect 上行重新锚定在 cover 节点。锚点**构造即固定**——`dyn_cast` 命中只换虚表、不动 tag，cast 结果与历史无关。运行时判定从锚点节点沿**单父树**向根爬（parent = 层数最大的存活直接基，并列取第一），只在节点层数等于目标静态 DAG 层数时比对身份——层数更小即中止（目标比锚点更深），更大继续上爬。命中是**精确**的：对象动态类型确实在该链上实现 `To`，句柄随之换到 `To` 自己的虚表。miss 是确定的：`To` 比锚点更深，或位于同层侧枝（如菱形另一支）——侧枝不在链上。树宽于 tag 容量是**编译期错误**，`dyn_cast` 没有 UB 路径。静态类型已知时优先隐式上行 / `trait_cast` / `as`；运行时情形由 `dyn_cast` 精确回答。
+**语义保证**：句柄锚定在创建 Final 可达 Trait 树的某个节点：叶绑定锚在 Final 叶，中间节点绑定锚在构造 Trait 自身的节点；section-prefix 上行保持节点；Redirect 上行重新锚定在 cover 节点。锚点**构造即固定**——`dyn_cast` 命中只换虚表、不动 tag，cast 结果与历史无关。运行时判定扫描锚点节点的**存活祖先闭包**——与静态上行同一 reachable 集——只在候选层数等于目标静态 DAG 层数时比对身份。命中是**精确**的：对象动态类型确实实现了 `To`，句柄随之换到 `To` 自己的虚表。miss 是确定的：`To` 比锚点更深（在构造 Trait 之下）或不在其祖先中。闭包属于锚点：叶锚点可达全部存活祖先——菱形两支都在——而中间锚点的同辈分支与其下覆盖叶都是 miss。树宽于 tag 容量是**编译期错误**，`dyn_cast` 没有 UB 路径。静态类型已知时优先隐式上行 / `trait_cast` / `as`；运行时情形由 `dyn_cast` 精确回答。
 
-meta 结构：一个 `{ type, node_count, walk, node_typeid }` 头（`type` 是指向 Storage 的 `const std::type_info&`），`tables[0..x)` 紧随该头（`this + 1`）。x 个节点是 Final 的 dyn 上行可达 Trait（`reachable_t<Final>`，自身在前）——每个逻辑 Trait 一个节点，与后代 cover section-prefix 共享表时 `tables[]` 会重复同一物理虚表。cast 树是**代码而非数据**：`walk` 是 per-Final 分派（每个 Final 一个函数，跨 Storage/As/Mask 键 COMDAT 共享），按节点 tag 选起点后沿 constexpr 展开的父链爬升——level 与被比对的身份都是常量，只有 `to_id` / `to_level` 是运行期入参；`node_typeid` 是 per-Final 的节点 → Trait `typeid` 分派。不再有 `ids[]` / `links[]` 数组。句柄 vt 在指针 tag 位段携带**节点 tag**：构造锚点节点的下标（绑定时为附着的叶，Redirect 上行后为 cover 节点）；产出 vt 的入口（构造 / redirect thunk / walk 命中）都返回预打 tag 的指针——walk 命中沿用输入 tag——槽位访问前摘 tag。tag 喂给 `walk` / `node_typeid` 分派并索引本 meta 块的 `tables[]`。tag 位段位于指针顶部 `ASF_DYN_VT_TAG_HI_BITS` 位（64 位默认 16 即 65536 个节点，假设 48 位规范形虚拟地址——没有任何编译器设施上报 VA 位宽，LA57 类机器须设为 7；`0`（32 位默认）回落对齐低位 `countr_zero(alignof(vt_fn))` = 3 位 = 8 个节点）；**最大节点下标超出 2^位宽 在 meta 实例化处直接报编译错误**，没有运行时逃逸。每个物理虚表键各有一份 meta（非共享父树）。
+meta 结构：一个 `{ type, node_count, walk, node_typeid }` 头（`type` 是指向 Storage 的 `const std::type_info&`），`tables[0..x)` 紧随该头（`this + 1`）。x 个节点是 Final 的 dyn 上行可达 Trait（`reachable_t<Final>`，自身在前）——每个逻辑 Trait 一个节点，与后代 cover section-prefix 共享表时 `tables[]` 会重复同一物理虚表。cast 树是**代码而非数据**：`walk` 是 per-Final 分派（每个 Final 一个函数，跨 Storage/As/Mask 键 COMDAT 共享），按节点 tag 选定锚点后扫描其 constexpr 展开的祖先闭包——level 与被比对的身份都是常量，只有 `to_id` / `to_level` 是运行期入参；`node_typeid` 是 per-Final 的节点 → Trait `typeid` 分派。不再有 `ids[]` / `links[]` 数组。句柄 vt 在指针 tag 位段携带**节点 tag**：构造锚点节点的下标（绑定时为构造 Trait 的节点——叶绑定即节点 0——，Redirect 上行后为 cover 节点）；产出 vt 的入口（构造 / redirect thunk / walk 命中）都返回预打 tag 的指针——walk 命中沿用输入 tag——槽位访问前摘 tag。tag 喂给 `walk` / `node_typeid` 分派并索引本 meta 块的 `tables[]`。tag 位段位于指针顶部 `ASF_DYN_VT_TAG_HI_BITS` 位（64 位默认 16 即 65536 个节点，假设 48 位规范形虚拟地址——没有任何编译器设施上报 VA 位宽，LA57 类机器须设为 7；`0`（32 位默认）回落对齐低位 `countr_zero(alignof(vt_fn))` = 3 位 = 8 个节点）；**最大节点下标超出 2^位宽 在 meta 实例化处直接报编译错误**，没有运行时逃逸。每个物理虚表键各有一份 meta（键间不共享）。
 
 ```
 vt[-2] --> +-------------------------------+  vtable_meta_inst<X>
@@ -47,12 +47,12 @@ vt[-2] --> +-------------------------------+  vtable_meta_inst<X>
             walk / node_typeid：per-Final 代码，跨键 COMDAT 共享
 
 walk_cast(vt, to_id, to_level):                 // to_level = trait_level_v<To>
-  i = meta->walk(node_of(vt), to_id, to_level)   // tag 选起点；父链是
+  i = meta->walk(node_of(vt), to_id, to_level)   // tag 选锚点；其祖先闭包是
       // constexpr 展开：level 与比对身份是常量，to_id / to_level 是运行期
-  i < 0 -> miss；否则 tag_vt(meta->tables()[i], i)
+  i < 0 -> miss；否则 tag_vt(meta->tables()[i], node_of(vt))   // 命中只换表，锚点 tag 不变
 ```
 
-`dyn_cast`：能静态上行则走转换构造（`upcast_vt`）；否则从句柄当前节点走 meta 树爬升；walk miss 时为空（见上：查到 ≠ 语义正确）。
+`dyn_cast`：能静态上行则走转换构造（`upcast_vt`）；否则从句柄锚点节点走 meta 祖先闭包扫描；miss 时为空（见上：查到 ≠ 语义正确）。
 
 与 **MULTI_VT** 独立但互补：全路径隐式上行 / `trait_cast` **不**需要 meta；非 section-prefix 的 `dyn_cast` 目标仍依赖 Redirect（cover 虚表）。
 
@@ -91,7 +91,7 @@ RTTI 前缀占位：meta 在 `vt[-2]`。`op_construct` 与其它方法一样在�
 
 ### 与 RTTI
 
-从中间节点构造的 dyn，其 meta / `dyn_cast` 附着在 **实际拿到的那张 leaf 虚表** 上，不保证能下降到「哪一个」final 的相关树——赢家由同 TU STMP / 跨 TU 链接择一决定，不是中间 Trait 自身的逻辑 DAG。
+从中间节点构造的 dyn 仍跑在**实际拿到的那张 leaf 虚表**上（赢家由同 TU STMP / 跨 TU 链接择一决定），但其 meta 锚点是构造 Trait 自身的节点：`dyn_cast` 只看到该 Trait 的存活祖先，向覆盖叶方向的下降是确定的 miss。
 
 ### 关闭
 

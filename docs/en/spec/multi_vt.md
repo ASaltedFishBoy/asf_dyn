@@ -161,4 +161,4 @@ Tables are keyed by `(Mask, Final, Trait, Storage, As)`. A cover belongs to the 
 | RTTI prefix | RTTI macro on | meta |
 | Method slots | always (per Trait) | each method (including `op_construct` overloads) and Redirect |
 
-With RTTI on, the negative prefix of the leaf and of each cover under the same Final points at meta. `tables[]` lists those physical tables (repeated for Traits sharing one by section prefix). The `dyn_cast` tree walk returns one of them tagged with the hit node (index merged into the pointer tag field), so `dyn_cast` switches `vt`. `unsafe_downcast` keeps the current `vt`.
+With RTTI on, the negative prefix of the leaf and of each cover under the same Final points at meta. `tables[]` lists those physical tables (repeated for Traits sharing one by section prefix). The `dyn_cast` ancestor-closure scan returns one of them while the handle keeps its construction-fixed tag, so `dyn_cast` switches `vt`. `unsafe_downcast` keeps the current `vt`.
