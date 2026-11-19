@@ -29,9 +29,17 @@ template <class Derived, template <class> class Trait, bool Const,
           bool SliceCall, bool SoftUptrDestroy, class Ptr>
 vt_ptr vt_of(dyn_ptr_core<Derived, Trait, Const, SliceCall, SoftUptrDestroy,
                           Ptr> const& h) noexcept;
+// The stored vt with the RTTI anchor tag still attached. Internal plumbing
+// (cast / construct hand-off) only; users should see the bare table.
+template <class Derived, template <class> class Trait, bool Const,
+          bool SliceCall, bool SoftUptrDestroy, class Ptr>
+vt_ptr tagged_vt_of(dyn_ptr_core<Derived, Trait, Const, SliceCall,
+                                SoftUptrDestroy, Ptr> const& h) noexcept;
 }  // namespace detail
 
-// Advanced: raw vtable pointer of a dyn / c_dyn handle. Not a member �?// keep the public handle surface free of vt plumbing.
+// Advanced: bare vtable pointer of a dyn / c_dyn handle (RTTI anchor tag
+// stripped). Not a member �?// keep the public handle surface free of vt
+// plumbing.
 template <class Handle>
 detail::vt_ptr vtable_of(Handle const& h) noexcept;
 
@@ -2260,6 +2268,10 @@ template <class Derived, template <class> class Trait, bool Const,
           bool SliceCall, bool SoftUptrDestroy, class Ptr>
 vt_ptr vt_of(dyn_ptr_core<Derived, Trait, Const, SliceCall, SoftUptrDestroy,
                           Ptr> const& h) noexcept;
+template <class Derived, template <class> class Trait, bool Const,
+          bool SliceCall, bool SoftUptrDestroy, class Ptr>
+vt_ptr tagged_vt_of(dyn_ptr_core<Derived, Trait, Const, SliceCall,
+                                SoftUptrDestroy, Ptr> const& h) noexcept;
 template <class Handle>
 void* storage_addr_of(Handle const& h) noexcept;
 
@@ -2329,6 +2341,9 @@ class dyn_ptr_core
   template <class D, template <class> class Tr, bool C, bool Sc, bool Soft,
             class P>
   friend vt_ptr vt_of(dyn_ptr_core<D, Tr, C, Sc, Soft, P> const&) noexcept;
+  template <class D, template <class> class Tr, bool C, bool Sc, bool Soft,
+            class P>
+  friend vt_ptr tagged_vt_of(dyn_ptr_core<D, Tr, C, Sc, Soft, P> const&) noexcept;
   template <class H>
   friend void* storage_addr_of(H const&) noexcept;
   friend dyn_destroy_facet<dyn_ptr_core, true>;
@@ -2766,6 +2781,15 @@ template <class Derived, template <class> class Trait, bool Const,
           bool SliceCall, bool SoftUptrDestroy, class Ptr>
 vt_ptr vt_of(dyn_ptr_core<Derived, Trait, Const, SliceCall, SoftUptrDestroy,
                           Ptr> const& h) noexcept {
+  // Bare table: the RTTI anchor tag is construction metadata, not part of
+  // the table identity callers compare / index with.
+  return untag_vt(h.vt_);
+}
+
+template <class Derived, template <class> class Trait, bool Const,
+          bool SliceCall, bool SoftUptrDestroy, class Ptr>
+vt_ptr tagged_vt_of(dyn_ptr_core<Derived, Trait, Const, SliceCall,
+                                SoftUptrDestroy, Ptr> const& h) noexcept {
   return h.vt_;
 }
 
@@ -3228,8 +3252,8 @@ try_construct_cache(void* ptr, vt_ptr vt, Extra&&... extra)
 
 // dyn / c_dyn surface on dyn_ptr_core.
 // Handle = public handle type (template template). Const=true: c_* .
-// RTTI: the meta ancestor-closure scan dispatches on the handle node tag
-// to a tables[] hit (see vtable_meta::walk_cast).
+// RTTI: the meta cast entry resolves the target identity and tests the
+// handle node tag's ancestor closure (see vtable_meta::walk_cast).
 // Casts rebind Trait only - same complete Ptr.
 template <template <template <class> class, class> class Handle,
           template <class> class Trait, bool Const, class Ptr>
@@ -3316,7 +3340,9 @@ class dyn_handle_base
   }
 
   // Section-prefix: same physical vt (same node: tag preserved). Else
-  // MULTI_VT Redirect slot -> cover (thunk returns a pre-tagged vt).
+  // MULTI_VT Redirect slot -> cover: a type switch does not require the
+  // table state — the construction anchor tag is carried over, the thunk
+  // returns the plain cover vt.
   template <template <class> class To>
   static vt_ptr upcast_vt(vt_ptr vt) noexcept {
     if constexpr (is_section_prefix_of<To, Trait>()) {
@@ -3325,7 +3351,8 @@ class dyn_handle_base
       constexpr auto idx = find_redirect_slot_v<Trait<void>, To<void>>;
       static_assert(idx != static_cast<std::size_t>(-1),
                     "no shared redirect path to target interface");
-      return from_vt_fn<vt_ptr()>(untag_vt(vt)[idx])();
+      return tag_vt(from_vt_fn<vt_ptr()>(untag_vt(vt)[idx])(),
+                    vt_node_tag(vt));
     }
   }
 
@@ -4157,9 +4184,10 @@ c_dyn<To, Ptr> unsafe_downcast(c_dyn<From, Ptr>&& handle) {
 }
 
 #if ASF_HAS_DYN_RTTI
-// Upcast: static upcast_vt (no meta). Else meta walk: scan the handle
-// node's live-ancestor closure to a tables[] hit (tag kept). Empty -> empty
-// (the dynamic_cast nullptr analogue).
+// Upcast: static upcast_vt (no meta). Else meta walk: resolve the target
+// through the key's link channel and test the handle node's live-ancestor
+// closure (tag kept on a hit). Empty -> empty (the dynamic_cast nullptr
+// analogue).
 template <template <class> class To, template <class> class From, class Ptr>
 dyn<To, Ptr> rtti_cast(dyn<From, Ptr> const& handle) {
   using Src = dyn_handle_base<dyn, From, false, Ptr>;
@@ -4168,15 +4196,15 @@ dyn<To, Ptr> rtti_cast(dyn<From, Ptr> const& handle) {
     return dyn<To, Ptr>{};
   if constexpr (can_dyn_upcast<To, From>()) {
     return dyn_factory_access::clone_retype_vt<To>(
-        b, Src::template upcast_vt<To>(vtable_of(b)));
+        b, Src::template upcast_vt<To>(detail::tagged_vt_of(b)));
   } else if constexpr (ptr_downcast_chain_constrained_v<Ptr> &&
                        is_trait_base_of<From, To>() &&
                        !dyn_downcast_chain_ok<To, From>()) {
     return dyn<To, Ptr>{};
   } else {
     auto* new_vt =
-        meta_of<From>(vtable_of(b))
-            ->walk_cast(vtable_of(b), &typeid(To<void>),
+        meta_of<From>(detail::tagged_vt_of(b))
+            ->walk_cast(detail::tagged_vt_of(b), &typeid(To<void>),
                         trait_level_v<To<void>>);
     if (!new_vt)
       return dyn<To, Ptr>{};
@@ -4192,15 +4220,15 @@ dyn<To, Ptr> rtti_cast(dyn<From, Ptr>&& handle) {
     return dyn<To, Ptr>{};
   if constexpr (can_dyn_upcast<To, From>()) {
     return dyn_factory_access::move_retype_vt<To>(
-        b, Src::template upcast_vt<To>(vtable_of(b)));
+        b, Src::template upcast_vt<To>(detail::tagged_vt_of(b)));
   } else if constexpr (ptr_downcast_chain_constrained_v<Ptr> &&
                        is_trait_base_of<From, To>() &&
                        !dyn_downcast_chain_ok<To, From>()) {
     return dyn<To, Ptr>{};
   } else {
     auto* new_vt =
-        meta_of<From>(vtable_of(b))
-            ->walk_cast(vtable_of(b), &typeid(To<void>),
+        meta_of<From>(detail::tagged_vt_of(b))
+            ->walk_cast(detail::tagged_vt_of(b), &typeid(To<void>),
                         trait_level_v<To<void>>);
     if (!new_vt)
       return dyn<To, Ptr>{};
@@ -4216,15 +4244,15 @@ c_dyn<To, Ptr> rtti_cast(c_dyn<From, Ptr> const& handle) {
     return c_dyn<To, Ptr>{};
   if constexpr (can_dyn_upcast<To, From>()) {
     return dyn_factory_access::clone_retype_vt<To>(
-        b, Src::template upcast_vt<To>(vtable_of(b)));
+        b, Src::template upcast_vt<To>(detail::tagged_vt_of(b)));
   } else if constexpr (ptr_downcast_chain_constrained_v<Ptr> &&
                        is_trait_base_of<From, To>() &&
                        !dyn_downcast_chain_ok<To, From>()) {
     return c_dyn<To, Ptr>{};
   } else {
     auto* new_vt =
-        meta_of<From>(vtable_of(b))
-            ->walk_cast(vtable_of(b), &typeid(To<void>),
+        meta_of<From>(detail::tagged_vt_of(b))
+            ->walk_cast(detail::tagged_vt_of(b), &typeid(To<void>),
                         trait_level_v<To<void>>);
     if (!new_vt)
       return c_dyn<To, Ptr>{};
@@ -4240,15 +4268,15 @@ c_dyn<To, Ptr> rtti_cast(c_dyn<From, Ptr>&& handle) {
     return c_dyn<To, Ptr>{};
   if constexpr (can_dyn_upcast<To, From>()) {
     return dyn_factory_access::move_retype_vt<To>(
-        b, Src::template upcast_vt<To>(vtable_of(b)));
+        b, Src::template upcast_vt<To>(detail::tagged_vt_of(b)));
   } else if constexpr (ptr_downcast_chain_constrained_v<Ptr> &&
                        is_trait_base_of<From, To>() &&
                        !dyn_downcast_chain_ok<To, From>()) {
     return c_dyn<To, Ptr>{};
   } else {
     auto* new_vt =
-        meta_of<From>(vtable_of(b))
-            ->walk_cast(vtable_of(b), &typeid(To<void>),
+        meta_of<From>(detail::tagged_vt_of(b))
+            ->walk_cast(detail::tagged_vt_of(b), &typeid(To<void>),
                         trait_level_v<To<void>>);
     if (!new_vt)
       return c_dyn<To, Ptr>{};
@@ -4265,7 +4293,7 @@ auto bridge_owned_dyn(dyn<From, SrcP>&& src) {
   static_assert(pointer_has_deleter_v<Ptr>,
                 "bridge target must be a deleter Ptr");
   vt_ptr new_vt = dyn_factory_access::upcasted_vt<Trait>(src);
-  vt_ptr src_vt = vt_of(src);
+  vt_ptr src_vt = detail::tagged_vt_of(src);
   auto stolen = dyn_factory_access::steal(src);
   Ptr out = dyn_ptr_to_deleter<Ptr>(std::move(stolen), src_vt);
   return dyn_factory_access::from_uptr_adopt<dyn<Trait, Ptr>>(std::move(out),
@@ -4368,13 +4396,15 @@ struct dyn_obs_proxy_facet
     requires(!Const)
   explicit dyn_obs_proxy_facet(dyn<Trait, Ptr>* host)
       : no_friend_ops(), base(&buf_),
-        buf_(Obs::from_storage(host->storage_addr(), vtable_of(*host))) {}
+        buf_(Obs::from_storage(host->storage_addr(),
+                               detail::tagged_vt_of(*host))) {}
 
   template <class Ptr>
     requires(Const)
   explicit dyn_obs_proxy_facet(c_dyn<Trait, Ptr> const* host)
       : no_friend_ops(), base(&buf_),
-        buf_(Obs::from_storage(host->storage_addr(), vtable_of(*host))) {}
+        buf_(Obs::from_storage(host->storage_addr(),
+                               detail::tagged_vt_of(*host))) {}
 
   dyn_obs_proxy_facet(dyn_obs_proxy_facet const& o)
       : no_friend_ops(), base(&buf_), buf_(o.buf_) {}

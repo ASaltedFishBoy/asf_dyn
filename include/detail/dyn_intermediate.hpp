@@ -9,6 +9,10 @@
 // ADL-calls adl_dyn_object_vt. Same-TU: friend-injection marker dyn_vt_gen
 // (auto return -> requires false until defined) skips a second inject so the
 // friend adl_dyn_object_vt is not redefined. Cross-TU: ODR/COMDAT pick (no weak).
+// RTTI adds a second overload (tag, const std::type_info*): the cast
+// resolve, injected once per (Mask, Final, Storage, As) via
+// dyn_vt_rtti_inject so identity matching and the node tables share the
+// construction link artifact.
 #if defined(__GNUC__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wnon-template-friend"
@@ -18,6 +22,15 @@ template <bool MaskNonConst, template <class> class Trait, typename Storage,
           typename As>
 struct dyn_vt_tag {
   friend vt_ptr adl_dyn_object_vt(dyn_vt_tag);
+#if ASF_HAS_DYN_RTTI
+  // RTTI resolve overload: target identity in -> the node's table tagged
+  // with its node index, nullptr when the type is outside the Final's
+  // tree. Injected once per (Mask, Final, Storage, As) with Trait ==
+  // Final (the resolve ranges over the Final's whole reachable tree; a
+  // per-section key would only duplicate identical bodies).
+  friend vt_ptr adl_dyn_object_vt(dyn_vt_tag,
+                                  const std::type_info*) noexcept;
+#endif
 };
 
 // Marker: friend declared with undeduced auto so requires{dyn_vt_gen} is false
@@ -73,6 +86,31 @@ struct dyn_vt_inject {
   }
 #endif
 };
+
+#if ASF_HAS_DYN_RTTI
+// RTTI resolve injection, one per (Mask, Final, Storage, As) with the tag
+// Trait == Final: the cast's identity matching lives in the same link
+// artifact construction's object-vt lookup comes through, so the type
+// tree and the node tables cannot be picked apart by the linker. The
+// body forwards to the shared per-key resolve (COMDAT-merged).
+template <bool MaskNonConst, template <class> class Final, typename Storage,
+          typename As>
+struct dyn_vt_rtti_inject {
+#if defined(__GNUC__)
+  friend vt_ptr __attribute__((used))
+      adl_dyn_object_vt(dyn_vt_tag<MaskNonConst, Final, Storage, As>,
+                        const std::type_info* to_id) noexcept {
+    return rtti_node_table_vt<MaskNonConst, Final, Storage, As>(to_id);
+  }
+#else
+  friend vt_ptr adl_dyn_object_vt(
+      dyn_vt_tag<MaskNonConst, Final, Storage, As>,
+      const std::type_info* to_id) noexcept {
+    return rtti_node_table_vt<MaskNonConst, Final, Storage, As>(to_id);
+  }
+#endif
+};
+#endif
 #if defined(__GNUC__)
 #pragma GCC diagnostic pop
 #endif
@@ -121,7 +159,13 @@ struct dyn_vt_adl_registrar {
   struct force_pack<std::index_sequence<I...>>
       : type_sink<std::integral_constant<
             int, dyn_vt_register_at<MaskNonConst, Final, Storage, As,
-                                    I>::force>...> {};
+                                    I>::force>...>
+#if ASF_HAS_DYN_RTTI
+        ,
+        dyn_vt_rtti_inject<MaskNonConst, Final, Storage, As>
+#endif
+  {
+  };
 
   using force = force_pack<std::make_index_sequence<n()>>;
 

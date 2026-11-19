@@ -52,8 +52,9 @@ using vt_ptr = vt_fn const*;
 // vt node tag (RTTI builds): index of the handle's construction anchor
 // node in the construction Final's reachable_t cast tree — the
 // construction Trait's node at bind (the Final leaf, node 0, for final
-// binds; untagged pointers read as node 0), the cover node after a
-// Redirect upcast; dyn_cast hits switch tables but never move it —
+// binds; untagged pointers read as node 0). Upcasts (section-prefix or
+// Redirect) carry the tag over; dyn_cast hits switch tables but never
+// move it — the tag is the construction identity, not table state,
 // packed into a tag field of the vt_ptr itself. Every slot read must untag first; producers return
 // pre-tagged pointers. Non-RTTI builds never tag (identity, zero cost). A
 // meta block whose max node index exceeds the representable range (node
@@ -1576,37 +1577,32 @@ consteval bool can_dyn_downcast() {
 
 #if ASF_HAS_DYN_RTTI
 
-// Tree walk / node-typeid dispatch signatures. The cast tree is CODE, not
-// data: each Final gets a generated dispatch (a node-tag switch selecting
-// the start node, then a constexpr-unrolled parent climb whose levels and
-// compared identities are constants; only to_id / to_level are runtime).
-// One dispatch per Final — COMDAT-shared across the key's Storage/As/Mask
-// variants; a meta block carries no ids[] / links[] arrays.
-using rtti_walk_fn = int (*)(std::size_t, const std::type_info*,
-                             std::uint32_t);
+// Cast / node-typeid dispatch signatures. The cast tree is CODE, not data:
+// per (Mask, Final, Storage, As) key the cast fn resolves the target
+// identity through the key's link channel (rtti_cast_vt: the ADL object-vt
+// injection under INTERMEDIATE, the plain per-key resolve otherwise), then
+// tests the anchor node's constexpr-unrolled live-ancestor closure with
+// pure integer compares; a meta block carries no ids[] / links[] /
+// tables[] arrays.
+using rtti_walk_fn = vt_ptr (*)(std::size_t, const std::type_info*,
+                                std::uint32_t);
 using rtti_node_typeid_fn = const std::type_info& (*)(std::size_t);
 
 // RTTI meta (per physical vt key; not a shared parent tree).
-// Layout: { type, node_count, walk, node_typeid } header, then tables[0..x)
-// (per-node physical vts; section-prefix traits repeat the sharing cover's
-// vt). Nodes are the dyn-upcast-reachable traits (reachable_t<Final>, self
-// first). type: typeid(Storage) reference (proxy_typeid analogue). walk:
-// per-Final tree-walk dispatch (node -> hit node index, -1 on miss).
+// Layout: { type, node_count, walk, node_typeid }. Nodes are the
+// dyn-upcast-reachable traits (reachable_t<Final>, self first). type:
+// typeid(Storage) reference (proxy_typeid analogue). walk: per-key cast
+// entry (anchor node tag + target identity + target static DAG level ->
+// the hit node's physical vt re-tagged with the anchor, nullptr on miss;
+// the link-channel resolve is typeid-only, the level gate lives here).
 // node_typeid: per-Final node -> trait typeid dispatch. The node tag on a
-// handle vt is the dispatch input; a walk hit's return index selects
-// tables[] of the queried meta block (the tag itself never changes).
+// handle vt is the walk's anchor input; a walk hit switches only the
+// table, never the tag.
 struct vtable_meta {
   const std::type_info& type;
   std::size_t node_count;
   rtti_walk_fn walk;
   rtti_node_typeid_fn node_typeid;
-
-  // tables[0..x) immediately after this header (see vtable_meta_inst): a
-  // single object-pointer reinterpret_cast; the pointees at that address
-  // genuinely are vt_ptr array elements.
-  vt_ptr const* tables() const noexcept {
-    return reinterpret_cast<vt_ptr const*>(this + 1);
-  }
 
   const std::type_info& typeid_of() const noexcept { return type; }
 
@@ -1622,17 +1618,13 @@ struct vtable_meta {
   }
 
   // Cast from this vt's anchor over its live-ancestor closure via the
-  // per-Final walk dispatch; a hit lands on its tables[] entry. The node
-  // tag is the construction anchor (the construction Trait's node at
-  // bind, the cover node after a Redirect upcast) and is
-  // construction-fixed: a walk hit switches only the table, never the
-  // tag, so cast results are independent of cast history.
+  // key's walk entry; a hit returns the hit node's table re-tagged with
+  // the anchor (the anchor is construction-fixed: upcasts carry it over
+  // and a walk hit switches only the table, never the tag, so cast
+  // results are independent of cast history).
   vt_ptr walk_cast(vt_ptr vt, const std::type_info* to_id,
                    std::uint32_t to_level) const noexcept {
-    const int i = walk(node_of(vt), to_id, to_level);
-    return i < 0 ? nullptr
-                 : tag_vt(tables()[static_cast<std::size_t>(i)],
-                          node_of(vt));
+    return walk(node_of(vt), to_id, to_level);
   }
 };
 
@@ -1853,10 +1845,11 @@ consteval std::size_t vtable_instance_count() {
 // Cast tree: nodes are the dyn-upcast-reachable traits under Final
 // (reachable_t<Final>, self first so node 0 is Final). Every logical trait
 // gets a node, even when its table is section-prefix-shared with a
-// descendant cover. The per-Final walk dispatch (iface_vtable.hpp) switches
-// on the handle's node tag and scans the tag node's live-ancestor closure
-// (reachable_t of the node's trait), comparing identity at the target's
-// static DAG depth.
+// descendant cover. Nodes are unique by type (reachable_t is deduped), so
+// the link-channel resolve keys on typeid alone; the cast entry then gates
+// the resolved node on the target's static DAG level (below) — a cheap
+// cross-TU consistency check — and tests the tag node's live-ancestor
+// closure (reachable_t of the node's trait) with pure integer compares.
 
 // Static DAG depth of a trait: 0 for a root trait, else 1 + max over its
 // direct bases. Dominated bases never win the max (a dominator is a
@@ -4498,8 +4491,9 @@ vt_fn make_slot_ptr() {
 // Tables keyed by (Mask, Final, Trait, Storage, As). Final is the dyn bind
 // root (Trait of a Trait<T> `final` bind); Trait is the physical table owner
 // (root or cover). Redirect(I9->I8) -> vtable<...,I9,I8,...>; same cover under
-// another final is a distinct specialization. meta walk_cast: scans the
-// handle node's live-ancestor closure to a tables[] hit.
+// another final is a distinct specialization. meta walk_cast: the key's
+// cast entry resolves the target and tests the handle node's live-ancestor
+// closure, returning the hit node's table with the anchor tag kept.
 template <bool MaskNonConst, template <class> class Final,
           template <class> class Trait, typename Storage, typename As>
 vt_ptr redirect_cover();

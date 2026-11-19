@@ -254,6 +254,30 @@ void TestTreeCast_LeafSideBranchHit() {
   ASF_CHECK(asf::dyn_node_typeid(b2) == typeid(ID<void>));
 }
 
+// Round trip back to the anchor (2 -> 1 -> 2): the anchor is in its own
+// closure, so an intermediate-anchored handle viewed as the common base
+// casts back down to the construction trait — still without ever
+// reaching the covering leaf.
+void TestTreeCast_BackToAnchorHit() {
+  Obj o{};
+  auto mid = asf_test::to_dyn<IB1>(o);  // anchor IB1, covering leaf ID
+  asf::dyn<IA> base = mid;
+  auto b1 = asf::dyn_cast<IB1>(base);
+  ASF_CHECK(static_cast<bool>(b1));
+  ASF_CHECK_EQ(b1->mb1(), 102);
+  ASF_CHECK(asf::dyn_node_typeid(b1) == typeid(IB1<void>));
+  // Same round trip with a dyn_cast first step (hit keeps the anchor tag).
+  auto a = asf::dyn_cast<IA>(mid);
+  ASF_CHECK(static_cast<bool>(a));
+  auto b1b = asf::dyn_cast<IB1>(a);
+  ASF_CHECK(static_cast<bool>(b1b));
+  ASF_CHECK_EQ(b1b->mb1(), 102);
+  // The same common-base view cannot cross to the sibling arm (2 -> 1 ->
+  // 3): the anchor is still IB1, and IB2 is not in its closure.
+  auto b2 = asf::dyn_cast<IB2>(base);
+  ASF_CHECK(!b2);
+}
+
 // Intermediate bind anchors at the construction trait: the closure is the
 // trait's own ancestors, so a sibling branch (IB2) and the covering leaf
 // below the construction (ID) are definitive misses.
@@ -270,9 +294,9 @@ void TestTreeCast_IntermediateScope() {
   ASF_CHECK(!id);
 }
 
-// Tree walk from a Redirect-upcast view (tag is the IB2 cover node): the
-// parent link of IB2 reaches the common base IA; level pruning skips the
-// level-1 comparison and lands at level 0.
+// Tree walk from a Redirect-upcast view (tag still the leaf node): ID's
+// closure reaches the common base IA; identity compared at the target
+// level.
 void TestTreeCast_CommonBaseHit() {
   Obj o{};
   auto leaf = asf_test::to_dyn<ID>(o);
@@ -282,14 +306,95 @@ void TestTreeCast_CommonBaseHit() {
   ASF_CHECK_EQ(a->ma(), 101);
 }
 
-// Sibling of the anchor: IB1 is not an ancestor of the IB2 node, so the
-// closure scan misses (level equal, identity differs).
-void TestTreeCast_SideBranchMiss() {
+// A Redirect upcast is only a view change: the anchor stays the
+// construction leaf (the tag is construction identity, not table state).
+// From the IB2 cover view every leaf ancestor is reachable — the sibling
+// arm IB1 and the leaf ID itself included.
+void TestTreeCast_RedirectViewKeepsAnchor() {
   Obj o{};
   auto leaf = asf_test::to_dyn<ID>(o);
-  asf::dyn<IB2> base = leaf;
+  asf::dyn<IB2> base = leaf;  // Redirect to the IB2 cover; anchor stays ID
+  ASF_CHECK(asf::dyn_node_typeid(base) == typeid(ID<void>));
   auto b1 = asf::dyn_cast<IB1>(base);
-  ASF_CHECK(!b1);
+  ASF_CHECK(static_cast<bool>(b1));
+  ASF_CHECK_EQ(b1->mb1(), 102);
+  auto id = asf::dyn_cast<ID>(base);
+  ASF_CHECK(static_cast<bool>(id));
+  ASF_CHECK_EQ(id->md(), 104);
+}
+
+// Complete dyn_cast matrix for the diamond. The anchor is the
+// construction trait; a hit requires To in the anchor's live-ancestor
+// closure — the current view only selects the static surface, it never
+// moves the anchor (upcasts carry the tag, walk hits keep it).
+void TestTreeCast_FullMatrix() {
+  Obj o{};
+
+  // Anchor ID (leaf bind): self and every live ancestor reachable from
+  // every view; only unrelated types miss.
+  {
+    auto h = asf_test::to_dyn<ID>(o);
+    ASF_CHECK(asf::dyn_node_typeid(h) == typeid(ID<void>));
+    asf::dyn<IB1> v1 = h;  // section-prefix view
+    asf::dyn<IB2> v2 = h;  // Redirect cover view
+    asf::dyn<IA> v0 = h;   // section-prefix view
+    ASF_CHECK(static_cast<bool>(asf::dyn_cast<ID>(h)));  // self
+    ASF_CHECK(static_cast<bool>(asf::dyn_cast<ID>(v1)));
+    ASF_CHECK(static_cast<bool>(asf::dyn_cast<IB2>(v1)));
+    ASF_CHECK(static_cast<bool>(asf::dyn_cast<IA>(v1)));
+    ASF_CHECK(static_cast<bool>(asf::dyn_cast<ID>(v2)));
+    ASF_CHECK(static_cast<bool>(asf::dyn_cast<IB1>(v2)));
+    ASF_CHECK(static_cast<bool>(asf::dyn_cast<IA>(v2)));
+    ASF_CHECK(static_cast<bool>(asf::dyn_cast<ID>(v0)));
+    ASF_CHECK(static_cast<bool>(asf::dyn_cast<IB1>(v0)));
+    ASF_CHECK(static_cast<bool>(asf::dyn_cast<IB2>(v0)));
+    ASF_CHECK(!asf::dyn_cast<Unrelated>(v1));
+    ASF_CHECK(!asf::dyn_cast<Unrelated>(v2));
+    ASF_CHECK(!asf::dyn_cast<Unrelated>(v0));
+    // Second-generation view: 4 -> 3(Redirect) -> 1 is the cover table
+    // with the leaf tag; casts from it behave like any leaf-anchored view.
+    asf::dyn<IA> v0via3 = v2;
+    ASF_CHECK(static_cast<bool>(asf::dyn_cast<IB1>(v0via3)));
+    ASF_CHECK(static_cast<bool>(asf::dyn_cast<ID>(v0via3)));
+    // Multi-hop through walk hits: the hit keeps the leaf anchor, so the
+    // chain continues from ID's closure — 4->1->3->4 and 4->1->2->3.
+    auto h3 = asf::dyn_cast<IB2>(v0);
+    ASF_CHECK(static_cast<bool>(h3));
+    ASF_CHECK(static_cast<bool>(asf::dyn_cast<ID>(h3)));
+    auto h2 = asf::dyn_cast<IB1>(v0);
+    ASF_CHECK(static_cast<bool>(h2));
+    ASF_CHECK(static_cast<bool>(asf::dyn_cast<IB2>(h2)));
+  }
+
+  // Anchor IB1 (intermediate bind): closure {IB1, IA} — sibling IB2 and
+  // the covering leaf ID are definitive misses, from any view.
+  {
+    auto h = asf_test::to_dyn<IB1>(o);
+    ASF_CHECK(asf::dyn_node_typeid(h) == typeid(IB1<void>));
+    asf::dyn<IA> v0 = h;
+    ASF_CHECK(static_cast<bool>(asf::dyn_cast<IB1>(h)));
+    ASF_CHECK(static_cast<bool>(asf::dyn_cast<IA>(h)));
+    ASF_CHECK(!asf::dyn_cast<IB2>(h));
+    ASF_CHECK(!asf::dyn_cast<ID>(h));
+    ASF_CHECK(static_cast<bool>(asf::dyn_cast<IB1>(v0)));
+    ASF_CHECK(!asf::dyn_cast<IB2>(v0));
+    ASF_CHECK(!asf::dyn_cast<ID>(v0));
+  }
+
+  // Anchor IB2 (intermediate bind through a Redirect cover): closure
+  // {IB2, IA} — sibling IB1 and the covering leaf ID miss from any view.
+  {
+    auto h = asf_test::to_dyn<IB2>(o);
+    ASF_CHECK(asf::dyn_node_typeid(h) == typeid(IB2<void>));
+    asf::dyn<IA> v0 = h;
+    ASF_CHECK(static_cast<bool>(asf::dyn_cast<IB2>(h)));
+    ASF_CHECK(static_cast<bool>(asf::dyn_cast<IA>(h)));
+    ASF_CHECK(!asf::dyn_cast<IB1>(h));
+    ASF_CHECK(!asf::dyn_cast<ID>(h));
+    ASF_CHECK(static_cast<bool>(asf::dyn_cast<IB2>(v0)));
+    ASF_CHECK(!asf::dyn_cast<IB1>(v0));
+    ASF_CHECK(!asf::dyn_cast<ID>(v0));
+  }
 }
 #endif
 
@@ -343,9 +448,11 @@ int main() {
   ASF_RUN(dyn_rtti_tests_detail::TestTreeCast_BranchHit);
   ASF_RUN(dyn_rtti_tests_detail::TestTreeCast_BackToLeafHit);
   ASF_RUN(dyn_rtti_tests_detail::TestTreeCast_LeafSideBranchHit);
+  ASF_RUN(dyn_rtti_tests_detail::TestTreeCast_BackToAnchorHit);
   ASF_RUN(dyn_rtti_tests_detail::TestTreeCast_IntermediateScope);
   ASF_RUN(dyn_rtti_tests_detail::TestTreeCast_CommonBaseHit);
-  ASF_RUN(dyn_rtti_tests_detail::TestTreeCast_SideBranchMiss);
+  ASF_RUN(dyn_rtti_tests_detail::TestTreeCast_RedirectViewKeepsAnchor);
+  ASF_RUN(dyn_rtti_tests_detail::TestTreeCast_FullMatrix);
 #endif
 #if ASF_TEST_VIA_MIRROR
   ASF_RUN(dyn_rtti_tests_detail::TestMirrorMethod_Ref);

@@ -27,29 +27,24 @@ asf::abi_namespace_name
 | **默认** | `0`（CMake：`OFF`） |
 | **开启** | 虚表带 **meta 头**；提供 `dyn_cast` |
 
-**语义保证**：句柄锚定在创建 Final 可达 Trait 树的某个节点：叶绑定锚在 Final 叶，中间节点绑定锚在构造 Trait 自身的节点；section-prefix 上行保持节点；Redirect 上行重新锚定在 cover 节点。锚点**构造即固定**——`dyn_cast` 命中只换虚表、不动 tag，cast 结果与历史无关。运行时判定扫描锚点节点的**存活祖先闭包**——与静态上行同一 reachable 集——只在候选层数等于目标静态 DAG 层数时比对身份。命中是**精确**的：对象动态类型确实实现了 `To`，句柄随之换到 `To` 自己的虚表。miss 是确定的：`To` 比锚点更深（在构造 Trait 之下）或不在其祖先中。闭包属于锚点：叶锚点可达全部存活祖先——菱形两支都在——而中间锚点的同辈分支与其下覆盖叶都是 miss。等价说法：绑定把句柄**构造为**该构造 Trait——擦除句柄的动态类型就是锚点，`dyn_cast` 在该构造类型上复现 `dynamic_cast`（祖先命中，之下与同辈 miss）。树宽于 tag 容量是**编译期错误**，`dyn_cast` 没有 UB 路径。静态类型已知时优先隐式上行 / `trait_cast` / `as`；运行时情形由 `dyn_cast` 精确回答。
+**语义保证**：句柄锚定在创建 Final 可达 Trait 树的某个节点：叶绑定锚在 Final 叶，中间节点绑定锚在构造 Trait 自身的节点。锚点**构造即固定**——上行（section-prefix 或 Redirect）只换视图、`dyn_cast` 命中只换虚表，都不动 tag；tag 是构造身份而非表状态，cast 结果与历史无关。运行时判定先经构造键的链接通道把目标身份按 typeid 解析到其节点（类型不在树中即在此失败），再校验解析节点的静态 DAG 层数与目标一致，最后检查锚点节点的**存活祖先闭包**——与静态上行同一 reachable 集——是否含该节点下标。命中是**精确**的：对象动态类型确实实现了 `To`，句柄随之换到 `To` 自己的虚表。miss 是确定的：`To` 比锚点更深（在构造 Trait 之下）或不在其祖先中。闭包属于锚点：叶锚点可达全部存活祖先——菱形两支都在——而中间锚点的同辈分支与其下覆盖叶都是 miss。等价说法：绑定把句柄**构造为**该构造 Trait——擦除句柄的动态类型就是锚点，`dyn_cast` 在该构造类型上复现 `dynamic_cast`（祖先命中，之下与同辈 miss）。树宽于 tag 容量是**编译期错误**，`dyn_cast` 没有 UB 路径。静态类型已知时优先隐式上行 / `trait_cast` / `as`；运行时情形由 `dyn_cast` 精确回答。
 
-meta 结构：一个 `{ type, node_count, walk, node_typeid }` 头（`type` 是指向 Storage 的 `const std::type_info&`），`tables[0..x)` 紧随该头（`this + 1`）。x 个节点是 Final 的 dyn 上行可达 Trait（`reachable_t<Final>`，自身在前）——每个逻辑 Trait 一个节点，与后代 cover section-prefix 共享表时 `tables[]` 会重复同一物理虚表。cast 树是**代码而非数据**：`walk` 是 per-Final 分派（每个 Final 一个函数，跨 Storage/As/Mask 键 COMDAT 共享），按节点 tag 选定锚点后扫描其 constexpr 展开的祖先闭包——level 与被比对的身份都是常量，只有 `to_id` / `to_level` 是运行期入参；`node_typeid` 是 per-Final 的节点 → Trait `typeid` 分派。不再有 `ids[]` / `links[]` 数组。句柄 vt 在指针 tag 位段携带**节点 tag**：构造锚点节点的下标（绑定时为构造 Trait 的节点——叶绑定即节点 0——，Redirect 上行后为 cover 节点）；产出 vt 的入口（构造 / redirect thunk / walk 命中）都返回预打 tag 的指针——walk 命中沿用输入 tag——槽位访问前摘 tag。tag 喂给 `walk` / `node_typeid` 分派并索引本 meta 块的 `tables[]`。tag 位段位于指针顶部 `ASF_DYN_VT_TAG_HI_BITS` 位（64 位默认 16 即 65536 个节点，假设 48 位规范形虚拟地址——没有任何编译器设施上报 VA 位宽，LA57 类机器须设为 7；`0`（32 位默认）回落对齐低位 `countr_zero(alignof(vt_fn))` = 3 位 = 8 个节点）；**最大节点下标超出 2^位宽 在 meta 实例化处直接报编译错误**，没有运行时逃逸。每个物理虚表键各有一份 meta（键间不共享）。
+meta 结构：一个 `{ type, node_count, walk, node_typeid }` 头（`type` 是指向 Storage 的 `const std::type_info&`）——没有 `tables[]` 尾缀，节点表由解析代码引用而非按 meta 块存储。x 个节点是 Final 的 dyn 上行可达 Trait（`reachable_t<Final>`，自身在前），每个逻辑 Trait 一个节点。cast 树是**代码而非数据**：`walk` 是 per-key cast 入口（`rtti_cast_vt`），先把目标身份解析成其节点的带 tag 表——INTERMEDIATE 下经 **ADL 对象虚表链接函数**（`adl_dyn_object_vt(tag, to_id)` 重载，每 (Mask, Final, Storage, As) 键随构造注入一次，类型树与节点表同处一个链接产物，由同一 COMDAT 单元择出；无 INTERMEDIATE 时直接调用同一 per-key 解析）——类型不在树中在此返回 `nullptr`；随后校验解析节点的静态 DAG 层数等于 `trait_level_v<To>`（跨 TU 树定义不一致在此被拦成安全的 miss），再以纯整数比对测试锚点节点的 constexpr 展开祖先闭包是否含该下标，命中即返回以锚点重新打 tag 的命中节点表。节点按类型唯一（`reachable_t` 去重），链接函数内的解析只需 typeid，level 闸在 cast 入口层。`node_typeid` 是 per-Final 的节点 → Trait `typeid` 分派。不再有 `ids[]` / `links[]` / `tables[]` 数组。句柄 vt 在指针 tag 位段携带**节点 tag**：构造锚点节点的下标（绑定时为构造 Trait 的节点——叶绑定即节点 0——，上行与命中都保持它）；产出 vt 的入口（构造 / 上行 / walk 命中）都携带锚点 tag——上行与命中沿用输入 tag——槽位访问前摘 tag。tag 喂给 `walk` / `node_typeid` 分派。tag 位段位于指针顶部 `ASF_DYN_VT_TAG_HI_BITS` 位（64 位默认 16 即 65536 个节点，假设 48 位规范形虚拟地址——没有任何编译器设施上报 VA 位宽，LA57 类机器须设为 7；`0`（32 位默认）回落对齐低位 `countr_zero(alignof(vt_fn))` = 3 位 = 8 个节点）；**最大节点下标超出 2^位宽 在 meta 实例化处直接报编译错误**，没有运行时逃逸。每个物理虚表键各有一份 meta（键间不共享）。
 
 ```
-vt[-2] --> +-------------------------------+  vtable_meta_inst<X>
-           | meta: type = typeid(Storage)  |
-           |       node_count = X          |
-           |       walk -------------+-----+--> rtti_walk_dispatch<Final>
-           |       node_typeid ------+     +--> rtti_node_typeid_dispatch<Final>
-           +-------------------------+
-           | tables[0] --------------+-----+--> 叶表
-           | tables[1] --------------+-----+--> cover 表（可能重复）
-           |  ...                    |
-           | tables[X-1] ------------+-----+--> cover 表
-           +-------------------------+
-            每 (Mask, Final, Storage, As) 键一份实例；tables() = meta + 1
-            walk / node_typeid：per-Final 代码，跨键 COMDAT 共享
+vt[-2] --> +-------------------------------+  vtable_meta
+           | type = typeid(Storage)  |
+           | node_count              |
+           | walk -------------+-----+--> rtti_cast_vt<键>
+           | node_typeid ------+     |     （解析经 ADL 链接函数）
+           +-------------------+     +--> rtti_node_typeid_dispatch<Final>
+            每 (Mask, Final, Storage, As) 键一份实例
 
 walk_cast(vt, to_id, to_level):                 // to_level = trait_level_v<To>
-  i = meta->walk(node_of(vt), to_id, to_level)   // tag 选锚点；其祖先闭包是
-      // constexpr 展开：level 与比对身份是常量，to_id / to_level 是运行期
-  i < 0 -> miss；否则 tag_vt(meta->tables()[i], node_of(vt))   // 命中只换表，锚点 tag 不变
+  return meta->walk(node_of(vt), to_id, to_level)
+      // 解析：adl_dyn_object_vt(tag, to_id) -> 带 tag 表 / nullptr（不含 level）
+      // level 闸：解析节点的静态 DAG 层数须等于 to_level
+      // 成员判定：锚点闭包对解析下标的整数比对；命中以锚点重新打 tag
 ```
 
 `dyn_cast`：能静态上行则走转换构造（`upcast_vt`）；否则从句柄锚点节点走 meta 祖先闭包扫描；miss 时为空（见上：查到 ≠ 语义正确）。
