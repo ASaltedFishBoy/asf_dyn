@@ -21,8 +21,7 @@ g++ -std=c++26 -freflection -Iinclude examples/zh/01_static.cpp -lstdc++exp -o 0
 自包含示例（`include/` 相对仓库根）：
 
 ```cpp
-#include "interface.hpp"
-#include "cast.hpp"
+#include "asf.hpp"
 
 #include <print>
 #include <string>

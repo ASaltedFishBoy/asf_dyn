@@ -42,13 +42,32 @@
 
 ## 构建
 
-库为 **header-only**，需要 **C++26 反射**（GCC 16+ 使用 `-freflection`）。将 `include/` 加入包含路径；GCC 通常还需链接 `stdc++exp`。
+需要 **C++26 反射**（GCC 16+ 使用 `-freflection`），GCC 通常还需链接 `stdc++exp`。两种使用方式：
+
+### 模块（本仓库默认）
+
+GCC 16.2+，`-std=c++26 -fmodules-ts`。CMake 构建会把 `src/asf.cppm` 编译为命名模块 `asf`（手写 BMI 构建，见 `cmake/AsfModules.cmake`，不用 CMake 的模块扫描），测试与示例默认以模块方式构建（`ASF_MODULE=ON`）。
+
+```cpp
+#include "asf.hpp"   // 模块模式：先文本包含 std 伞头，再 `import asf;`
+```
+
+`include/asf.hpp` 按你的特性宏选择模块变体：`asf` / `asf_noint`（`ASF_HAS_DYN_INTERMEDIATE=0`）/ `asf_rtti`（`ASF_HAS_DYN_RTTI=1`）/ `asf_rtti_noint`。它会在 import **之前**文本包含 `asf/std.hpp`——GCC 只把模块 GMF 中的 std 声明与**更早**的文本声明去重，因此如果你直接写 `import asf;`，模块 GMF 覆盖的 std 头必须文本包含在 import 之上。
+
+不用 CMake：自行编译 `src/asf.cppm`（`-fmodules-ts -x c++ -c`；工作目录会生成 `gcm.cache/asf.gcm`），然后在同一目录用相同选项编译消费者。
+
+### 头文件
+
+经典的 header-only 模式。将 `include/` 加入包含路径（`#include "asf.hpp"` 拉取全部；各库头也仍可单独直接包含）：
 
 ```cmake
 target_include_directories(app PRIVATE path/to/asf_dyn/include)
 target_compile_options(app PRIVATE -freflection -std=c++26)
 target_link_libraries(app PRIVATE stdc++exp)
 ```
+
+本仓库自带的测试/示例默认走模块模式；配置 `-DASF_MODULE=OFF` 即为文本包含构建。
+
 
 单文件示例：
 
@@ -67,8 +86,7 @@ ctest --test-dir build
 ### Hello World
 
 ```cpp
-#include "interface.hpp"
-#include "cast.hpp"
+#include "asf.hpp"
 
 #include <print>
 #include <string>

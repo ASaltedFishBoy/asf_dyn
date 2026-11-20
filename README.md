@@ -40,13 +40,31 @@ Docs:
 
 ## Build
 
-**Header-only.** Needs **C++26 reflection** (GCC 16+ with `-freflection`). Add `include/` to the include path; GCC usually also needs `stdc++exp`.
+Needs **C++26 reflection** (GCC 16+ with `-freflection`). GCC usually also needs `stdc++exp`. Two consumption modes:
+
+### Module (default in this repo)
+
+GCC 16.2+, `-std=c++26 -fmodules-ts`. The CMake build compiles `src/asf.cppm` into the named module `asf` (hand-rolled BMI build in `cmake/AsfModules.cmake`, no CMake module scanning) and builds tests/examples against it (`ASF_MODULE=ON` by default).
+
+```cpp
+#include "asf.hpp"   // module mode: textual std umbrella, then `import asf;`
+```
+
+`include/asf.hpp` picks the module variant matching your feature macros: `asf` / `asf_noint` (`ASF_HAS_DYN_INTERMEDIATE=0`) / `asf_rtti` (`ASF_HAS_DYN_RTTI=1`) / `asf_rtti_noint`. It textually includes `asf/std.hpp` **before** the import — GCC only dedups the module's GMF std declarations against *earlier* textual ones, so if you write `import asf;` directly, any std header the module's GMF covers must be textually included above the import.
+
+Without CMake: compile `src/asf.cppm` yourself (`-fmodules-ts -x c++ -c`; the working dir receives `gcm.cache/asf.gcm`), then compile consumers with the same flags from that dir.
+
+### Headers
+
+Header-only, the classic mode. Add `include/` to the include path (`#include "asf.hpp"` pulls everything; the individual library headers can still be included directly):
 
 ```cmake
 target_include_directories(app PRIVATE path/to/asf_dyn/include)
 target_compile_options(app PRIVATE -freflection -std=c++26)
 target_link_libraries(app PRIVATE stdc++exp)
 ```
+
+This repo's own tests/examples use module mode by default; configure with `-DASF_MODULE=OFF` for the textual-include build.
 
 Single-file example:
 
@@ -65,8 +83,7 @@ ctest --test-dir build
 ### Hello World
 
 ```cpp
-#include "interface.hpp"
-#include "cast.hpp"
+#include "asf.hpp"
 
 #include <print>
 #include <string>

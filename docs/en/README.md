@@ -21,8 +21,7 @@ g++ -std=c++26 -freflection -Iinclude examples/en/01_static.cpp -lstdc++exp -o 0
 Self-contained (`include/` relative to the repository root):
 
 ```cpp
-#include "interface.hpp"
-#include "cast.hpp"
+#include "asf.hpp"
 
 #include <print>
 #include <string>
