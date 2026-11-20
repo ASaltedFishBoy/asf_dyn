@@ -1,7 +1,6 @@
 // to_dyn with an undersized cache_ptr Spec: sizeof/alignof fit is
 // static_assert, not a soft-empty handle.
-#include "dyn.hpp"
-#include "cast.hpp"
+#include "asf.hpp"
 
 #include <string>
 

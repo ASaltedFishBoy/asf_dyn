@@ -107,8 +107,18 @@
              ASF_PP_CAT(_t, ASF_DYN_VT_TAG_HI_BITS))
 #endif
 
+// Module-interface builds (src/asf.cppm defines ASF_MODULE_INTERFACE before
+// textually including the headers): export the API at namespace granularity
+// and let the module unit import the std dependencies as header units
+// (headers skip their own <...> includes under ASF_MODULE_INTERFACE).
+#ifdef ASF_MODULE_INTERFACE
+#define ASF_EXPORT export
+#else
+#define ASF_EXPORT
+#endif
+
 #define ASF_BEGIN_NAMESPACE                                                    \
-  namespace asf {                                                               \
+  ASF_EXPORT namespace asf {                                                   \
   inline namespace ASF_ABI_NAMESPACE {
 
 #define ASF_END_NAMESPACE                                                      \

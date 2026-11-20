@@ -13,7 +13,7 @@
 //   Solo   : A, [truncate]B          (B lifted; A dominated; live B)
 
 #include "asf_check.hpp"
-#include "cast.hpp"
+#include "asf.hpp"
 
 namespace iface_dominant_base_detail {
 

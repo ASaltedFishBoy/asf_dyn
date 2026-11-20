@@ -4,9 +4,11 @@
 
 #include "detail/iface_proxy.hpp"
 
+#ifndef ASF_MODULE_INTERFACE
 #include <concepts>
 #include <type_traits>
 #include <utility>
+#endif  // ASF_MODULE_INTERFACE
 
 ASF_BEGIN_NAMESPACE
 

@@ -4,6 +4,7 @@
 
 #include "iface_vtable.hpp"
 
+#ifndef ASF_MODULE_INTERFACE
 #include <compare>
 #include <concepts>
 #include <cstddef>
@@ -12,6 +13,7 @@
 #include <tuple>
 #include <type_traits>
 #include <utility>
+#endif  // ASF_MODULE_INTERFACE
 
 ASF_BEGIN_NAMESPACE
 

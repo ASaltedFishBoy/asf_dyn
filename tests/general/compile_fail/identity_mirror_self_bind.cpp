@@ -1,6 +1,6 @@
 // Compile-fail: a method whose Self is identity_mirror<T> (mirror<T, T>)
 // needs Storage = identity_mirror<T>; a plain object bind is rejected.
-#include "cast.hpp"
+#include "asf.hpp"
 
 struct P {
   int x{};

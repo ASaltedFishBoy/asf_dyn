@@ -1,6 +1,5 @@
 // 动态绑定：dyn / c_dyn / to_dyn（类型擦除的 Trait 句柄）
-#include "interface.hpp"
-#include "cast.hpp"
+#include "asf.hpp"
 
 #include <print>
 #include <string>

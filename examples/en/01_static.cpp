@@ -1,6 +1,5 @@
 // Static binding: iface / to_iface (concrete T kept in the type).
-#include "interface.hpp"
-#include "cast.hpp"
+#include "asf.hpp"
 
 #include <print>
 #include <string>

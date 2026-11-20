@@ -7,6 +7,7 @@
 #include "iface.hpp"
 #include "ref.hpp"
 
+#ifndef ASF_MODULE_INTERFACE
 #include <cassert>
 #include <concepts>
 #include <cstddef>
@@ -18,6 +19,7 @@
 #include <type_traits>
 #include <typeinfo>
 #include <utility>
+#endif  // ASF_MODULE_INTERFACE
 
 ASF_BEGIN_NAMESPACE
 
@@ -3011,7 +3013,7 @@ class sub_dyn_body
   using base = dyn_ptr_core<Derived, Trait, Const, true, true, Ptr>;
 
  protected:
-  using typename base::ptr_type;
+  using ptr_type = typename base::ptr_type;
   using vt_ptr = detail::vt_ptr;
   using base::base;
   using base::obj_;
@@ -3134,8 +3136,8 @@ template <template <class> class Trait, class Ptr>
 class sub_dyn
     : public detail::sub_dyn_body<Trait, false, Ptr, sub_dyn<Trait, Ptr>> {
   using base = detail::sub_dyn_body<Trait, false, Ptr, sub_dyn<Trait, Ptr>>;
-  using typename base::ptr_type;
-  using typename base::vt_ptr;
+  using ptr_type = typename base::ptr_type;
+  using vt_ptr = typename base::vt_ptr;
 
   template <template <class> class T, class P>
   friend class c_sub_dyn;
@@ -3151,8 +3153,8 @@ template <template <class> class Trait, class Ptr>
 class c_sub_dyn
     : public detail::sub_dyn_body<Trait, true, Ptr, c_sub_dyn<Trait, Ptr>> {
   using base = detail::sub_dyn_body<Trait, true, Ptr, c_sub_dyn<Trait, Ptr>>;
-  using typename base::ptr_type;
-  using typename base::vt_ptr;
+  using ptr_type = typename base::ptr_type;
+  using vt_ptr = typename base::vt_ptr;
 
   template <template <class> class T, bool C, class P, class D>
   friend class detail::sub_dyn_body;
@@ -3270,7 +3272,7 @@ class dyn_handle_base
  protected:
   using core =
       dyn_ptr_core<Handle<Trait, Ptr>, Trait, Const, false, false, Ptr>;
-  using typename core::ptr_type;
+  using ptr_type = typename core::ptr_type;
   using core::core;
   using core::obj_;
   using core::storage_addr;
@@ -4433,7 +4435,7 @@ template <template <class> class Trait, bool Const, class SrcP>
 struct dyn_proxy_facet<Trait, Const, SrcP, false>
     : dyn_obs_proxy_facet<Trait, Const> {
   using obs_base = dyn_obs_proxy_facet<Trait, Const>;
-  using typename obs_base::Obs;
+  using Obs = typename obs_base::Obs;
   using obs_base::operator=;
   using obs_base::buf_;
   using src_ptr = SrcP;
@@ -4476,7 +4478,7 @@ template <template <class> class Trait, bool Const, class SrcP>
 struct dyn_proxy_facet<Trait, Const, SrcP, true>
     : dyn_obs_proxy_facet<Trait, Const> {
   using obs_base = dyn_obs_proxy_facet<Trait, Const>;
-  using typename obs_base::Obs;
+  using Obs = typename obs_base::Obs;
   using obs_base::operator=;
   using obs_base::buf_;
   using src_ptr = SrcP;
@@ -4524,7 +4526,7 @@ struct dyn_proxy : dyn_proxy_facet<Trait, false, SrcP, false> {
 template <template <class> class Trait, class SrcP>
 struct dyn_c_proxy : dyn_proxy_facet<Trait, true, SrcP, false> {
   using base = dyn_proxy_facet<Trait, true, SrcP, false>;
-  using typename base::Obs;
+  using Obs = typename base::Obs;
   using base::base;
   using base::operator=;
   dyn_c_proxy(dyn_c_proxy const&) = default;

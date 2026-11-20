@@ -1,6 +1,6 @@
 // 浅交接：代理析构的 unique_ptr 可以桥接到
 // unique_ptr<void, dyn_default_delete>。c_dyn 也可以直接持有代理析构 Ptr。
-#include "cast.hpp"
+#include "asf.hpp"
 
 #include <memory>
 #include <print>

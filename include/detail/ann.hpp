@@ -2,10 +2,12 @@
 
 #include "iface_config.hpp"
 
+#ifndef ASF_MODULE_INTERFACE
 #include <cstddef>
 #include <meta>
 #include <string>
 #include <string_view>
+#endif  // ASF_MODULE_INTERFACE
 
 ASF_BEGIN_NAMESPACE
 
@@ -77,4 +79,4 @@ inline constexpr auto unchecked = [] {
 
 ASF_END_NAMESPACE
 
-namespace asf_ann = asf::ann;
+ASF_EXPORT namespace asf_ann = asf::ann;

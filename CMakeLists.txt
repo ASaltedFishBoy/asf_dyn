@@ -19,6 +19,9 @@ option(ASF_HAS_DYN_MULTI_VT
 option(ASF_HAS_DYN_SINGLE_INHERIT
        "Require SI among live dyn bases at dyn generation (default OFF); truncate/truncated edges allowed. Mutually exclusive with ASF_HAS_DYN_MULTI_VT."
        OFF)
+option(ASF_MODULE
+  "Build tests/examples against the C++26 named module 'asf' (GCC 16.2; see cmake/AsfModules.cmake). OFF keeps the textual-include build (include/asf.hpp header mode)."
+  ON)
 if(ASF_HAS_DYN_SINGLE_INHERIT AND ASF_HAS_DYN_MULTI_VT)
   message(FATAL_ERROR
     "ASF_HAS_DYN_SINGLE_INHERIT and ASF_HAS_DYN_MULTI_VT are mutually exclusive; "
@@ -68,6 +71,27 @@ function(asf_target_defs tgt)
   endif()
 endfunction()
 
+# --- C++26 named module variants (feature defines are baked into the BMI) ---
+# Module name maps 1:1 to the consumer's effective (RTTI, INTERMEDIATE) pair;
+# include/asf.hpp selects the same name from those macros. Build all
+# combinations any target in this configure can resolve to.
+if(ASF_MODULE)
+  include(cmake/AsfModules.cmake)
+  asf_add_module(asf RTTI 0 INTERMEDIATE 1)
+  asf_add_module(asf_noint RTTI 0 INTERMEDIATE 0)
+  asf_add_module(asf_rtti RTTI 1 INTERMEDIATE 1)
+  if(ASF_HAS_DYN_RTTI AND NOT ASF_HAS_DYN_INTERMEDIATE)
+    asf_add_module(asf_rtti_noint RTTI 1 INTERMEDIATE 0)
+  endif()
+endif()
+
+# Bind a test/example target to its module variant (no-op when ASF_MODULE=OFF).
+function(asf_maybe_bind tgt)
+  if(ASF_MODULE)
+    asf_bind_module(${tgt} ${ARGN})
+  endif()
+endfunction()
+
 # Examples: en/ + zh/ (same code, bilingual comments).
 set(ASF_EXAMPLE_NAMES
   01_static 02_dyn 03_operators 04_lifetime 05_mi_cast 06_mirror 07_pointer_trait)
@@ -77,6 +101,7 @@ foreach(lang IN ITEMS en zh)
     add_executable(${tgt} examples/${lang}/${name}.cpp)
     target_include_directories(${tgt} PRIVATE include)
     asf_target_defs(${tgt})
+    asf_maybe_bind(${tgt})
   endforeach()
 endforeach()
 
@@ -91,6 +116,7 @@ function(asf_test dir name)
   add_executable(${tgt} tests/${dir}/${name}.cpp)
   target_include_directories(${tgt} PRIVATE include tests)
   asf_target_defs(${tgt} ${ARGN})
+  asf_maybe_bind(${tgt} ${ARGN})
   set(ASF_LAST_TEST_TGT ${tgt} PARENT_SCOPE)
 endfunction()
 
@@ -105,6 +131,7 @@ function(asf_dual_test name)
   target_include_directories(${tgt} PRIVATE include tests)
   target_compile_definitions(${tgt} PRIVATE ASF_TEST_VIA_MIRROR=1)
   asf_target_defs(${tgt} ${ARGN})
+  asf_maybe_bind(${tgt} ${ARGN})
   set(ASF_LAST_TEST_TGT ${tgt} PARENT_SCOPE)
 endfunction()
 
@@ -119,6 +146,7 @@ if(ASF_HAS_DYN_SINGLE_INHERIT)
     tests/general/iface_single_inherit_mi_fail.cpp)
   target_include_directories(iface_single_inherit_mi_fail PRIVATE include tests)
   asf_target_defs(iface_single_inherit_mi_fail)
+  asf_maybe_bind(iface_single_inherit_mi_fail)
   set_target_properties(iface_single_inherit_mi_fail PROPERTIES
     EXCLUDE_FROM_ALL TRUE EXCLUDE_FROM_DEFAULT_BUILD TRUE)
 endif()
@@ -136,7 +164,7 @@ asf_dual_test(dyn_creation_tests)
 asf_dual_test(cache_deref_tests)
 asf_dual_test(dyn_dispatch_tests)
 # RTTI suite always enables meta header / dyn_cast (independent of global option).
-asf_dual_test(dyn_rtti_tests)
+asf_dual_test(dyn_rtti_tests RTTI 1)
 target_compile_definitions(dyn_rtti_tests PRIVATE ASF_HAS_DYN_RTTI=1)
 target_compile_definitions(mirror_dyn_rtti_tests PRIVATE ASF_HAS_DYN_RTTI=1)
 
@@ -153,12 +181,14 @@ foreach(name IN ITEMS cref_wrong_impl_dyn cref_wrong_impl_iface)
   add_executable(${name} tests/general/compile_fail/${name}.cpp)
   target_include_directories(${name} PRIVATE include tests)
   asf_target_defs(${name})
+  asf_maybe_bind(${name})
   set_target_properties(${name} PROPERTIES
     EXCLUDE_FROM_ALL TRUE EXCLUDE_FROM_DEFAULT_BUILD TRUE)
   add_executable(mirror_${name} tests/general/compile_fail/${name}.cpp)
   target_include_directories(mirror_${name} PRIVATE include tests)
   target_compile_definitions(mirror_${name} PRIVATE ASF_TEST_VIA_MIRROR=1)
   asf_target_defs(mirror_${name})
+  asf_maybe_bind(mirror_${name})
   set_target_properties(mirror_${name} PROPERTIES
     EXCLUDE_FROM_ALL TRUE EXCLUDE_FROM_DEFAULT_BUILD TRUE)
   list(APPEND ASF_COMPILE_FAIL_TGTS ${name} mirror_${name})
@@ -182,6 +212,7 @@ foreach(dir_name IN ITEMS
   add_executable(${tgt} tests/${dir}/compile_fail/${name}.cpp)
   target_include_directories(${tgt} PRIVATE include tests)
   asf_target_defs(${tgt})
+  asf_maybe_bind(${tgt})
   set_target_properties(${tgt} PROPERTIES
     EXCLUDE_FROM_ALL TRUE EXCLUDE_FROM_DEFAULT_BUILD TRUE)
   list(APPEND ASF_COMPILE_FAIL_TGTS ${tgt})
@@ -191,6 +222,7 @@ endforeach()
 add_executable(rtti_node_overflow tests/general/compile_fail/rtti_node_overflow.cpp)
 target_include_directories(rtti_node_overflow PRIVATE include tests)
 asf_target_defs(rtti_node_overflow)
+asf_maybe_bind(rtti_node_overflow RTTI 1)
 target_compile_definitions(rtti_node_overflow PRIVATE ASF_HAS_DYN_RTTI=1)
 # Pin the tag capacity to 8 (hi-bit field of 3) so the 9-node chain
 # overflows regardless of the platform default. A global override wins
@@ -223,6 +255,7 @@ add_executable(multi_final_odr
   tests/general/multi_cu/multi_final_odr_tu_i3.cpp)
 target_include_directories(multi_final_odr PRIVATE include tests tests/general/multi_cu)
 asf_target_defs(multi_final_odr)
+asf_maybe_bind(multi_final_odr)
 
 add_executable(mirror_multi_final_odr
   tests/general/multi_cu/multi_final_odr_main.cpp
@@ -231,17 +264,20 @@ add_executable(mirror_multi_final_odr
 target_include_directories(mirror_multi_final_odr PRIVATE include tests tests/general/multi_cu)
 target_compile_definitions(mirror_multi_final_odr PRIVATE ASF_TEST_VIA_MIRROR=1)
 asf_target_defs(mirror_multi_final_odr)
+asf_maybe_bind(mirror_multi_final_odr)
 
 # INTERMEDIATE=OFF copies of the multi-final tests: final bind + upcast only.
 if(ASF_HAS_DYN_INTERMEDIATE)
   add_executable(multi_final_off tests/general/multi_final_ub.cpp)
   target_include_directories(multi_final_off PRIVATE include tests)
   asf_target_defs(multi_final_off INTERMEDIATE 0)
+  asf_maybe_bind(multi_final_off INTERMEDIATE 0)
 
   add_executable(mirror_multi_final_off tests/general/multi_final_ub.cpp)
   target_include_directories(mirror_multi_final_off PRIVATE include tests)
   target_compile_definitions(mirror_multi_final_off PRIVATE ASF_TEST_VIA_MIRROR=1)
   asf_target_defs(mirror_multi_final_off INTERMEDIATE 0)
+  asf_maybe_bind(mirror_multi_final_off INTERMEDIATE 0)
 
   add_executable(multi_final_odr_off
     tests/general/multi_cu/multi_final_odr_main.cpp
@@ -250,6 +286,7 @@ if(ASF_HAS_DYN_INTERMEDIATE)
   target_include_directories(multi_final_odr_off PRIVATE
     include tests tests/general/multi_cu)
   asf_target_defs(multi_final_odr_off INTERMEDIATE 0)
+  asf_maybe_bind(multi_final_odr_off INTERMEDIATE 0)
 
   add_executable(mirror_multi_final_odr_off
     tests/general/multi_cu/multi_final_odr_main.cpp
@@ -259,6 +296,7 @@ if(ASF_HAS_DYN_INTERMEDIATE)
     include tests tests/general/multi_cu)
   target_compile_definitions(mirror_multi_final_odr_off PRIVATE ASF_TEST_VIA_MIRROR=1)
   asf_target_defs(mirror_multi_final_odr_off INTERMEDIATE 0)
+  asf_maybe_bind(mirror_multi_final_odr_off INTERMEDIATE 0)
 endif()
 
 enable_testing()

@@ -2,7 +2,7 @@
 // A dyn slot requires self first; otherwise compile error.
 // Reverse (literal on the left) is iface * only: another Trait overload with
 // self later, marked no_dyn. Bare iface has no Trait operators.
-#include "cast.hpp"
+#include "asf.hpp"
 
 #include <print>
 #include <string>

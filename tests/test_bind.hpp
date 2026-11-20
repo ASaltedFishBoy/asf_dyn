@@ -7,7 +7,7 @@
 // binds (unique_ptr / cache_ptr / shared_ptr) do not depend on the pass and
 // call asf::to_dyn directly in the shared source.
 
-#include "cast.hpp"
+#include "asf.hpp"
 
 #ifndef ASF_TEST_VIA_MIRROR
 #define ASF_TEST_VIA_MIRROR 0

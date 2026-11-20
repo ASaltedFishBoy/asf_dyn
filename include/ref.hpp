@@ -8,9 +8,11 @@
 
 #include "detail/iface_config.hpp"
 
+#ifndef ASF_MODULE_INTERFACE
 #include <cstddef>
 #include <type_traits>
 #include <utility>
+#endif  // ASF_MODULE_INTERFACE
 
 ASF_BEGIN_NAMESPACE
 namespace detail {

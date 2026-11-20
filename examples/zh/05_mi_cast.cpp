@@ -1,5 +1,5 @@
 // 多继承：iface/dyn 上行、as<>、Redirect cover、dyn_cast 下行。
-#include "cast.hpp"
+#include "asf.hpp"
 
 #include <print>
 #include <string>

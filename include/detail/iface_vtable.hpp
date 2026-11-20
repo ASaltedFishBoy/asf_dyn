@@ -4,9 +4,11 @@
 
 #include "iface_trait.hpp"
 
+#ifndef ASF_MODULE_INTERFACE
 #include <cstddef>
 #include <new>
 #include <utility>
+#endif  // ASF_MODULE_INTERFACE
 
 ASF_BEGIN_NAMESPACE
 namespace detail {

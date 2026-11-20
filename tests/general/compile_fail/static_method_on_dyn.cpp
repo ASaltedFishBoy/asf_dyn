@@ -1,5 +1,5 @@
 // Compile-fail: a static method is iface-only, never a dyn slot.
-#include "cast.hpp"
+#include "asf.hpp"
 
 template <typename T = void>
 struct Mixed;

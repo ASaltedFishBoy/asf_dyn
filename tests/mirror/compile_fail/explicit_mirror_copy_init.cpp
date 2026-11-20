@@ -1,6 +1,6 @@
 // Compile-fail: explicit-only conversion to mirror<T> keeps the sourced
 // mirror explicit too -- copy-initialization is ill-formed.
-#include "mirror.hpp"
+#include "asf.hpp"
 
 struct B {
   int x;

@@ -6,6 +6,7 @@
 #include "iface_config.hpp"
 #include "mirror.hpp"
 
+#ifndef ASF_MODULE_INTERFACE
 #include <bit>
 #include <cassert>
 #include <concepts>
@@ -20,6 +21,7 @@
 #include <typeinfo>
 #include <utility>
 #include <vector>
+#endif  // ASF_MODULE_INTERFACE
 
 ASF_BEGIN_NAMESPACE
 namespace detail {

@@ -3,7 +3,7 @@
 // ASF_DYN_VT_TAG_HI_BITS=3), so the vtable_meta_holder static_assert
 // fires. Requires ASF_HAS_DYN_RTTI=1.
 
-#include "cast.hpp"
+#include "asf.hpp"
 
 // The 9-node chain overflows exactly at capacity 8 (3-bit tag field). If
 // the capacity differs (global width override) this guard fails instead,

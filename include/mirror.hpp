@@ -2,6 +2,7 @@
 
 #include "detail/ann.hpp"
 
+#ifndef ASF_MODULE_INTERFACE
 #include <concepts>
 #include <cstddef>
 #include <memory>
@@ -11,6 +12,7 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
+#endif  // ASF_MODULE_INTERFACE
 
 ASF_BEGIN_NAMESPACE
 namespace detail {

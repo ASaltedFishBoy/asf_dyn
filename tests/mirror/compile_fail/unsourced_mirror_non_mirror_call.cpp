@@ -1,5 +1,5 @@
 // Compile-fail: unsourced mirror iface can only call [[=mirror]] methods.
-#include "cast.hpp"
+#include "asf.hpp"
 
 struct P {
   int x{};

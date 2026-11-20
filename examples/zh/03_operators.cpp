@@ -1,7 +1,7 @@
 // Trait 的 op_* 方法生成 proxy 成员运算符，句柄在左侧。
 // dyn 槽要求 self 是第一个参数；不在首位则编译错误。
 // 反向(字面量在左)仅 iface *: Trait 上再写 self 靠后的重载并标 no_dyn。裸 iface 没有 Trait 运算符。
-#include "cast.hpp"
+#include "asf.hpp"
 
 #include <print>
 #include <string>

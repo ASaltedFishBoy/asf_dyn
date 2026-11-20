@@ -2,8 +2,7 @@
 //   Person              一个对象（name、age… 就地存放）
 //   mirror<Person>      指向这些成员的引用束
 //   mirror<Person, Src> 同一束，外加指回 Src 的指针
-#include "interface.hpp"
-#include "cast.hpp"
+#include "asf.hpp"
 
 #include <memory>
 #include <print>

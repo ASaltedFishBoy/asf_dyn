@@ -2,8 +2,7 @@
 //   Person              one object (name, age, ... stored in place)
 //   mirror<Person>      a bundle of references to those members
 //   mirror<Person, Src> that bundle plus a pointer back to Src
-#include "interface.hpp"
-#include "cast.hpp"
+#include "asf.hpp"
 
 #include <memory>
 #include <print>

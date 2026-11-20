@@ -1,6 +1,5 @@
 // 静态绑定：iface / to_iface（类型参数中保留具体 T）
-#include "interface.hpp"
-#include "cast.hpp"
+#include "asf.hpp"
 
 #include <print>
 #include <string>
