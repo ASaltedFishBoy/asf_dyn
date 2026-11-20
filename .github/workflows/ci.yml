@@ -20,6 +20,8 @@ jobs:
         config:
           - name: default
             flags: ""
+          - name: include-mode
+            flags: "-DASF_MODULE=OFF"
     steps:
       - uses: actions/checkout@v4
 
