@@ -99,6 +99,16 @@ function(asf_add_module name)
     VERBATIM)
   add_custom_target(asf_mod_${name} DEPENDS ${_gcm} ${_obj})
 
+  # Serialize module BMI builds: concurrent GCC module compiles sharing one
+  # gcm.cache crash some GCC builds (crosstool GCC 16 on ygl dies with a bus
+  # error in module_state::write_cluster). Module compiles are ~15 s each;
+  # consumers still build fully parallel afterwards.
+  get_property(_last_mod GLOBAL PROPERTY ASF_LAST_MOD_TARGET)
+  if(_last_mod)
+    add_dependencies(asf_mod_${name} ${_last_mod})
+  endif()
+  set_property(GLOBAL PROPERTY ASF_LAST_MOD_TARGET asf_mod_${name})
+
   # Static lib carrying the module object for consumers to link.
   add_library(asfmod_${name} STATIC ${_obj})
   set_source_files_properties(${_obj} PROPERTIES
