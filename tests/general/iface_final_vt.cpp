@@ -189,19 +189,19 @@ using Storage = Person;
 using As = Person;
 
 template <template <class> class Final, template <class> class Trait>
-asf::detail::vt_ptr table_of() {
-  return asf::detail::vtable<false, Final, Trait, Storage, As>::slots();
+asf_dyn::detail::vt_ptr table_of() {
+  return asf_dyn::detail::vtable<false, Final, Trait, Storage, As>::slots();
 }
 
 template <template <class> class Final>
 consteval std::size_t layout_table_count() {
-  return asf::detail::vtable_instance_count<Final>();
+  return asf_dyn::detail::vtable_instance_count<Final>();
 }
 
 template <template <class> class Final, std::size_t I>
-asf::detail::vt_ptr table_at() {
+asf_dyn::detail::vt_ptr table_at() {
   constexpr auto trait = [] {
-    auto out = asf::detail::vtable_traits_vec<Final<void>>();
+    auto out = asf_dyn::detail::vtable_traits_vec<Final<void>>();
     return out[I];
   }();
   constexpr auto helper = std::meta::substitute(
@@ -210,20 +210,20 @@ asf::detail::vt_ptr table_at() {
 }
 
 template <template <class> class Final, std::size_t... I>
-std::vector<asf::detail::vt_ptr> collect_impl(std::index_sequence<I...>) {
+std::vector<asf_dyn::detail::vt_ptr> collect_impl(std::index_sequence<I...>) {
   return {table_at<Final, I>()...};
 }
 
 template <template <class> class Final>
-std::vector<asf::detail::vt_ptr> collect_final_tables() {
+std::vector<asf_dyn::detail::vt_ptr> collect_final_tables() {
   return collect_impl<Final>(
       std::make_index_sequence<layout_table_count<Final>()>{});
 }
 
 // Call To's own method via get; require return derived from Src.
 template <template <class> class To, template <class> class From>
-bool invoke_own(asf::dyn<From>& from, Person const& src) {
-  if constexpr (!asf::detail::is_trait_base_of<To, From>())
+bool invoke_own(asf_dyn::dyn<From>& from, Person const& src) {
+  if constexpr (!asf_dyn::detail::is_trait_base_of<To, From>())
     return true;
   auto h = from.template as<To>();
   if constexpr (std::same_as<To<void>, I1<void>>)
@@ -251,10 +251,10 @@ bool invoke_own(asf::dyn<From>& from, Person const& src) {
 }
 
 template <template <class> class From>
-bool upcasts_from(asf::dyn<From>& from, Person const& src, std::size_t& n) {
+bool upcasts_from(asf_dyn::dyn<From>& from, Person const& src, std::size_t& n) {
   bool ok = true;
   auto one = [&]<template <class> class To>() {
-    if constexpr (asf::detail::is_trait_base_of<To, From>()) {
+    if constexpr (asf_dyn::detail::is_trait_base_of<To, From>()) {
       ok = invoke_own<To>(from, src) && ok;
       ++n;
     }
@@ -272,16 +272,16 @@ bool upcasts_from(asf::dyn<From>& from, Person const& src, std::size_t& n) {
   return ok;
 }
 
-std::size_t all_upcast_channels(asf::dyn<I10>& root, Person const& src,
+std::size_t all_upcast_channels(asf_dyn::dyn<I10>& root, Person const& src,
                                 bool& ok) {
   std::size_t n = 0;
   auto from = [&]<template <class> class From>() {
-    if constexpr (!asf::detail::is_trait_base_of<From, I10>())
+    if constexpr (!asf_dyn::detail::is_trait_base_of<From, I10>())
       return;
     if constexpr (std::same_as<From<void>, I10<void>>) {
       ok = upcasts_from(root, src, n) && ok;
-    } else if constexpr (asf::detail::can_dyn_upcast<From, I10>()) {
-      auto h = asf::trait_cast<From>(root);
+    } else if constexpr (asf_dyn::detail::can_dyn_upcast<From, I10>()) {
+      auto h = asf_dyn::trait_cast<From>(root);
       ok = upcasts_from(h, src, n) && ok;
     }
   };
@@ -298,7 +298,7 @@ std::size_t all_upcast_channels(asf::dyn<I10>& root, Person const& src,
   return n;
 }
 
-std::size_t unique_count(std::vector<asf::detail::vt_ptr> a) {
+std::size_t unique_count(std::vector<asf_dyn::detail::vt_ptr> a) {
   std::sort(a.begin(), a.end());
   a.erase(std::unique(a.begin(), a.end()), a.end());
   return a.size();
@@ -306,14 +306,14 @@ std::size_t unique_count(std::vector<asf::detail::vt_ptr> a) {
 
 }  // namespace
 
-static_assert(asf::detail::is_trait_final<I10, Person>());
-static_assert(!asf::detail::is_trait_final<I9, Person>());
-static_assert(asf::detail::can_dyn_upcast<I4, I10>());
-static_assert(asf::detail::can_dyn_upcast<I1, I8>());
-static_assert(asf::detail::can_dyn_upcast<I7, I9>());
+static_assert(asf_dyn::detail::is_trait_final<I10, Person>());
+static_assert(!asf_dyn::detail::is_trait_final<I9, Person>());
+static_assert(asf_dyn::detail::can_dyn_upcast<I4, I10>());
+static_assert(asf_dyn::detail::can_dyn_upcast<I1, I8>());
+static_assert(asf_dyn::detail::can_dyn_upcast<I7, I9>());
 // Cross-diamond: I8鈫扞9 is not an upcast (siblings).
-static_assert(!asf::detail::can_dyn_upcast<I9, I8>());
-static_assert(!asf::detail::can_dyn_upcast<I8, I9>());
+static_assert(!asf_dyn::detail::can_dyn_upcast<I9, I8>());
+static_assert(!asf_dyn::detail::can_dyn_upcast<I8, I9>());
 
 int main() {
 #if !ASF_HAS_DYN_MULTI_VT
@@ -346,7 +346,7 @@ int main() {
   auto tables = collect_final_tables<I10>();
   auto n_runtime = unique_count(tables);
   constexpr auto layout_n = layout_table_count<I10>();
-  constexpr auto section_n = asf::detail::sections_only<I10>().size();
+  constexpr auto section_n = asf_dyn::detail::sections_only<I10>().size();
 
   if (n_runtime != layout_n)
     return 1;
@@ -354,10 +354,10 @@ int main() {
   // Multi-hop get (same Layout vt); to_dyn only when storing another flat.
   if (root.as<I8>().as<I5>().as<I2>().as<I1>()->m1() != src_tag(person, 1))
     return 1;
-  if (asf::get_proxy<I1>(root)->m1() != src_tag(person, 1))
+  if (asf_dyn::get_proxy<I1>(root)->m1() != src_tag(person, 1))
     return 1;
   {
-    auto d9 = asf::trait_cast<I9>(root);
+    auto d9 = asf_dyn::trait_cast<I9>(root);
     if (d9.as<I6>().as<I3>().as<I1>()->m1() != src_tag(person, 1))
       return 1;
   }

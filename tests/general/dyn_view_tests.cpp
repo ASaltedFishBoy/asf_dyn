@@ -1,4 +1,4 @@
-// Non-owning asf::dyn / view of owning unique_dyn.
+// Non-owning asf_dyn::dyn / view of owning unique_dyn.
 
 #include "asf_check.hpp"
 #include "test_bind.hpp"
@@ -105,8 +105,8 @@ template <>
 struct DerivedMut<IntBox> final {};
 
 void TestViewOfNull() {
-  asf::dyn<MutStringable> p1;
-  asf::dyn<MutStringable> p2 = p1;
+  asf_dyn::dyn<MutStringable> p1;
+  asf_dyn::dyn<MutStringable> p2 = p1;
   ASF_CHECK(!p2);
 }
 
@@ -121,9 +121,9 @@ void TestViewIndependentUse() {
 void TestViewOfOwning() {
   IntBox src{123};
   auto obs = asf_test::to_dyn<MutStringable>(src);
-  auto p1 = asf::construct<std::unique_ptr>(*obs);
-  asf::dyn<MutStringable> p2 =
-      asf::to_dyn<MutStringable>(static_cast<IntBox*>(p1.raw()));
+  auto p1 = asf_dyn::construct<std::unique_ptr>(*obs);
+  asf_dyn::dyn<MutStringable> p2 =
+      asf_dyn::to_dyn<MutStringable>(static_cast<IntBox*>(p1.raw()));
   ASF_CHECK(static_cast<bool>(p1));
   ASF_CHECK(static_cast<bool>(p2));
   (*p2) += 3;
@@ -153,8 +153,8 @@ void TestOverloadShadowing() {
 }
 
 void TestSubstitution_FromNull() {
-  asf::dyn<DerivedMut> p1;
-  asf::dyn<BaseToString> p3 = p1;
+  asf_dyn::dyn<DerivedMut> p1;
+  asf_dyn::dyn<BaseToString> p3 = p1;
   ASF_CHECK(!p1);
   ASF_CHECK(!p3);
 }
@@ -162,7 +162,7 @@ void TestSubstitution_FromNull() {
 void TestSubstitution_FromValue() {
   IntBox v{123};
   auto p1 = asf_test::to_dyn<DerivedMut>(v);
-  asf::dyn<BaseToString> p3 = p1;
+  asf_dyn::dyn<BaseToString> p3 = p1;
   ASF_CHECK_EQ(p1.as<BaseToString>()->to_string(), "123");
   ASF_CHECK_EQ(p3->to_string(), "123");
 }

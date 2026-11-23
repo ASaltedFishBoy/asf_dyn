@@ -8,7 +8,7 @@
 // The 9-node chain overflows exactly at capacity 8 (3-bit tag field). If
 // the capacity differs (global width override) this guard fails instead,
 // so the case always fails for the stated reason.
-static_assert(asf::detail::vt_tag_capacity == 8,
+static_assert(asf_dyn::detail::vt_tag_capacity == 8,
               "this case assumes a 3-bit vt tag (capacity 8)");
 
 template <typename T = void>
@@ -58,7 +58,7 @@ struct C9<Obj> final {};
 
 int main() {
   Obj o{};
-  auto d = asf::to_dyn<C9>(&o);  // ERROR: 9 nodes > tag capacity (8)
+  auto d = asf_dyn::to_dyn<C9>(&o);  // ERROR: 9 nodes > tag capacity (8)
   (void)d;
   return 0;
 }

@@ -31,7 +31,7 @@ Stringable<void> {
   template <typename T>
   [[=asf_ann::imple]] T op_construct(ASF_TEST_COPYM(T) self) {
 #if ASF_TEST_VIA_MIRROR
-    return asf::value_of(self);
+    return asf_dyn::value_of(self);
 #else
     return self;
 #endif
@@ -39,7 +39,7 @@ Stringable<void> {
   template <typename T>
   [[=asf_ann::imple]] T op_construct(ASF_TEST_RM(T) self) {
 #if ASF_TEST_VIA_MIRROR
-    return asf::value_of(self);
+    return asf_dyn::value_of(self);
 #else
     return std::move(self);
 #endif
@@ -254,6 +254,7 @@ using bridged_uptr = std::unique_ptr<T, vt_slot_delete>;
 }  // namespace dyn_creation_tests_detail
 
 namespace asf {
+namespace dyn {
 template <class T, class Alloc>
 struct pointer_trait<dyn_creation_tests_detail::fake_uptr<T, Alloc>> {
   using kind = pointer_vt_destroy_tag;
@@ -263,6 +264,7 @@ struct pointer_trait<std::unique_ptr<
     void, dyn_creation_tests_detail::vt_slot_delete>> {
   using kind = pointer_deleter_tag;
 };
+}  // namespace dyn
 }  // namespace asf
 
 namespace dyn_creation_tests_detail {
@@ -288,14 +290,14 @@ struct Boxable<Box> final {
 };
 
 #if ASF_TEST_VIA_MIRROR
-static_assert(asf::mirror_like<asf::mirror<Session>>);
-static_assert(asf::mirror_like<asf::mirror<Session, Session>>);
-static_assert(asf::mirror_like<asf::mirror<Session> const&>);
-static_assert(!asf::mirror_like<Session>);
-static_assert(!asf::sourced_mirror<asf::mirror<Session>>);
-static_assert(asf::sourced_mirror<asf::mirror<Session, Session>>);
-static_assert(asf::sourced_mirror<asf::mirror<Session, Session>&&>);
-static_assert(!asf::sourced_mirror<Session>);
+static_assert(asf_dyn::mirror_like<asf_dyn::mirror<Session>>);
+static_assert(asf_dyn::mirror_like<asf_dyn::mirror<Session, Session>>);
+static_assert(asf_dyn::mirror_like<asf_dyn::mirror<Session> const&>);
+static_assert(!asf_dyn::mirror_like<Session>);
+static_assert(!asf_dyn::sourced_mirror<asf_dyn::mirror<Session>>);
+static_assert(asf_dyn::sourced_mirror<asf_dyn::mirror<Session, Session>>);
+static_assert(asf_dyn::sourced_mirror<asf_dyn::mirror<Session, Session>&&>);
+static_assert(!asf_dyn::sourced_mirror<Session>);
 
 template <typename T = void>
 struct NoMirrorBind;
@@ -319,26 +321,26 @@ struct MirrorOnMethods<void> {
   [[=asf_ann::mirror]] void foo(auto&) {}
 };
 
-static_assert(!asf::detail::layout_allows_unsourced_mirror<NoMirrorBind>());
-static_assert(asf::detail::layout_allows_unsourced_mirror<MirrorOnTrait>());
-static_assert(asf::detail::layout_allows_unsourced_mirror<MirrorOnMethods>());
+static_assert(!asf_dyn::detail::layout_allows_unsourced_mirror<NoMirrorBind>());
+static_assert(asf_dyn::detail::layout_allows_unsourced_mirror<MirrorOnTrait>());
+static_assert(asf_dyn::detail::layout_allows_unsourced_mirror<MirrorOnMethods>());
 // Sourced mirror binds without [[=mirror]] (Storage=Src, like T*).
-static_assert(std::constructible_from<asf::dyn<NoMirrorBind>,
-                                      asf::mirror<Session, Session>&>);
-static_assert(std::constructible_from<asf::dyn<MirrorOnTrait>,
-                                      asf::mirror<Session, Session>&>);
+static_assert(std::constructible_from<asf_dyn::dyn<NoMirrorBind>,
+                                      asf_dyn::mirror<Session, Session>&>);
+static_assert(std::constructible_from<asf_dyn::dyn<MirrorOnTrait>,
+                                      asf_dyn::mirror<Session, Session>&>);
 // Mirror Arg -> iface: bind ungated (no full-layout [[=mirror]] required).
 static_assert(std::constructible_from<
-              asf::iface<NoMirrorBind, asf::mirror<Session, Session>>,
-              asf::mirror<Session, Session>&>);
+              asf_dyn::iface<NoMirrorBind, asf_dyn::mirror<Session, Session>>,
+              asf_dyn::mirror<Session, Session>&>);
 static_assert(std::constructible_from<
-              asf::iface<NoMirrorBind, asf::mirror<Session>>,
-              asf::mirror<Session>&>);
+              asf_dyn::iface<NoMirrorBind, asf_dyn::mirror<Session>>,
+              asf_dyn::mirror<Session>&>);
 
 // Destroy is always vt[-1] (~Src). view≠Src may still use dyn.
 struct SessionAlias {
   Session& s;
-  operator asf::mirror<Session>() { return asf::mirror<Session>{s}; }
+  operator asf_dyn::mirror<Session>() { return asf_dyn::mirror<Session>{s}; }
 };
 
 template <typename T = void>
@@ -350,11 +352,11 @@ UniformLifeNamed<void> {
 };
 
 static_assert(
-    asf::detail::sourced_dyn_view_mismatch_ok<UniformLifeNamed>());
-static_assert(std::constructible_from<asf::dyn<UniformLifeNamed>,
-                                      asf::mirror<Session, Session>&>);
-static_assert(std::constructible_from<asf::dyn<UniformLifeNamed>,
-                                      asf::mirror<Session, SessionAlias>&>);
+    asf_dyn::detail::sourced_dyn_view_mismatch_ok<UniformLifeNamed>());
+static_assert(std::constructible_from<asf_dyn::dyn<UniformLifeNamed>,
+                                      asf_dyn::mirror<Session, Session>&>);
+static_assert(std::constructible_from<asf_dyn::dyn<UniformLifeNamed>,
+                                      asf_dyn::mirror<Session, SessionAlias>&>);
 
 // Entirely non-mirror layout: view≠Src may still use dyn.
 template <typename T = void>
@@ -365,41 +367,41 @@ struct NonMirrorLife<void> {
 };
 
 static_assert(
-    asf::detail::sourced_dyn_view_mismatch_ok<NonMirrorLife>());
-static_assert(std::constructible_from<asf::dyn<NonMirrorLife>,
-                                      asf::mirror<Session, SessionAlias>&>);
+    asf_dyn::detail::sourced_dyn_view_mismatch_ok<NonMirrorLife>());
+static_assert(std::constructible_from<asf_dyn::dyn<NonMirrorLife>,
+                                      asf_dyn::mirror<Session, SessionAlias>&>);
 
 // Conversion-operator explicitness carries to the sourced mirror: a
 // non-explicit operator mirror<T>() keeps the sourced conversion implicit;
 // an explicit one keeps it explicit. The dyn mirror interface accepts the
 // explicitly built mirror all the same.
-static_assert(std::convertible_to<SessionAlias&, asf::mirror<Session>>);
+static_assert(std::convertible_to<SessionAlias&, asf_dyn::mirror<Session>>);
 static_assert(
-    std::convertible_to<SessionAlias&, asf::mirror<Session, SessionAlias>>);
+    std::convertible_to<SessionAlias&, asf_dyn::mirror<Session, SessionAlias>>);
 
 struct ExplicitSessionAlias {
   Session& s;
-  explicit operator asf::mirror<Session>() {
-    return asf::mirror<Session>{s};
+  explicit operator asf_dyn::mirror<Session>() {
+    return asf_dyn::mirror<Session>{s};
   }
 };
 
 static_assert(
-    std::constructible_from<asf::mirror<Session>, ExplicitSessionAlias&>);
+    std::constructible_from<asf_dyn::mirror<Session>, ExplicitSessionAlias&>);
 static_assert(
-    !std::convertible_to<ExplicitSessionAlias&, asf::mirror<Session>>);
+    !std::convertible_to<ExplicitSessionAlias&, asf_dyn::mirror<Session>>);
 static_assert(
-    std::constructible_from<asf::mirror<Session, ExplicitSessionAlias>,
+    std::constructible_from<asf_dyn::mirror<Session, ExplicitSessionAlias>,
                             ExplicitSessionAlias&>);
 static_assert(
     !std::convertible_to<ExplicitSessionAlias&,
-                         asf::mirror<Session, ExplicitSessionAlias>>);
+                         asf_dyn::mirror<Session, ExplicitSessionAlias>>);
 static_assert(
-    std::constructible_from<asf::dyn<NonMirrorLife>,
-                            asf::mirror<Session, ExplicitSessionAlias>&>);
+    std::constructible_from<asf_dyn::dyn<NonMirrorLife>,
+                            asf_dyn::mirror<Session, ExplicitSessionAlias>&>);
 static_assert(
-    std::constructible_from<asf::dyn<Stringable>,
-                            asf::mirror<Session, ExplicitSessionAlias>&>);
+    std::constructible_from<asf_dyn::dyn<Stringable>,
+                            asf_dyn::mirror<Session, ExplicitSessionAlias>&>);
 #endif
 
 
@@ -427,16 +429,16 @@ ImplOnTrait<void> {
   auto op_construct(auto& self) -> std::remove_cvref_t<decltype(self)>  { return self; }
 };
 
-static_assert(!asf::detail::is_dyn_slot(asf::detail::find_method(
+static_assert(!asf_dyn::detail::is_dyn_slot(asf_dyn::detail::find_method(
     ^^NodynOnTrait<void>, "foo")));
-static_assert(asf::detail::convert_is_explicit(asf::detail::find_method(
+static_assert(asf_dyn::detail::convert_is_explicit(asf_dyn::detail::find_method(
     ^^ExOnTrait<void>, "op_convert")));
-static_assert(asf::detail::method_prefers_imple(asf::detail::find_method(
+static_assert(asf_dyn::detail::method_prefers_imple(asf_dyn::detail::find_method(
     ^^ImplOnTrait<void>, "op_construct")));
 // invoke_resolved uses the As-aware probe; Trait-level [[=imple]] must
 // still win (fallback to declaring Trait, same as method_prefers_imple).
-static_assert(asf::detail::method_prefers_imple_as<ImplOnTrait, Session>(
-    asf::detail::find_method(^^ImplOnTrait<void>, "op_construct")));
+static_assert(asf_dyn::detail::method_prefers_imple_as<ImplOnTrait, Session>(
+    asf_dyn::detail::find_method(^^ImplOnTrait<void>, "op_construct")));
 
 template <typename T = void>
 struct CallMut;
@@ -486,34 +488,34 @@ void TestMakeDynObserved() {
 void TestCDynObserved_Impl() {
   // As = const Session reuses the unqualified Stringable<Session> impl.
   Session s{101, "CDynObs"};
-  asf::c_dyn<Stringable> cd{&s};
+  asf_dyn::c_dyn<Stringable> cd{&s};
   ASF_CHECK_EQ(cd->to_string(), asf_test::session_text("CDynObs", 101));
 }
 
 void TestCIfaceObserved_Impl() {
   // iface<const T> reuses the unqualified impl via the same const-As path.
   Session s{103, "CIfaceObs"};
-  asf::iface<Stringable, const Session> ci{s};
+  asf_dyn::iface<Stringable, const Session> ci{s};
   ASF_CHECK_EQ(ci->to_string(), asf_test::session_text("CIfaceObs", 103));
 }
 
 void TestToCIface() {
   Session s{105, "ToCIface"};
-  auto ci = asf::to_c_iface<Stringable>(s);
+  auto ci = asf_dyn::to_c_iface<Stringable>(s);
   static_assert(
-      std::is_same_v<decltype(ci), asf::iface<Stringable, const Session>>);
+      std::is_same_v<decltype(ci), asf_dyn::iface<Stringable, const Session>>);
   ASF_CHECK_EQ(ci->to_string(), asf_test::session_text("ToCIface", 105));
-  auto mi = asf::to_c_iface<Stringable>(asf::to_mirror(s));
+  auto mi = asf_dyn::to_c_iface<Stringable>(asf_dyn::to_mirror(s));
   static_assert(std::is_same_v<
                 decltype(mi),
-                asf::iface<Stringable, asf::mirror<const Session, Session>>>);
+                asf_dyn::iface<Stringable, asf_dyn::mirror<const Session, Session>>>);
   ASF_CHECK_EQ(mi->to_string(), asf_test::session_text("ToCIface", 105));
-  auto ui = asf::to_c_iface<Stringable>(asf::to_pure_mirror(s));
+  auto ui = asf_dyn::to_c_iface<Stringable>(asf_dyn::to_pure_mirror(s));
   // Unsourced pure mirror stays a mirror Arg (const View); not peeled to
   // plain const Session.
   static_assert(std::is_same_v<
                 decltype(ui),
-                asf::iface<Stringable, asf::mirror<const Session>>>);
+                asf_dyn::iface<Stringable, asf_dyn::mirror<const Session>>>);
   ASF_CHECK_EQ(ui->to_string(), asf_test::session_text("ToCIface", 105));
 }
 #endif
@@ -540,7 +542,7 @@ struct BareAuto<void> {
 
 void TestBareAutoReturn_DisplayFallback() {
   BareBox b{140};
-  asf::iface<BareAuto, BareBox> i{b};
+  asf_dyn::iface<BareAuto, BareBox> i{b};
   ASF_CHECK_EQ(i->who(), asf_test::no_sso("BareAuto"));
   ASF_CHECK_EQ(i->eat(), 240);    // auto:6&&  (rvalue self)
   ASF_CHECK_EQ(i->bump(), 141);   // auto:6&
@@ -553,11 +555,11 @@ void TestSourcedMirror_ExplicitConversionOp_Dyn() {
   ExplicitSessionAlias ea{s};
   // Explicit-only conversion: direct-initialization builds the sourced
   // mirror; copy-initialization is ill-formed (asserted above).
-  asf::mirror<Session, ExplicitSessionAlias> em{ea};
-  ASF_CHECK(&asf::src_of(em) == &ea);
-  asf::dyn<Stringable> d{em};
+  asf_dyn::mirror<Session, ExplicitSessionAlias> em{ea};
+  ASF_CHECK(&asf_dyn::src_of(em) == &ea);
+  asf_dyn::dyn<Stringable> d{em};
   ASF_CHECK_EQ(d->to_string(), asf_test::session_text("ExplAlias", 102));
-  asf::c_dyn<Stringable> cd{em};
+  asf_dyn::c_dyn<Stringable> cd{em};
   ASF_CHECK_EQ(cd->to_string(), asf_test::session_text("ExplAlias", 102));
 }
 
@@ -569,14 +571,14 @@ template <>
 struct PresentSelf<void> {
   int as_obj(auto& self) {
     using R = std::remove_cvref_t<decltype(self)>;
-    if constexpr (asf::is_mirror_v<R>)
+    if constexpr (asf_dyn::is_mirror_v<R>)
       return 801;
     else
       return 802;
   }
   [[=asf_ann::mirror]] int as_mir(auto& self) {
     using R = std::remove_cvref_t<decltype(self)>;
-    if constexpr (asf::is_mirror_v<R>)
+    if constexpr (asf_dyn::is_mirror_v<R>)
       return 803;
     else
       return 804;
@@ -585,18 +587,18 @@ struct PresentSelf<void> {
 
 void TestMirrorIface_PresentSelf() {
   Session s{106, "PresentSelf"};
-  auto sm = asf::to_mirror(s);
-  auto si = asf::to_iface<PresentSelf>(sm);
+  auto sm = asf_dyn::to_mirror(s);
+  auto si = asf_dyn::to_iface<PresentSelf>(sm);
   static_assert(std::is_same_v<
                 decltype(si),
-                asf::iface<PresentSelf, asf::mirror<Session, Session>>>);
+                asf_dyn::iface<PresentSelf, asf_dyn::mirror<Session, Session>>>);
   ASF_CHECK_EQ(si->as_obj(), 802); // peel to Src
   ASF_CHECK_EQ(si->as_mir(), 803); // present mirror
 
-  auto um = asf::to_pure_mirror(s);
-  auto ui = asf::to_iface<PresentSelf>(um);
+  auto um = asf_dyn::to_pure_mirror(s);
+  auto ui = asf_dyn::to_iface<PresentSelf>(um);
   static_assert(std::is_same_v<
-                decltype(ui), asf::iface<PresentSelf, asf::mirror<Session>>>);
+                decltype(ui), asf_dyn::iface<PresentSelf, asf_dyn::mirror<Session>>>);
   ASF_CHECK_EQ(ui->as_mir(), 803); // present mirror; as_obj is ill-formed
 }
 #endif
@@ -605,15 +607,15 @@ void TestMirrorIface_PresentSelf() {
 void TestMakeDyn_Unique_FromValue() {
   Session s{1, "Session"};
   auto obs = asf_test::to_dyn<Stringable>(s);
-  auto p = asf::construct<std::unique_ptr>(*obs);
-  static_assert(std::same_as<decltype(p), asf::unique_dyn<Stringable>>);
+  auto p = asf_dyn::construct<std::unique_ptr>(*obs);
+  static_assert(std::same_as<decltype(p), asf_dyn::unique_dyn<Stringable>>);
   ASF_CHECK(static_cast<bool>(p));
   ASF_CHECK_EQ(p->to_string(), asf_test::session_text("Session", 1));
-  auto q = asf::to_dyn<Stringable, std::unique_ptr>(s);
-  static_assert(std::same_as<decltype(q), asf::unique_dyn<Stringable>>);
+  auto q = asf_dyn::to_dyn<Stringable, std::unique_ptr>(s);
+  static_assert(std::same_as<decltype(q), asf_dyn::unique_dyn<Stringable>>);
   ASF_CHECK_EQ(q->to_string(), asf_test::session_text("Session", 1));
   CountingAllocState::allocate_count = 0;
-  auto r = asf::to_dyn<Stringable, std::unique_ptr>(CountingAlloc<void>{}, s);
+  auto r = asf_dyn::to_dyn<Stringable, std::unique_ptr>(CountingAlloc<void>{}, s);
   ASF_CHECK(CountingAllocState::allocate_count >= 1u);
   ASF_CHECK_EQ(r->to_string(), asf_test::session_text("Session", 1));
 }
@@ -621,15 +623,15 @@ void TestMakeDyn_Unique_FromValue() {
 void TestMakeDynShared_FromValue() {
   Session s{1, "Session"};
   auto obs = asf_test::to_dyn<Stringable>(s);
-  auto p = asf::construct<std::shared_ptr>(*obs);
-  static_assert(std::same_as<decltype(p), asf::shared_dyn<Stringable>>);
+  auto p = asf_dyn::construct<std::shared_ptr>(*obs);
+  static_assert(std::same_as<decltype(p), asf_dyn::shared_dyn<Stringable>>);
   ASF_CHECK_EQ(p->to_string(), asf_test::session_text("Session", 1));
   auto p2 = p;
   ASF_CHECK(p == p2);
   ASF_CHECK_EQ(p2->to_string(), asf_test::session_text("Session", 1));
   CountingAllocState::allocate_count = 0;
-  auto q = asf::construct<std::shared_ptr>(CountingAlloc<void>{}, *obs);
-  static_assert(std::same_as<decltype(q), asf::shared_dyn<Stringable>>);
+  auto q = asf_dyn::construct<std::shared_ptr>(CountingAlloc<void>{}, *obs);
+  static_assert(std::same_as<decltype(q), asf_dyn::shared_dyn<Stringable>>);
   ASF_CHECK_EQ(q->to_string(), asf_test::session_text("Session", 1));
   ASF_CHECK(CountingAllocState::allocate_count >= 1u);
 }
@@ -637,8 +639,8 @@ void TestMakeDynShared_FromValue() {
 void TestStdWeakPtrCompatibility() {
   Session s{1, "Session"};
   auto obs = asf_test::to_dyn<Stringable>(s);
-  auto p1 = asf::construct<std::shared_ptr>(*obs);
-  asf::dyn<Stringable, std::weak_ptr<void>> p2{p1};
+  auto p1 = asf_dyn::construct<std::shared_ptr>(*obs);
+  asf_dyn::dyn<Stringable, std::weak_ptr<void>> p2{p1};
   ASF_CHECK(static_cast<bool>(p1));
   ASF_CHECK(static_cast<bool>(p2));
   auto p3 = p2.lock();
@@ -658,8 +660,8 @@ void TestExternalSharedPtr() {
                                         ++del;
                                         delete p;
                                       });
-  auto d = asf::to_dyn<Stringable>(ext);
-  static_assert(std::same_as<decltype(d), asf::shared_dyn<Stringable>>);
+  auto d = asf_dyn::to_dyn<Stringable>(ext);
+  static_assert(std::same_as<decltype(d), asf_dyn::shared_dyn<Stringable>>);
   ASF_CHECK_EQ(d->to_string(), asf_test::session_text("Ext", 9));
   d.reset();
   ASF_CHECK_EQ(del, 0);
@@ -670,38 +672,38 @@ void TestExternalSharedPtr() {
 void TestConstructCopy_IndependentStorage() {
   Session s{3, "Ada"};
   auto obs = asf_test::to_dyn<Stringable>(s);
-  auto clone = asf::construct(*obs);
-  static_assert(std::same_as<decltype(clone), asf::dyn<Stringable>>);
+  auto clone = asf_dyn::construct(*obs);
+  static_assert(std::same_as<decltype(clone), asf_dyn::dyn<Stringable>>);
   s.label = asf_test::no_sso("Zed");
   ASF_CHECK_EQ(clone->to_string(), asf_test::session_text("Ada", 3));
 }
 
 void TestConstruct_ExtraArgs() {
   Session s{4, "Alloc"};
-  asf::dyn<Relabel> obs{&s};
-  auto copy = asf::construct(*obs, asf_test::no_sso("Retag"));
+  asf_dyn::dyn<Relabel> obs{&s};
+  auto copy = asf_dyn::construct(*obs, asf_test::no_sso("Retag"));
   ASF_CHECK_EQ(copy->to_string(), asf_test::session_text("Retag", 4));
   ASF_CHECK_EQ(s.label, asf_test::no_sso("Alloc"));
-  auto numbered = asf::construct(*obs, 9);
+  auto numbered = asf_dyn::construct(*obs, 9);
   ASF_CHECK_EQ(numbered->to_string(), asf_test::session_text("9", 4));
   ASF_CHECK_EQ(s.label, asf_test::no_sso("Alloc"));
   CountingAllocState::allocate_count = 0;
-  auto owned = asf::construct<std::unique_ptr>(CountingAlloc<void>{}, *obs,
+  auto owned = asf_dyn::construct<std::unique_ptr>(CountingAlloc<void>{}, *obs,
                                                asf_test::no_sso("Owned"));
   ASF_CHECK_EQ(owned->to_string(), asf_test::session_text("Owned", 4));
   ASF_CHECK(CountingAllocState::allocate_count >= 1u);
   {
     Session mv{4, "Alloc"};
-    asf::dyn<Relabel> src{&mv};
-    auto moved = asf::construct(src.rproxy(), asf_test::no_sso("Retag"));
+    asf_dyn::dyn<Relabel> src{&mv};
+    auto moved = asf_dyn::construct(src.rproxy(), asf_test::no_sso("Retag"));
     ASF_CHECK_EQ(moved->to_string(), asf_test::session_text("Retag", 4));
     ASF_CHECK(mv.label.empty());
   }
   {
     Session mv{4, "Alloc"};
-    asf::dyn<Relabel> src{&mv};
+    asf_dyn::dyn<Relabel> src{&mv};
     CountingAllocState::allocate_count = 0;
-    auto moved = asf::construct<std::unique_ptr>(
+    auto moved = asf_dyn::construct<std::unique_ptr>(
         CountingAlloc<void>{}, src.rproxy(), asf_test::no_sso("Moved"));
     ASF_CHECK_EQ(moved->to_string(), asf_test::session_text("Moved", 4));
     ASF_CHECK(mv.label.empty());
@@ -714,7 +716,7 @@ void TestAllocateDyn_DirectAllocator_FromValue() {
   CountingAllocState::deallocate_count = 0;
   Session s{4, "Alloc"};
   auto obs = asf_test::to_dyn<Stringable>(s);
-  auto p = asf::construct<std::unique_ptr>(CountingAlloc<void>{}, *obs);
+  auto p = asf_dyn::construct<std::unique_ptr>(CountingAlloc<void>{}, *obs);
   ASF_CHECK(static_cast<bool>(p));
   ASF_CHECK_EQ(p->to_string(), asf_test::session_text("Alloc", 4));
   ASF_CHECK(CountingAllocState::allocate_count >= 1u);
@@ -725,7 +727,7 @@ void TestAllocateDyn_DirectAllocator_FromValue() {
 void TestAllocateDyn_DirectAllocator_Lifetime_Move() {
   Session s{5, "MoveAlloc"};
   auto obs = asf_test::to_dyn<Stringable>(s);
-  auto p1 = asf::construct<std::unique_ptr>(CountingAlloc<void>{}, *obs);
+  auto p1 = asf_dyn::construct<std::unique_ptr>(CountingAlloc<void>{}, *obs);
   ASF_CHECK_EQ(p1->to_string(), asf_test::session_text("MoveAlloc", 5));
   auto p2 = std::move(p1);
   ASF_CHECK(static_cast<bool>(p2));
@@ -738,14 +740,14 @@ void TestConstructMove_ViaStarDyn() {
     Session s{6, "ConstructMove"};
     auto obs = asf_test::to_dyn<Stringable>(s);
     auto view = *obs;
-    asf::detail::dyn_rproxy rp(view);
-    asf::detail::dyn_proxy back(rp);
+    asf_dyn::detail::dyn_rproxy rp(view);
+    asf_dyn::detail::dyn_proxy back(rp);
     ASF_CHECK_EQ(back.to_string(), asf_test::session_text("ConstructMove", 6));
   }
   {
     Session s{6, "ConstructMove"};
     auto obs = asf_test::to_dyn<Stringable>(s);
-    auto h = asf::construct(obs.rproxy());
+    auto h = asf_dyn::construct(obs.rproxy());
     ASF_CHECK_EQ(h->to_string(), asf_test::session_text("ConstructMove", 6));
   }
 }
@@ -753,7 +755,7 @@ void TestConstructMove_ViaStarDyn() {
 void TestMakeDynShared_Lifetime_Copy() {
   Session s{7, "SharedCopy"};
   auto obs = asf_test::to_dyn<Stringable>(s);
-  auto p1 = asf::construct<std::shared_ptr>(*obs);
+  auto p1 = asf_dyn::construct<std::shared_ptr>(*obs);
   auto p2 = p1;
   ASF_CHECK(p1 == p2);
   ASF_CHECK_EQ(p2->to_string(), asf_test::session_text("SharedCopy", 7));
@@ -762,7 +764,7 @@ void TestMakeDynShared_Lifetime_Copy() {
 void TestMakeDynShared_Lifetime_Move() {
   Session s{8, "SharedMove"};
   auto obs = asf_test::to_dyn<Stringable>(s);
-  auto p1 = asf::construct<std::shared_ptr>(*obs);
+  auto p1 = asf_dyn::construct<std::shared_ptr>(*obs);
   auto p2 = std::move(p1);
   ASF_CHECK(static_cast<bool>(p2));
   ASF_CHECK(!p1);
@@ -775,7 +777,7 @@ void TestAllocateDyn_IndirectAllocator_FromValue() {
   (void)pool;
   Session s{9, "Pmr"};
   auto obs = asf_test::to_dyn<Stringable>(s);
-  auto p = asf::construct<std::unique_ptr>(
+  auto p = asf_dyn::construct<std::unique_ptr>(
       std::pmr::polymorphic_allocator<std::byte>{}, *obs);
   ASF_CHECK(static_cast<bool>(p));
   ASF_CHECK_EQ(p->to_string(), asf_test::session_text("Pmr", 9));
@@ -783,15 +785,15 @@ void TestAllocateDyn_IndirectAllocator_FromValue() {
 #endif
 
 #if 1
-using CacheSession = asf::cache_dyn<
+using CacheSession = asf_dyn::cache_dyn<
     Stringable, sizeof(Session), alignof(Session),
-    asf::pointer_ops_from_trait_or_t<Stringable, Session>>;
+    asf_dyn::pointer_ops_from_trait_or_t<Stringable, Session>>;
 
 void TestCacheDyn_FromValue() {
   CountingAllocState::allocate_count = 0;
   CountingAllocState::deallocate_count = 0;
   Session s{10, "Cache"};
-  auto d = asf::to_dyn<Stringable, asf::cache_ptr>(s);
+  auto d = asf_dyn::to_dyn<Stringable, asf_dyn::cache_ptr>(s);
   static_assert(std::same_as<decltype(d), CacheSession>);
   ASF_CHECK(static_cast<bool>(d));
   ASF_CHECK_EQ(d->to_string(), asf_test::session_text("Cache", 10));
@@ -803,7 +805,7 @@ void TestCacheDyn_FromValue() {
 
 void TestCacheDyn_Move() {
   Session s{11, "CacheMove"};
-  auto d = asf::to_dyn<Stringable, asf::cache_ptr>(s);
+  auto d = asf_dyn::to_dyn<Stringable, asf_dyn::cache_ptr>(s);
   ASF_CHECK(static_cast<bool>(d));
   ASF_CHECK_EQ(d->to_string(), asf_test::session_text("CacheMove", 11));
   auto p2 = std::move(d);
@@ -813,7 +815,7 @@ void TestCacheDyn_Move() {
 
 void TestCacheDyn_ConstructMove() {
   Session s{12, "CacheCMove"};
-  auto d = asf::to_dyn<Stringable, asf::cache_ptr>(std::move(s));
+  auto d = asf_dyn::to_dyn<Stringable, asf_dyn::cache_ptr>(std::move(s));
   static_assert(std::same_as<decltype(d), CacheSession>);
   ASF_CHECK(static_cast<bool>(d));
   ASF_CHECK_EQ(d->to_string(), asf_test::session_text("CacheCMove", 12));
@@ -839,16 +841,16 @@ struct NumView<TrivialNum> final {
 };
 
 void TestCacheTrivialCopyMove() {
-  using Ops = asf::pointer_ops_of<TrivialNum>;
+  using Ops = asf_dyn::pointer_ops_of<TrivialNum>;
   static_assert(std::same_as<
-      Ops, asf::pointer_ops<asf::op_trivial, asf::op_trivial, asf::op_trivial,
-                            asf::op_trivial, asf::op_trivial,
-                            asf::detail::cache_bool_op>>);
+      Ops, asf_dyn::pointer_ops<asf_dyn::op_trivial, asf_dyn::op_trivial, asf_dyn::op_trivial,
+                            asf_dyn::op_trivial, asf_dyn::op_trivial,
+                            asf_dyn::detail::cache_bool_op>>);
 
-  using DynOps = asf::pointer_ops_from_trait_or_t<NumView, TrivialNum>;
-  using DynPtr = asf::cache_ptr<sizeof(TrivialNum), alignof(TrivialNum), DynOps>;
-  auto d = asf::to_dyn<NumView, asf::cache_ptr>(TrivialNum{11});
-  static_assert(std::same_as<decltype(d), asf::dyn<NumView, DynPtr>>);
+  using DynOps = asf_dyn::pointer_ops_from_trait_or_t<NumView, TrivialNum>;
+  using DynPtr = asf_dyn::cache_ptr<sizeof(TrivialNum), alignof(TrivialNum), DynOps>;
+  auto d = asf_dyn::to_dyn<NumView, asf_dyn::cache_ptr>(TrivialNum{11});
+  static_assert(std::same_as<decltype(d), asf_dyn::dyn<NumView, DynPtr>>);
   ASF_CHECK(static_cast<bool>(d));
   ASF_CHECK_EQ(d->value(), 11);
 
@@ -858,8 +860,8 @@ void TestCacheTrivialCopyMove() {
   ASF_CHECK_EQ(d->value(), 12);
   ASF_CHECK_EQ(copied->value(), 11);
 
-  asf::dyn<NumView, DynPtr> assigned;
-  auto d2 = asf::to_dyn<NumView, asf::cache_ptr>(TrivialNum{3});
+  asf_dyn::dyn<NumView, DynPtr> assigned;
+  auto d2 = asf_dyn::to_dyn<NumView, asf_dyn::cache_ptr>(TrivialNum{3});
   assigned = d2;
   ASF_CHECK_EQ(assigned->value(), 3);
   static_cast<TrivialNum*>(d2.get().get())->n = 4;
@@ -877,8 +879,8 @@ void TestCacheTrivialCopyMove() {
 #if ASF_TEST_VIA_MIRROR
 void TestCacheDyn_FromMirror() {
   Session s{14, "MirrorCache"};
-  auto m = asf::to_mirror<Session>(s);
-  auto d = asf::to_dyn<Stringable, asf::cache_ptr>(m);
+  auto m = asf_dyn::to_mirror<Session>(s);
+  auto d = asf_dyn::to_dyn<Stringable, asf_dyn::cache_ptr>(m);
   ASF_CHECK(static_cast<bool>(d));
   ASF_CHECK_EQ(d->to_string(), asf_test::session_text("MirrorCache", 14));
 }
@@ -938,9 +940,9 @@ struct Stringable<TrackedSession> final {
 };
 
 #if 1
-using CacheTracked = asf::cache_dyn<
+using CacheTracked = asf_dyn::cache_dyn<
     Stringable, sizeof(TrackedSession), alignof(TrackedSession),
-    asf::pointer_ops_from_trait<Stringable>>;
+    asf_dyn::pointer_ops_from_trait<Stringable>>;
 
 // Also covers former Inplace_FromValue (same cache_dyn path).
 void TestMakeDyn_WithSBO_FromValue() {
@@ -949,7 +951,7 @@ void TestMakeDyn_WithSBO_FromValue() {
   ASF_CHECK_EQ(tracker.ops.size(), std::size_t{1});
   ASF_CHECK(tracker.ops[0].kind == LifetimeOpKind::Value);
   {
-    auto d = asf::to_dyn<Stringable, asf::cache_ptr>(session);
+    auto d = asf_dyn::to_dyn<Stringable, asf_dyn::cache_ptr>(session);
     static_assert(std::same_as<decltype(d), CacheTracked>);
     ASF_CHECK(static_cast<bool>(d));
     ASF_CHECK_EQ(d->to_string(), "Session 2");
@@ -966,7 +968,7 @@ void TestMakeDyn_WithSBO_Lifetime_Move() {
   LifetimeTracker tracker;
   TrackedSession session{&tracker};
   {
-    auto d = asf::to_dyn<Stringable, asf::cache_ptr>(session);
+    auto d = asf_dyn::to_dyn<Stringable, asf_dyn::cache_ptr>(session);
     ASF_CHECK(static_cast<bool>(d));
     ASF_CHECK_EQ(d->to_string(), "Session 2");
     auto p2 = std::move(d);
@@ -986,8 +988,8 @@ void TestMakeDyn_WithSBO_Lifetime_Copy() {
   LifetimeTracker tracker;
   TrackedSession session{&tracker};
   {
-    auto d1 = asf::to_dyn<Stringable, asf::cache_ptr>(session);
-    auto d2 = asf::to_dyn<Stringable, asf::cache_ptr>(session);
+    auto d1 = asf_dyn::to_dyn<Stringable, asf_dyn::cache_ptr>(session);
+    auto d2 = asf_dyn::to_dyn<Stringable, asf_dyn::cache_ptr>(session);
     ASF_CHECK(static_cast<bool>(d1));
     ASF_CHECK(static_cast<bool>(d2));
     ASF_CHECK_EQ(d1->to_string(), "Session 2");
@@ -1007,8 +1009,8 @@ void TestMakeDyn_WithoutSBO_FromValue() {
   TrackedSession session{&tracker};
   {
     auto obs = asf_test::to_dyn<Stringable>(session);
-    auto p = asf::construct<std::unique_ptr>(*obs);
-    static_assert(std::same_as<decltype(p), asf::unique_dyn<Stringable>>);
+    auto p = asf_dyn::construct<std::unique_ptr>(*obs);
+    static_assert(std::same_as<decltype(p), asf_dyn::unique_dyn<Stringable>>);
     ASF_CHECK(static_cast<bool>(p));
     ASF_CHECK_EQ(p->to_string(), "Session 2");
     ASF_CHECK(tracker.ops[1].kind == LifetimeOpKind::Copy);
@@ -1022,7 +1024,7 @@ void TestMakeDyn_WithoutSBO_Lifetime_Move() {
   TrackedSession session{&tracker};
   {
     auto obs = asf_test::to_dyn<Stringable>(session);
-    auto p1 = asf::construct<std::unique_ptr>(*obs);
+    auto p1 = asf_dyn::construct<std::unique_ptr>(*obs);
     ASF_CHECK_EQ(p1->to_string(), "Session 2");
     auto p2 = std::move(p1);
     ASF_CHECK(!p1);
@@ -1044,8 +1046,8 @@ void TestMakeDyn_WithoutSBO_Lifetime_Copy() {
   TrackedSession session{&tracker};
   {
     auto obs = asf_test::to_dyn<Stringable>(session);
-    auto p1 = asf::construct<std::unique_ptr>(*obs);
-    auto p2 = asf::construct<std::unique_ptr>(*obs);
+    auto p1 = asf_dyn::construct<std::unique_ptr>(*obs);
+    auto p2 = asf_dyn::construct<std::unique_ptr>(*obs);
     ASF_CHECK_EQ(p1->to_string(), "Session 2");
     ASF_CHECK_EQ(p2->to_string(), "Session 3");
     ASF_CHECK(tracker.ops[1].kind == LifetimeOpKind::Copy);
@@ -1059,8 +1061,8 @@ void TestConstructDeepMove_ViaRproxy() {
     LifetimeTracker tracker;
     TrackedSession session{&tracker};
     auto obs = asf_test::to_dyn<Stringable>(session);
-    auto clone = asf::construct(*obs);
-    static_assert(std::same_as<decltype(clone), asf::dyn<Stringable>>);
+    auto clone = asf_dyn::construct(*obs);
+    static_assert(std::same_as<decltype(clone), asf_dyn::dyn<Stringable>>);
     ASF_CHECK(tracker.ops[1].kind == LifetimeOpKind::Copy);
     ASF_CHECK_EQ(clone->to_string(), "Session 2");
   }
@@ -1068,8 +1070,8 @@ void TestConstructDeepMove_ViaRproxy() {
     LifetimeTracker tracker;
     TrackedSession session{&tracker};
     auto obs = asf_test::to_dyn<Stringable>(session);
-    auto moved = asf::construct(obs.rproxy());
-    static_assert(std::same_as<decltype(moved), asf::dyn<Stringable>>);
+    auto moved = asf_dyn::construct(obs.rproxy());
+    static_assert(std::same_as<decltype(moved), asf_dyn::dyn<Stringable>>);
     ASF_CHECK(static_cast<bool>(moved));
     ASF_CHECK(tracker.ops[1].kind == LifetimeOpKind::Move);
     ASF_CHECK_EQ(moved->to_string(),
@@ -1080,7 +1082,7 @@ void TestConstructDeepMove_ViaRproxy() {
     TrackedSession session{&tracker};
     auto obs = asf_test::to_dyn<Stringable>(session);
     auto view = *obs;
-    auto moved = asf::construct(asf::detail::dyn_rproxy(view));
+    auto moved = asf_dyn::construct(asf_dyn::detail::dyn_rproxy(view));
     ASF_CHECK(tracker.ops[1].kind == LifetimeOpKind::Move);
     ASF_CHECK_EQ(moved->to_string(),
                  "Session " + std::to_string(tracker.ops[1].id));
@@ -1089,13 +1091,13 @@ void TestConstructDeepMove_ViaRproxy() {
     LifetimeTracker tracker;
     TrackedSession session{&tracker};
     auto obs = asf_test::to_dyn<Stringable>(session);
-    auto owned = asf::construct<std::unique_ptr>(*obs);
+    auto owned = asf_dyn::construct<std::unique_ptr>(*obs);
     static_assert(
-        std::same_as<decltype(owned), asf::unique_dyn<Stringable>>);
+        std::same_as<decltype(owned), asf_dyn::unique_dyn<Stringable>>);
     ASF_CHECK(tracker.ops[1].kind == LifetimeOpKind::Copy);
-    auto moved = asf::construct(owned.rproxy());
+    auto moved = asf_dyn::construct(owned.rproxy());
     static_assert(
-        std::same_as<decltype(moved), asf::unique_dyn<Stringable>>);
+        std::same_as<decltype(moved), asf_dyn::unique_dyn<Stringable>>);
     ASF_CHECK(tracker.ops[2].kind == LifetimeOpKind::Move);
     ASF_CHECK_EQ(moved->to_string(),
                  "Session " + std::to_string(tracker.ops[2].id));
@@ -1106,20 +1108,20 @@ void TestConstructDeepMove_ViaRproxy() {
 void TestValueOf_CopyAndMove() {
   {
     Session s{3, "Ada"};
-    asf::mirror<Session> bare{s};
-    auto copied = asf::value_of(bare);
+    asf_dyn::mirror<Session> bare{s};
+    auto copied = asf_dyn::value_of(bare);
     ASF_CHECK_EQ(copied.id, asf_test::no_sso("3"));
     ASF_CHECK_EQ(copied.label, asf_test::no_sso("Ada"));
     s.label = asf_test::no_sso("Zed");
     ASF_CHECK_EQ(copied.label, asf_test::no_sso("Ada"));
-    auto again = asf::value_of(std::move(bare));
+    auto again = asf_dyn::value_of(std::move(bare));
     ASF_CHECK_EQ(again.label, asf_test::no_sso("Zed"));
     ASF_CHECK_EQ(s.label, asf_test::no_sso("Zed"));
   }
   {
     Session s{4, "Move"};
-    asf::rmirror<Session> bare{std::move(s)};
-    auto moved = asf::value_of(bare);
+    asf_dyn::rmirror<Session> bare{std::move(s)};
+    auto moved = asf_dyn::value_of(bare);
     ASF_CHECK_EQ(moved.id, asf_test::no_sso("4"));
     ASF_CHECK_EQ(moved.label, asf_test::no_sso("Move"));
     ASF_CHECK(s.label.empty());
@@ -1127,22 +1129,22 @@ void TestValueOf_CopyAndMove() {
   {
     LifetimeTracker tracker;
     TrackedSession session{&tracker};
-    asf::mirror<TrackedSession, TrackedSession> held{session};
-    auto copied = asf::value_of(held);
+    asf_dyn::mirror<TrackedSession, TrackedSession> held{session};
+    auto copied = asf_dyn::value_of(held);
     ASF_CHECK(tracker.ops.back().kind == LifetimeOpKind::Copy);
     ASF_CHECK_EQ(copied.id, tracker.ops.back().id);
-    auto copied2 = asf::value_of(std::move(held));
+    auto copied2 = asf_dyn::value_of(std::move(held));
     ASF_CHECK(tracker.ops.back().kind == LifetimeOpKind::Copy);
     ASF_CHECK_EQ(copied2.id, tracker.ops.back().id);
   }
   {
     LifetimeTracker tracker;
     TrackedSession session{&tracker};
-    asf::mirror<TrackedSession, TrackedSession> held{session};
-    asf::rmirror<TrackedSession, TrackedSession> rm{held};
-    auto moved = asf::value_of(rm);
+    asf_dyn::mirror<TrackedSession, TrackedSession> held{session};
+    asf_dyn::rmirror<TrackedSession, TrackedSession> rm{held};
+    auto moved = asf_dyn::value_of(rm);
     ASF_CHECK(tracker.ops.back().kind == LifetimeOpKind::Move);
-    auto moved2 = asf::value_of(std::move(rm));
+    auto moved2 = asf_dyn::value_of(std::move(rm));
     ASF_CHECK(tracker.ops.back().kind == LifetimeOpKind::Move);
   }
 }
@@ -1151,24 +1153,24 @@ void TestAssignMirror_CopyAndMove() {
   {
     Session from{1, "Ada"};
     Session to{2, "Bob"};
-    auto dst = asf::to_mirror(to);
-    asf::assign_mirror(dst, from);
+    auto dst = asf_dyn::to_mirror(to);
+    asf_dyn::assign_mirror(dst, from);
     ASF_CHECK_EQ(to.label, asf_test::no_sso("Ada"));
     ASF_CHECK_EQ(from.label, asf_test::no_sso("Ada"));
   }
   {
     Session from{1, "Ada"};
     Session to{2, "Bob"};
-    auto dst = asf::to_mirror(to);
-    asf::assign_mirror(dst, std::move(from));
+    auto dst = asf_dyn::to_mirror(to);
+    asf_dyn::assign_mirror(dst, std::move(from));
     ASF_CHECK_EQ(to.label, asf_test::no_sso("Ada"));
     ASF_CHECK(from.label.empty());
   }
   {
     Session from{1, "Ada"};
     Session to{2, "Bob"};
-    asf::mirror<Session&> dst{to};
-    asf::assign_mirror(dst, from);
+    asf_dyn::mirror<Session&> dst{to};
+    asf_dyn::assign_mirror(dst, from);
     ASF_CHECK_EQ(to.label, asf_test::no_sso("Ada"));
     ASF_CHECK_EQ(from.label, asf_test::no_sso("Ada"));
   }
@@ -1176,26 +1178,26 @@ void TestAssignMirror_CopyAndMove() {
     Session from{1, "Ada"};
     Session to{2, "Bob"};
     Session const& cfrom = from;
-    auto dst = asf::to_mirror(to);
-    asf::assign_mirror(dst, cfrom);
+    auto dst = asf_dyn::to_mirror(to);
+    asf_dyn::assign_mirror(dst, cfrom);
     ASF_CHECK_EQ(to.label, asf_test::no_sso("Ada"));
     ASF_CHECK_EQ(from.label, asf_test::no_sso("Ada"));
   }
   {
     Session from{1, "Ada"};
     Session to{2, "Bob"};
-    auto dst = asf::to_mirror(to);
-    asf::c_mirror<Session> src{from};
-    asf::assign_mirror(dst, src);
+    auto dst = asf_dyn::to_mirror(to);
+    asf_dyn::c_mirror<Session> src{from};
+    asf_dyn::assign_mirror(dst, src);
     ASF_CHECK_EQ(to.label, asf_test::no_sso("Ada"));
     ASF_CHECK_EQ(from.label, asf_test::no_sso("Ada"));
   }
   {
     Session from{1, "Ada"};
     Session to{2, "Bob"};
-    auto dst = asf::to_mirror(to);
-    asf::rmirror<Session> src{std::move(from)};
-    asf::assign_mirror(dst, src);
+    auto dst = asf_dyn::to_mirror(to);
+    asf_dyn::rmirror<Session> src{std::move(from)};
+    asf_dyn::assign_mirror(dst, src);
     ASF_CHECK_EQ(to.label, asf_test::no_sso("Ada"));
     ASF_CHECK(from.label.empty());
   }
@@ -1204,8 +1206,8 @@ void TestAssignMirror_CopyAndMove() {
 void TestMirrorAssign_Rebind() {
   Session a{1, "Ada"};
   Session b{2, "Bob"};
-  auto ma = asf::to_mirror(a);
-  auto mb = asf::to_mirror(b);
+  auto ma = asf_dyn::to_mirror(a);
+  auto mb = asf_dyn::to_mirror(b);
   mb = ma;
   ASF_CHECK_EQ(mb.label, asf_test::no_sso("Ada"));
   mb.label = asf_test::no_sso("Zed");
@@ -1215,18 +1217,18 @@ void TestMirrorAssign_Rebind() {
   ASF_CHECK_EQ(ma.label, asf_test::no_sso("Zed"));
 
   Session c{3, "Cara"};
-  auto mc = asf::to_mirror(c);
-  asf::assign_mirror(mc, a);
+  auto mc = asf_dyn::to_mirror(c);
+  asf_dyn::assign_mirror(mc, a);
   ASF_CHECK_EQ(c.label, asf_test::no_sso("Zed"));
 
-  asf::mirror<Session, Session> sm{b};
-  asf::c_mirror<Session, Session> cm{a};
+  asf_dyn::mirror<Session, Session> sm{b};
+  asf_dyn::c_mirror<Session, Session> cm{a};
   cm = sm;
-  ASF_CHECK_EQ(asf::src_of(cm).label, asf_test::no_sso("Bob"));
+  ASF_CHECK_EQ(asf_dyn::src_of(cm).label, asf_test::no_sso("Bob"));
 
-  asf::rmirror<Session, Session> rm{std::move(a)};
+  asf_dyn::rmirror<Session, Session> rm{std::move(a)};
   rm = sm;
-  ASF_CHECK_EQ(asf::src_of(rm).label, asf_test::no_sso("Bob"));
+  ASF_CHECK_EQ(asf_dyn::src_of(rm).label, asf_test::no_sso("Bob"));
 }
 #endif
 
@@ -1236,11 +1238,11 @@ void TestFakeUptr_NotLibraryUptr() {
   FakeBlock::frees = 0;
   FakeBlock::nbytes = 0;
   Box box{7, "Fake"};
-  asf::dyn<Boxable> obs{&box};
+  asf_dyn::dyn<Boxable> obs{&box};
   {
-    auto owned = asf::construct<fake_uptr>(*obs);
-    static_assert(std::same_as<decltype(owned), asf::dyn<Boxable, fake_uptr<void>>>);
-    static_assert(!asf::detail::is_default_uptr_v<fake_uptr<void>>);
+    auto owned = asf_dyn::construct<fake_uptr>(*obs);
+    static_assert(std::same_as<decltype(owned), asf_dyn::dyn<Boxable, fake_uptr<void>>>);
+    static_assert(!asf_dyn::detail::is_default_uptr_v<fake_uptr<void>>);
     ASF_CHECK(static_cast<bool>(owned));
     ASF_CHECK_EQ(owned->to_string(), asf_test::session_text("Fake", 7));
     ASF_CHECK(FakeBlock::allocs >= 1);
@@ -1283,19 +1285,19 @@ struct Loud<Box> final {
   static std::string name(ASF_TEST_CM(Box) self) { return self.label; }
 };
 
-static_assert(asf::detail::pointer_has_deleter_v<
-              std::unique_ptr<void, asf::dyn_default_delete>>);
-static_assert(asf::detail::dyn_ptr_uses_typed_deleter<
-              std::unique_ptr<void, asf::dyn_default_delete>>());
+static_assert(asf_dyn::detail::pointer_has_deleter_v<
+              std::unique_ptr<void, asf_dyn::dyn_default_delete>>);
+static_assert(asf_dyn::detail::dyn_ptr_uses_typed_deleter<
+              std::unique_ptr<void, asf_dyn::dyn_default_delete>>());
 static_assert(std::constructible_from<
-              asf::dyn<Quiet, std::unique_ptr<void, asf::dyn_default_delete>>,
-              asf::unique_dyn<Quiet>&&>);
-static_assert(asf::detail::dyn_ptr_uses_typed_deleter<bridged_uptr<void>>());
-static_assert(asf::detail::dyn_ptr_proxy_handoff_ok<
+              asf_dyn::dyn<Quiet, std::unique_ptr<void, asf_dyn::dyn_default_delete>>,
+              asf_dyn::unique_dyn<Quiet>&&>);
+static_assert(asf_dyn::detail::dyn_ptr_uses_typed_deleter<bridged_uptr<void>>());
+static_assert(asf_dyn::detail::dyn_ptr_proxy_handoff_ok<
               bridged_uptr<void>,
-              std::unique_ptr<void, asf::detail::new_delete>>());
-static_assert(std::constructible_from<asf::dyn<Quiet, bridged_uptr<void>>,
-                                      asf::unique_dyn<Quiet>&&>);
+              std::unique_ptr<void, asf_dyn::detail::new_delete>>());
+static_assert(std::constructible_from<asf_dyn::dyn<Quiet, bridged_uptr<void>>,
+                                      asf_dyn::unique_dyn<Quiet>&&>);
 
 void TestBridgeDeleter_ExplicitPtr() {
   Box::dtor_count = 0;
@@ -1303,12 +1305,12 @@ void TestBridgeDeleter_ExplicitPtr() {
   FakeBlock::frees = 0;
   FakeBlock::nbytes = 0;
   Box box{3, "Bridge"};
-  asf::dyn<Loud> obs{&box};
-  auto owned = asf::construct<fake_uptr>(*obs);
+  asf_dyn::dyn<Loud> obs{&box};
+  auto owned = asf_dyn::construct<fake_uptr>(*obs);
   {
-    auto mid = asf::to_dyn<Quiet, bridged_uptr>(std::move(owned));
+    auto mid = asf_dyn::to_dyn<Quiet, bridged_uptr>(std::move(owned));
     static_assert(
-        std::same_as<decltype(mid), asf::dyn<Quiet, bridged_uptr<void>>>);
+        std::same_as<decltype(mid), asf_dyn::dyn<Quiet, bridged_uptr<void>>>);
     ASF_CHECK(static_cast<bool>(mid));
     ASF_CHECK_EQ(mid->name(), asf_test::no_sso("Bridge"));
   }
@@ -1322,20 +1324,20 @@ void TestBridgeDeleter_LibraryUptr() {
   FakeBlock::frees = 0;
   FakeBlock::nbytes = 0;
   Box box{9, "LibUptr"};
-  asf::dyn<Loud> obs{&box};
-  auto owned = asf::construct<std::unique_ptr>(FakeAlloc<void>{}, *obs);
+  asf_dyn::dyn<Loud> obs{&box};
+  auto owned = asf_dyn::construct<std::unique_ptr>(FakeAlloc<void>{}, *obs);
   static_assert(std::same_as<
       decltype(owned),
-      asf::dyn<Loud, std::unique_ptr<void, asf::alloc_delete<FakeAlloc<void>>>>>);
+      asf_dyn::dyn<Loud, std::unique_ptr<void, asf_dyn::alloc_delete<FakeAlloc<void>>>>>);
   static_assert(std::same_as<
-      decltype(asf::trait_cast<Quiet>(std::declval<decltype(owned)>())),
-      asf::dyn<Quiet, std::unique_ptr<void, asf::alloc_delete<FakeAlloc<void>>>>>);
-  static_assert(asf::detail::is_default_uptr_v<
-                std::unique_ptr<void, asf::alloc_delete<FakeAlloc<void>>>>);
+      decltype(asf_dyn::trait_cast<Quiet>(std::declval<decltype(owned)>())),
+      asf_dyn::dyn<Quiet, std::unique_ptr<void, asf_dyn::alloc_delete<FakeAlloc<void>>>>>);
+  static_assert(asf_dyn::detail::is_default_uptr_v<
+                std::unique_ptr<void, asf_dyn::alloc_delete<FakeAlloc<void>>>>);
   {
-    auto mid = asf::to_dyn<Quiet, bridged_uptr>(std::move(owned));
+    auto mid = asf_dyn::to_dyn<Quiet, bridged_uptr>(std::move(owned));
     static_assert(
-        std::same_as<decltype(mid), asf::dyn<Quiet, bridged_uptr<void>>>);
+        std::same_as<decltype(mid), asf_dyn::dyn<Quiet, bridged_uptr<void>>>);
     ASF_CHECK(static_cast<bool>(mid));
     ASF_CHECK_EQ(mid->name(), asf_test::no_sso("LibUptr"));
   }
@@ -1347,10 +1349,10 @@ void TestBridgeDeleter_LibraryUptr() {
 void TestSharedFromQualifiedUptr() {
   Box::dtor_count = 0;
   Box box{1, "Qual"};
-  asf::dyn<Loud> obs{&box};
-  auto owned = asf::construct<std::unique_ptr>(*obs);
+  asf_dyn::dyn<Loud> obs{&box};
+  auto owned = asf_dyn::construct<std::unique_ptr>(*obs);
   void* raw = owned.raw();
-  asf::shared_dyn<Loud> shared{std::move(owned)};
+  asf_dyn::shared_dyn<Loud> shared{std::move(owned)};
   ASF_CHECK(static_cast<bool>(shared));
   ASF_CHECK(!owned);
   ASF_CHECK(shared.raw() == raw);
@@ -1362,13 +1364,13 @@ void TestSharedFromQualifiedUptr() {
 void TestReleaseToPtrAndObs() {
   Box::dtor_count = 0;
   Box box{1, "Rel"};
-  asf::dyn<Loud> obs{&box};
-  auto owned = asf::construct<std::unique_ptr>(*obs);
+  asf_dyn::dyn<Loud> obs{&box};
+  auto owned = asf_dyn::construct<std::unique_ptr>(*obs);
   void* raw = owned.raw();
   auto parts = owned.release();
   static_assert(std::same_as<decltype(parts.first),
-                             std::unique_ptr<void, asf::detail::new_delete>>);
-  static_assert(std::same_as<decltype(parts.second), asf::dyn<Loud>>);
+                             std::unique_ptr<void, asf_dyn::detail::new_delete>>);
+  static_assert(std::same_as<decltype(parts.second), asf_dyn::dyn<Loud>>);
   ASF_CHECK(!owned);
   ASF_CHECK(parts.first.get() == raw);
   ASF_CHECK(parts.second.raw() == raw);
@@ -1381,7 +1383,7 @@ void TestReleaseToPtrAndObs() {
   parts.second.reset();
   ASF_CHECK_EQ(Box::dtor_count, 1);
 
-  asf::dyn<Loud> view{&box};
+  asf_dyn::dyn<Loud> view{&box};
   auto raw_parts = view.release();
   ASF_CHECK(!view);
   ASF_CHECK(raw_parts.first == &box);

@@ -1,4 +1,4 @@
-// asf::dyn_cast (Trait RTTI). Requires ASF_HAS_DYN_RTTI=1.
+// asf_dyn::dyn_cast (Trait RTTI). Requires ASF_HAS_DYN_RTTI=1.
 
 #include "asf_check.hpp"
 #include "test_bind.hpp"
@@ -111,8 +111,8 @@ struct ID<Obj> final {};
 void TestDynCast_Up_Succeed() {
   Obj o{};
   auto leaf = asf_test::to_dyn<I3>(o);
-  asf::dyn<I1> base = leaf;
-  auto back = asf::dyn_cast<I3>(base);
+  asf_dyn::dyn<I1> base = leaf;
+  auto back = asf_dyn::dyn_cast<I3>(base);
   ASF_CHECK(static_cast<bool>(back));
   ASF_CHECK_STREQ(back->m3(), "m3");
 }
@@ -120,8 +120,8 @@ void TestDynCast_Up_Succeed() {
 void TestDynCast_Cross_Succeed() {
   Obj o{};
   auto leaf = asf_test::to_dyn<I3>(o);
-  asf::dyn<I1> base = leaf;
-  auto mid = asf::dyn_cast<I2>(base);
+  asf_dyn::dyn<I1> base = leaf;
+  auto mid = asf_dyn::dyn_cast<I2>(base);
   ASF_CHECK(static_cast<bool>(mid));
   ASF_CHECK_STREQ(mid->m2(), "m2");
 }
@@ -129,32 +129,32 @@ void TestDynCast_Cross_Succeed() {
 void TestDynCast_Fail() {
   Obj o{};
   auto leaf = asf_test::to_dyn<I3>(o);
-  asf::dyn<I1> base = leaf;
-  auto miss = asf::dyn_cast<Unrelated>(base);
+  asf_dyn::dyn<I1> base = leaf;
+  auto miss = asf_dyn::dyn_cast<Unrelated>(base);
   ASF_CHECK(!miss);
 }
 
 void TestTryCast() {
   Obj o{};
   auto leaf = asf_test::to_dyn<I3>(o);
-  asf::dyn<I1> base = leaf;
-  auto ok = asf::dyn_cast<I3>(base);
+  asf_dyn::dyn<I1> base = leaf;
+  auto ok = asf_dyn::dyn_cast<I3>(base);
   ASF_CHECK(static_cast<bool>(ok));
-  auto bad = asf::dyn_cast<Unrelated>(base);
+  auto bad = asf_dyn::dyn_cast<Unrelated>(base);
   ASF_CHECK(!bad);
 }
 
 void TestTypeid() {
   TypeTag a{17};
   auto p = asf_test::to_dyn<SomeMinimalTrait>(a);
-  ASF_CHECK(asf::dyn_typeid(p) == typeid(TypeTag));
+  ASF_CHECK(asf_dyn::dyn_typeid(p) == typeid(TypeTag));
 }
 
 // Node tag: leaf bind -> root node, identity is the Final trait itself.
 void TestNodeTypeid_Leaf() {
   Obj o{};
   auto leaf = asf_test::to_dyn<I3>(o);
-  ASF_CHECK(asf::dyn_node_typeid(leaf) == typeid(I3<void>));
+  ASF_CHECK(asf_dyn::dyn_node_typeid(leaf) == typeid(I3<void>));
 }
 
 // Intermediate bind: the anchor is the construction Trait's own node, not
@@ -163,7 +163,7 @@ void TestNodeTypeid_IntermediateBind() {
   Obj o{};
   auto leaf = asf_test::to_dyn<I3>(o);  // same-TU final leaf injects first
   auto mid = asf_test::to_dyn<I1>(o);
-  ASF_CHECK(asf::dyn_node_typeid(mid) == typeid(I1<void>));
+  ASF_CHECK(asf_dyn::dyn_node_typeid(mid) == typeid(I1<void>));
 }
 
 // An intermediate bind sees only its own ancestry: the covering leaf and
@@ -171,22 +171,22 @@ void TestNodeTypeid_IntermediateBind() {
 void TestDynCast_IntermediateMiss() {
   Obj o{};
   auto mid = asf_test::to_dyn<I1>(o);  // covering leaf I3
-  auto self = asf::dyn_cast<I1>(mid);
+  auto self = asf_dyn::dyn_cast<I1>(mid);
   ASF_CHECK(static_cast<bool>(self));
-  auto m2 = asf::dyn_cast<I2>(mid);
+  auto m2 = asf_dyn::dyn_cast<I2>(mid);
   ASF_CHECK(!m2);
-  auto leaf = asf::dyn_cast<I3>(mid);
+  auto leaf = asf_dyn::dyn_cast<I3>(mid);
   ASF_CHECK(!leaf);
 }
 
 // Empty handle: both the static-upcast path and the meta-walk path return
 // an empty handle (the dynamic_cast nullptr analogue).
 void TestDynCast_Empty() {
-  asf::dyn<I3> e;
-  auto up = asf::dyn_cast<I1>(e);  // static upcast branch
+  asf_dyn::dyn<I3> e;
+  auto up = asf_dyn::dyn_cast<I1>(e);  // static upcast branch
   ASF_CHECK(!up);
-  asf::dyn<I1> e1;
-  auto down = asf::dyn_cast<I2>(e1);  // meta walk branch
+  asf_dyn::dyn<I1> e1;
+  auto down = asf_dyn::dyn_cast<I2>(e1);  // meta walk branch
   ASF_CHECK(!down);
 }
 
@@ -194,23 +194,23 @@ void TestDynCast_Empty() {
 void TestNodeTypeid_UpcastKeepsNode() {
   Obj o{};
   auto leaf = asf_test::to_dyn<I3>(o);
-  asf::dyn<I1> base = leaf;
-  ASF_CHECK(asf::dyn_node_typeid(base) == typeid(I3<void>));
+  asf_dyn::dyn<I1> base = leaf;
+  ASF_CHECK(asf_dyn::dyn_node_typeid(base) == typeid(I3<void>));
 }
 
 // dyn_cast hit: the tree walk lands on the requested node (root, tag 0).
 void TestNodeTypeid_CastHit() {
   Obj o{};
   auto leaf = asf_test::to_dyn<I3>(o);
-  asf::dyn<I1> base = leaf;
-  auto back = asf::dyn_cast<I3>(base);
+  asf_dyn::dyn<I1> base = leaf;
+  auto back = asf_dyn::dyn_cast<I3>(base);
   ASF_CHECK(static_cast<bool>(back));
-  ASF_CHECK(asf::dyn_node_typeid(back) == typeid(I3<void>));
+  ASF_CHECK(asf_dyn::dyn_node_typeid(back) == typeid(I3<void>));
 }
 
 void TestNodeTypeid_Empty() {
-  asf::dyn<I3> e;
-  ASF_CHECK(asf::dyn_node_typeid(e) == typeid(void));
+  asf_dyn::dyn<I3> e;
+  ASF_CHECK(asf_dyn::dyn_node_typeid(e) == typeid(void));
 }
 
 #if ASF_HAS_DYN_MULTI_VT
@@ -220,11 +220,11 @@ void TestNodeTypeid_Empty() {
 void TestTreeCast_BranchHit() {
   Obj o{};
   auto leaf = asf_test::to_dyn<ID>(o);
-  asf::dyn<IA> base = leaf;
-  auto b1 = asf::dyn_cast<IB1>(base);
+  asf_dyn::dyn<IA> base = leaf;
+  auto b1 = asf_dyn::dyn_cast<IB1>(base);
   ASF_CHECK(static_cast<bool>(b1));
   ASF_CHECK_EQ(b1->mb1(), 102);
-  ASF_CHECK(asf::dyn_node_typeid(b1) == typeid(ID<void>));
+  ASF_CHECK(asf_dyn::dyn_node_typeid(b1) == typeid(ID<void>));
 }
 
 // The anchor is construction-fixed, so the walk from a post-hit view still
@@ -233,10 +233,10 @@ void TestTreeCast_BranchHit() {
 void TestTreeCast_BackToLeafHit() {
   Obj o{};
   auto leaf = asf_test::to_dyn<ID>(o);
-  asf::dyn<IA> base = leaf;
-  auto b1 = asf::dyn_cast<IB1>(base);
+  asf_dyn::dyn<IA> base = leaf;
+  auto b1 = asf_dyn::dyn_cast<IB1>(base);
   ASF_CHECK(static_cast<bool>(b1));
-  auto id = asf::dyn_cast<ID>(b1);
+  auto id = asf_dyn::dyn_cast<ID>(b1);
   ASF_CHECK(static_cast<bool>(id));
   ASF_CHECK_EQ(id->md(), 104);
 }
@@ -247,11 +247,11 @@ void TestTreeCast_BackToLeafHit() {
 void TestTreeCast_LeafSideBranchHit() {
   Obj o{};
   auto leaf = asf_test::to_dyn<ID>(o);
-  asf::dyn<IA> base = leaf;
-  auto b2 = asf::dyn_cast<IB2>(base);
+  asf_dyn::dyn<IA> base = leaf;
+  auto b2 = asf_dyn::dyn_cast<IB2>(base);
   ASF_CHECK(static_cast<bool>(b2));
   ASF_CHECK_EQ(b2->mb2(), 103);
-  ASF_CHECK(asf::dyn_node_typeid(b2) == typeid(ID<void>));
+  ASF_CHECK(asf_dyn::dyn_node_typeid(b2) == typeid(ID<void>));
 }
 
 // Round trip back to the anchor (2 -> 1 -> 2): the anchor is in its own
@@ -261,20 +261,20 @@ void TestTreeCast_LeafSideBranchHit() {
 void TestTreeCast_BackToAnchorHit() {
   Obj o{};
   auto mid = asf_test::to_dyn<IB1>(o);  // anchor IB1, covering leaf ID
-  asf::dyn<IA> base = mid;
-  auto b1 = asf::dyn_cast<IB1>(base);
+  asf_dyn::dyn<IA> base = mid;
+  auto b1 = asf_dyn::dyn_cast<IB1>(base);
   ASF_CHECK(static_cast<bool>(b1));
   ASF_CHECK_EQ(b1->mb1(), 102);
-  ASF_CHECK(asf::dyn_node_typeid(b1) == typeid(IB1<void>));
+  ASF_CHECK(asf_dyn::dyn_node_typeid(b1) == typeid(IB1<void>));
   // Same round trip with a dyn_cast first step (hit keeps the anchor tag).
-  auto a = asf::dyn_cast<IA>(mid);
+  auto a = asf_dyn::dyn_cast<IA>(mid);
   ASF_CHECK(static_cast<bool>(a));
-  auto b1b = asf::dyn_cast<IB1>(a);
+  auto b1b = asf_dyn::dyn_cast<IB1>(a);
   ASF_CHECK(static_cast<bool>(b1b));
   ASF_CHECK_EQ(b1b->mb1(), 102);
   // The same common-base view cannot cross to the sibling arm (2 -> 1 ->
   // 3): the anchor is still IB1, and IB2 is not in its closure.
-  auto b2 = asf::dyn_cast<IB2>(base);
+  auto b2 = asf_dyn::dyn_cast<IB2>(base);
   ASF_CHECK(!b2);
 }
 
@@ -284,13 +284,13 @@ void TestTreeCast_BackToAnchorHit() {
 void TestTreeCast_IntermediateScope() {
   Obj o{};
   auto mid = asf_test::to_dyn<IB1>(o);  // covering leaf ID injects
-  ASF_CHECK(asf::dyn_node_typeid(mid) == typeid(IB1<void>));
-  auto a = asf::dyn_cast<IA>(mid);
+  ASF_CHECK(asf_dyn::dyn_node_typeid(mid) == typeid(IB1<void>));
+  auto a = asf_dyn::dyn_cast<IA>(mid);
   ASF_CHECK(static_cast<bool>(a));
   ASF_CHECK_EQ(a->ma(), 101);
-  auto b2 = asf::dyn_cast<IB2>(mid);
+  auto b2 = asf_dyn::dyn_cast<IB2>(mid);
   ASF_CHECK(!b2);
-  auto id = asf::dyn_cast<ID>(mid);
+  auto id = asf_dyn::dyn_cast<ID>(mid);
   ASF_CHECK(!id);
 }
 
@@ -300,8 +300,8 @@ void TestTreeCast_IntermediateScope() {
 void TestTreeCast_CommonBaseHit() {
   Obj o{};
   auto leaf = asf_test::to_dyn<ID>(o);
-  asf::dyn<IB2> base = leaf;
-  auto a = asf::dyn_cast<IA>(base);
+  asf_dyn::dyn<IB2> base = leaf;
+  auto a = asf_dyn::dyn_cast<IA>(base);
   ASF_CHECK(static_cast<bool>(a));
   ASF_CHECK_EQ(a->ma(), 101);
 }
@@ -313,12 +313,12 @@ void TestTreeCast_CommonBaseHit() {
 void TestTreeCast_RedirectViewKeepsAnchor() {
   Obj o{};
   auto leaf = asf_test::to_dyn<ID>(o);
-  asf::dyn<IB2> base = leaf;  // Redirect to the IB2 cover; anchor stays ID
-  ASF_CHECK(asf::dyn_node_typeid(base) == typeid(ID<void>));
-  auto b1 = asf::dyn_cast<IB1>(base);
+  asf_dyn::dyn<IB2> base = leaf;  // Redirect to the IB2 cover; anchor stays ID
+  ASF_CHECK(asf_dyn::dyn_node_typeid(base) == typeid(ID<void>));
+  auto b1 = asf_dyn::dyn_cast<IB1>(base);
   ASF_CHECK(static_cast<bool>(b1));
   ASF_CHECK_EQ(b1->mb1(), 102);
-  auto id = asf::dyn_cast<ID>(base);
+  auto id = asf_dyn::dyn_cast<ID>(base);
   ASF_CHECK(static_cast<bool>(id));
   ASF_CHECK_EQ(id->md(), 104);
 }
@@ -334,66 +334,66 @@ void TestTreeCast_FullMatrix() {
   // every view; only unrelated types miss.
   {
     auto h = asf_test::to_dyn<ID>(o);
-    ASF_CHECK(asf::dyn_node_typeid(h) == typeid(ID<void>));
-    asf::dyn<IB1> v1 = h;  // section-prefix view
-    asf::dyn<IB2> v2 = h;  // Redirect cover view
-    asf::dyn<IA> v0 = h;   // section-prefix view
-    ASF_CHECK(static_cast<bool>(asf::dyn_cast<ID>(h)));  // self
-    ASF_CHECK(static_cast<bool>(asf::dyn_cast<ID>(v1)));
-    ASF_CHECK(static_cast<bool>(asf::dyn_cast<IB2>(v1)));
-    ASF_CHECK(static_cast<bool>(asf::dyn_cast<IA>(v1)));
-    ASF_CHECK(static_cast<bool>(asf::dyn_cast<ID>(v2)));
-    ASF_CHECK(static_cast<bool>(asf::dyn_cast<IB1>(v2)));
-    ASF_CHECK(static_cast<bool>(asf::dyn_cast<IA>(v2)));
-    ASF_CHECK(static_cast<bool>(asf::dyn_cast<ID>(v0)));
-    ASF_CHECK(static_cast<bool>(asf::dyn_cast<IB1>(v0)));
-    ASF_CHECK(static_cast<bool>(asf::dyn_cast<IB2>(v0)));
-    ASF_CHECK(!asf::dyn_cast<Unrelated>(v1));
-    ASF_CHECK(!asf::dyn_cast<Unrelated>(v2));
-    ASF_CHECK(!asf::dyn_cast<Unrelated>(v0));
+    ASF_CHECK(asf_dyn::dyn_node_typeid(h) == typeid(ID<void>));
+    asf_dyn::dyn<IB1> v1 = h;  // section-prefix view
+    asf_dyn::dyn<IB2> v2 = h;  // Redirect cover view
+    asf_dyn::dyn<IA> v0 = h;   // section-prefix view
+    ASF_CHECK(static_cast<bool>(asf_dyn::dyn_cast<ID>(h)));  // self
+    ASF_CHECK(static_cast<bool>(asf_dyn::dyn_cast<ID>(v1)));
+    ASF_CHECK(static_cast<bool>(asf_dyn::dyn_cast<IB2>(v1)));
+    ASF_CHECK(static_cast<bool>(asf_dyn::dyn_cast<IA>(v1)));
+    ASF_CHECK(static_cast<bool>(asf_dyn::dyn_cast<ID>(v2)));
+    ASF_CHECK(static_cast<bool>(asf_dyn::dyn_cast<IB1>(v2)));
+    ASF_CHECK(static_cast<bool>(asf_dyn::dyn_cast<IA>(v2)));
+    ASF_CHECK(static_cast<bool>(asf_dyn::dyn_cast<ID>(v0)));
+    ASF_CHECK(static_cast<bool>(asf_dyn::dyn_cast<IB1>(v0)));
+    ASF_CHECK(static_cast<bool>(asf_dyn::dyn_cast<IB2>(v0)));
+    ASF_CHECK(!asf_dyn::dyn_cast<Unrelated>(v1));
+    ASF_CHECK(!asf_dyn::dyn_cast<Unrelated>(v2));
+    ASF_CHECK(!asf_dyn::dyn_cast<Unrelated>(v0));
     // Second-generation view: 4 -> 3(Redirect) -> 1 is the cover table
     // with the leaf tag; casts from it behave like any leaf-anchored view.
-    asf::dyn<IA> v0via3 = v2;
-    ASF_CHECK(static_cast<bool>(asf::dyn_cast<IB1>(v0via3)));
-    ASF_CHECK(static_cast<bool>(asf::dyn_cast<ID>(v0via3)));
+    asf_dyn::dyn<IA> v0via3 = v2;
+    ASF_CHECK(static_cast<bool>(asf_dyn::dyn_cast<IB1>(v0via3)));
+    ASF_CHECK(static_cast<bool>(asf_dyn::dyn_cast<ID>(v0via3)));
     // Multi-hop through walk hits: the hit keeps the leaf anchor, so the
     // chain continues from ID's closure — 4->1->3->4 and 4->1->2->3.
-    auto h3 = asf::dyn_cast<IB2>(v0);
+    auto h3 = asf_dyn::dyn_cast<IB2>(v0);
     ASF_CHECK(static_cast<bool>(h3));
-    ASF_CHECK(static_cast<bool>(asf::dyn_cast<ID>(h3)));
-    auto h2 = asf::dyn_cast<IB1>(v0);
+    ASF_CHECK(static_cast<bool>(asf_dyn::dyn_cast<ID>(h3)));
+    auto h2 = asf_dyn::dyn_cast<IB1>(v0);
     ASF_CHECK(static_cast<bool>(h2));
-    ASF_CHECK(static_cast<bool>(asf::dyn_cast<IB2>(h2)));
+    ASF_CHECK(static_cast<bool>(asf_dyn::dyn_cast<IB2>(h2)));
   }
 
   // Anchor IB1 (intermediate bind): closure {IB1, IA} — sibling IB2 and
   // the covering leaf ID are definitive misses, from any view.
   {
     auto h = asf_test::to_dyn<IB1>(o);
-    ASF_CHECK(asf::dyn_node_typeid(h) == typeid(IB1<void>));
-    asf::dyn<IA> v0 = h;
-    ASF_CHECK(static_cast<bool>(asf::dyn_cast<IB1>(h)));
-    ASF_CHECK(static_cast<bool>(asf::dyn_cast<IA>(h)));
-    ASF_CHECK(!asf::dyn_cast<IB2>(h));
-    ASF_CHECK(!asf::dyn_cast<ID>(h));
-    ASF_CHECK(static_cast<bool>(asf::dyn_cast<IB1>(v0)));
-    ASF_CHECK(!asf::dyn_cast<IB2>(v0));
-    ASF_CHECK(!asf::dyn_cast<ID>(v0));
+    ASF_CHECK(asf_dyn::dyn_node_typeid(h) == typeid(IB1<void>));
+    asf_dyn::dyn<IA> v0 = h;
+    ASF_CHECK(static_cast<bool>(asf_dyn::dyn_cast<IB1>(h)));
+    ASF_CHECK(static_cast<bool>(asf_dyn::dyn_cast<IA>(h)));
+    ASF_CHECK(!asf_dyn::dyn_cast<IB2>(h));
+    ASF_CHECK(!asf_dyn::dyn_cast<ID>(h));
+    ASF_CHECK(static_cast<bool>(asf_dyn::dyn_cast<IB1>(v0)));
+    ASF_CHECK(!asf_dyn::dyn_cast<IB2>(v0));
+    ASF_CHECK(!asf_dyn::dyn_cast<ID>(v0));
   }
 
   // Anchor IB2 (intermediate bind through a Redirect cover): closure
   // {IB2, IA} — sibling IB1 and the covering leaf ID miss from any view.
   {
     auto h = asf_test::to_dyn<IB2>(o);
-    ASF_CHECK(asf::dyn_node_typeid(h) == typeid(IB2<void>));
-    asf::dyn<IA> v0 = h;
-    ASF_CHECK(static_cast<bool>(asf::dyn_cast<IB2>(h)));
-    ASF_CHECK(static_cast<bool>(asf::dyn_cast<IA>(h)));
-    ASF_CHECK(!asf::dyn_cast<IB1>(h));
-    ASF_CHECK(!asf::dyn_cast<ID>(h));
-    ASF_CHECK(static_cast<bool>(asf::dyn_cast<IB2>(v0)));
-    ASF_CHECK(!asf::dyn_cast<IB1>(v0));
-    ASF_CHECK(!asf::dyn_cast<ID>(v0));
+    ASF_CHECK(asf_dyn::dyn_node_typeid(h) == typeid(IB2<void>));
+    asf_dyn::dyn<IA> v0 = h;
+    ASF_CHECK(static_cast<bool>(asf_dyn::dyn_cast<IB2>(h)));
+    ASF_CHECK(static_cast<bool>(asf_dyn::dyn_cast<IA>(h)));
+    ASF_CHECK(!asf_dyn::dyn_cast<IB1>(h));
+    ASF_CHECK(!asf_dyn::dyn_cast<ID>(h));
+    ASF_CHECK(static_cast<bool>(asf_dyn::dyn_cast<IB2>(v0)));
+    ASF_CHECK(!asf_dyn::dyn_cast<IB1>(v0));
+    ASF_CHECK(!asf_dyn::dyn_cast<ID>(v0));
   }
 }
 #endif

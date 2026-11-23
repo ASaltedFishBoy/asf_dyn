@@ -1,7 +1,7 @@
 #pragma once
 
 // Intermediate ptr/mirror-bind (ASF_HAS_DYN_INTERMEDIATE).
-// Included from interface.hpp inside asf::detail after vtable<> is defined.
+// Included from interface.hpp inside asf::dyn::detail after vtable<> is defined.
 // See docs/en/spec/features.md (ASF_HAS_DYN_INTERMEDIATE).
 
 // --- ADL object-vt: non-final calls; final injects (same-TU STMP first wins) ---

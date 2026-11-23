@@ -22,6 +22,6 @@ struct Mixed<P> final {};
 
 int main() {
   P p{1};
-  auto d = asf::to_dyn<Mixed>(&p);
+  auto d = asf_dyn::to_dyn<Mixed>(&p);
   return d->who();  // ERROR: static is not a dyn slot
 }

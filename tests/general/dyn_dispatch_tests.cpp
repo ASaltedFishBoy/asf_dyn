@@ -647,13 +647,13 @@ void TestOpPtrToMem() {
 
 void TestRhsOpComma() {
   IntBox v{3};
-  auto p = asf::to_iface<OpComma>(v);
+  auto p = asf_dyn::to_iface<OpComma>(v);
   ASF_CHECK_EQ((7, *p), 21);
 }
 
 void TestRhsOpPtrToMem() {
   Fields v{.a = 11};
-  auto p = asf::to_iface<OpPtrToMem>(v);
+  auto p = asf_dyn::to_iface<OpPtrToMem>(v);
   ASF_CHECK_EQ(2->*(*p), 22);
 }
 

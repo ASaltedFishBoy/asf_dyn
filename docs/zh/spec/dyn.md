@@ -259,7 +259,7 @@ template <template <class> class Trait, class As>
 struct instantiate_dyn;
 ```
 
-显式实例化：`template struct asf::instantiate_dyn<Trait, As>;`。
+显式实例化：`template struct asf_dyn::instantiate_dyn<Trait, As>;`。
 
 ## 参见
 

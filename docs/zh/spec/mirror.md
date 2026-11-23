@@ -108,7 +108,7 @@ mirror(U&&) -> mirror<U&&>;
 ```cpp
 struct Alias {
   std::string name;
-  operator asf::mirror<Person>() { return asf::mirror<Person>{name}; }
+  operator asf_dyn::mirror<Person>() { return asf_dyn::mirror<Person>{name}; }
 };
 ```
 
@@ -227,7 +227,7 @@ constexpr /* decay of T */ value_of(mirror<T, Src> const& m);
 
 ```cpp
 template <>
-class asf::mirror<Widget> : public asf::mirror_base<Widget> {
+class asf_dyn::mirror<Widget> : public asf_dyn::mirror_base<Widget> {
  public:
   using mirror_base<Widget>::mirror_base;
   int width() const { return w; }

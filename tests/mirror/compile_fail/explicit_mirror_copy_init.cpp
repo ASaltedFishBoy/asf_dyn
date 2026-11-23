@@ -8,12 +8,12 @@ struct B {
 
 struct ExplAlias {
   B b;
-  explicit operator asf::mirror<B>() { return asf::mirror<B>{b}; }
+  explicit operator asf_dyn::mirror<B>() { return asf_dyn::mirror<B>{b}; }
 };
 
 int main() {
   ExplAlias a{{1}};
-  asf::mirror<B, ExplAlias> m = a;  // ERROR: explicit ctor only
+  asf_dyn::mirror<B, ExplAlias> m = a;  // ERROR: explicit ctor only
   (void)m;
   return 0;
 }

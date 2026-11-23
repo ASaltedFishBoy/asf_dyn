@@ -45,7 +45,7 @@ struct LiveMI<Obj> final {
 
 int main() {
   Obj o{"T"};
-  asf::dyn<LiveMI> d{&o};  // must static_assert: live multi-inherit
+  asf_dyn::dyn<LiveMI> d{&o};  // must static_assert: live multi-inherit
   (void)d;
   return 0;
 }

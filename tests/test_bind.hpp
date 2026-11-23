@@ -3,9 +3,9 @@
 // Unified bind layer for dual-pass suites (general + mirror).
 // One source compiles twice: ASF_TEST_VIA_MIRROR=0 (default) binds
 // pointers/objects directly; ASF_TEST_VIA_MIRROR=1 binds the same cases
-// through asf::to_mirror (sourced-mirror observer). Owning and special-ptr
+// through asf_dyn::to_mirror (sourced-mirror observer). Owning and special-ptr
 // binds (unique_ptr / cache_ptr / shared_ptr) do not depend on the pass and
-// call asf::to_dyn directly in the shared source.
+// call asf_dyn::to_dyn directly in the shared source.
 
 #include "asf.hpp"
 
@@ -20,12 +20,12 @@
 // object-bind storage), so each pass keeps its original semantics exactly.
 #if ASF_TEST_VIA_MIRROR
 #define ASF_TEST_TRAIT_MIRROR [[=asf_ann::mirror]]
-#define ASF_TEST_M(T) asf::mirror<T>
-#define ASF_TEST_CM(T) asf::c_mirror<T>
-#define ASF_TEST_RM(T) asf::rmirror<T>
-#define ASF_TEST_CRM(T) asf::c_rmirror<T>
-#define ASF_TEST_COPYM(T) asf::mirror<T>
-#define ASF_TEST_M_CREF(T) asf::mirror<T> const&
+#define ASF_TEST_M(T) asf_dyn::mirror<T>
+#define ASF_TEST_CM(T) asf_dyn::c_mirror<T>
+#define ASF_TEST_RM(T) asf_dyn::rmirror<T>
+#define ASF_TEST_CRM(T) asf_dyn::c_rmirror<T>
+#define ASF_TEST_COPYM(T) asf_dyn::mirror<T>
+#define ASF_TEST_M_CREF(T) asf_dyn::mirror<T> const&
 #else
 #define ASF_TEST_TRAIT_MIRROR
 #define ASF_TEST_M(T) T&
@@ -49,48 +49,48 @@ namespace asf_test {
 
 template <template <class> class Trait, class Obj>
 auto to_dyn(Obj& obj) {
-  auto m = asf::to_mirror(obj);
-  return asf::to_dyn<Trait>(m);
+  auto m = asf_dyn::to_mirror(obj);
+  return asf_dyn::to_dyn<Trait>(m);
 }
 
 template <template <class> class Trait, class Obj>
 auto to_c_dyn(Obj& obj) {
-  auto m = asf::to_mirror(obj);
-  return asf::to_c_dyn<Trait>(m);
+  auto m = asf_dyn::to_mirror(obj);
+  return asf_dyn::to_c_dyn<Trait>(m);
 }
 
 template <template <class> class Trait, class Obj>
 auto to_iface(Obj& obj) {
-  auto m = asf::to_mirror(obj);
-  return asf::to_iface<Trait>(m);
+  auto m = asf_dyn::to_mirror(obj);
+  return asf_dyn::to_iface<Trait>(m);
 }
 
 template <template <class> class Trait, class Obj>
 auto to_c_iface(Obj& obj) {
-  auto m = asf::to_mirror(obj);
-  return asf::to_c_iface<Trait>(m);
+  auto m = asf_dyn::to_mirror(obj);
+  return asf_dyn::to_c_iface<Trait>(m);
 }
 
 #else
 
 template <template <class> class Trait, class Obj>
 auto to_dyn(Obj& obj) {
-  return asf::to_dyn<Trait>(&obj);
+  return asf_dyn::to_dyn<Trait>(&obj);
 }
 
 template <template <class> class Trait, class Obj>
 auto to_c_dyn(Obj& obj) {
-  return asf::to_c_dyn<Trait>(&obj);
+  return asf_dyn::to_c_dyn<Trait>(&obj);
 }
 
 template <template <class> class Trait, class Obj>
 auto to_iface(Obj& obj) {
-  return asf::to_iface<Trait>(obj);
+  return asf_dyn::to_iface<Trait>(obj);
 }
 
 template <template <class> class Trait, class Obj>
 auto to_c_iface(Obj& obj) {
-  return asf::to_c_iface<Trait>(obj);
+  return asf_dyn::to_c_iface<Trait>(obj);
 }
 
 #endif

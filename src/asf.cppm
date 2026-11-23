@@ -3,8 +3,9 @@
 // The library sources stay in include/ as regular headers (textual #include
 // keeps working unchanged). This unit textual-includes them in purview with
 // ASF_MODULE_INTERFACE defined, which
-//   - expands ASF_EXPORT to `export` (ASF_BEGIN_NAMESPACE / the asf_ann
-//     alias), exporting namespace asf at namespace granularity, and
+//   - expands ASF_EXPORT to `export` (ASF_BEGIN_NAMESPACE / the asf_ann /
+//     asf_dyn aliases), exporting namespace asf (API under asf::dyn) at
+//     namespace granularity, and
 //   - makes the headers skip their own <...> includes; the std dependencies
 //     are textually included in the global module fragment below instead.
 //

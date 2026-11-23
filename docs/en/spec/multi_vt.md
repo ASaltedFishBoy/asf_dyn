@@ -139,13 +139,13 @@ After `unsafe_downcast<Document>(s)`, the handle tag is Document so indices foll
 Safe when the held vt is the table being named. Typical: a section-prefix upcast that is still on the leaf, then `unsafe_downcast` back to the leaf or to another section prefix of that leaf. There is no safe `unsafe_downcast` from a cover to a more-derived Trait.
 
 ```cpp
-asf::dyn<Readable> r = doc;                      // leaf
-auto back = asf::unsafe_downcast<Document>(r);   // same leaf, slots match
+asf_dyn::dyn<Readable> r = doc;                      // leaf
+auto back = asf_dyn::unsafe_downcast<Document>(r);   // same leaf, slots match
 
-auto p = asf::trait_cast<Printable>(doc);        // Printable cover
-auto s = asf::trait_cast<Sealed>(doc);          // Sealed cover
-// asf::unsafe_downcast<Document>(p);             // UB
-// asf::unsafe_downcast<Document>(s);             // UB
+auto p = asf_dyn::trait_cast<Printable>(doc);        // Printable cover
+auto s = asf_dyn::trait_cast<Sealed>(doc);          // Sealed cover
+// asf_dyn::unsafe_downcast<Document>(p);             // UB
+// asf_dyn::unsafe_downcast<Document>(s);             // UB
 ```
 
 With RTTI, a downcast or a cross-branch cast uses `dyn_cast` (switches to the physical vt from meta). That test over-accepts downcasts; the exact guarantee is in [features.md](features.md)#asf_has_dyn_rtti. Without MULTI_VT there is no cover; the usual case is a same-table section prefix, and going from a prefix tag back to the leaf is the same table.

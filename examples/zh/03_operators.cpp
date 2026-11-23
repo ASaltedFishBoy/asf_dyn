@@ -64,8 +64,8 @@ struct Ops<Person> final {};
 int main() {
   Person person{"Ada"};  // size 3
 
-  auto ai = asf::to_iface<Ops>(person);
-  auto ad = asf::to_dyn<Ops>(&person);
+  auto ai = asf_dyn::to_iface<Ops>(person);
+  auto ad = asf_dyn::to_dyn<Ops>(&person);
   std::println("iface == name? {}", (*ai) == std::string_view{"Ada"});
   std::println("dyn   == name? {}", (*ad) == std::string_view{"Ada"});
   std::println("iface * + 4 = {}", (*ai) + 4);
@@ -76,12 +76,12 @@ int main() {
   std::println("convert to int = {}", n);
 
   Person assigned{"Zoe"};
-  asf::dyn<Ops> av{&assigned};
+  asf_dyn::dyn<Ops> av{&assigned};
   *av = 7;  // 具体 RHS 的 op_assign(int)
   std::println("after assign name = {}", assigned.name);
 
   // 句柄重绑定（指针语义），不是经 Trait 的值赋值
-  asf::dyn<Ops> other;
+  asf_dyn::dyn<Ops> other;
   other = av;
   std::println("rebound size = {}", int(*other));
 

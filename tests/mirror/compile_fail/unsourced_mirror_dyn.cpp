@@ -13,13 +13,13 @@ struct [[=asf_ann::mirror]] Greet<void> {
 };
 template <>
 struct Greet<P> final {
-  static int get(asf::c_mirror<P> self) { return self.x; }
+  static int get(asf_dyn::c_mirror<P> self) { return self.x; }
 };
 
 int main() {
   P p{1};
-  auto m = asf::to_pure_mirror(p);  // mirror<P>, no Src
-  auto d = asf::to_dyn<Greet>(m);   // ERROR: unsourced mirror -> dyn
+  auto m = asf_dyn::to_pure_mirror(p);  // mirror<P>, no Src
+  auto d = asf_dyn::to_dyn<Greet>(m);   // ERROR: unsourced mirror -> dyn
   (void)d;
   return 0;
 }

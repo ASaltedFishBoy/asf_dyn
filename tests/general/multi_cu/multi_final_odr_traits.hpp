@@ -53,9 +53,9 @@ struct I3<Person> final {
 };
 
 // TU-A (I2 only)
-asf::detail::vt_ptr odr_tu_i2_leaf(Person& p);
-asf::detail::vt_ptr odr_tu_i2_i1(Person& p);
+asf_dyn::detail::vt_ptr odr_tu_i2_leaf(Person& p);
+asf_dyn::detail::vt_ptr odr_tu_i2_i1(Person& p);
 
 // TU-B (I3 only)
-asf::detail::vt_ptr odr_tu_i3_leaf(Person& p);
-asf::detail::vt_ptr odr_tu_i3_i1(Person& p);
+asf_dyn::detail::vt_ptr odr_tu_i3_leaf(Person& p);
+asf_dyn::detail::vt_ptr odr_tu_i3_i1(Person& p);

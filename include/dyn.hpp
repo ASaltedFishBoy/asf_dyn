@@ -162,7 +162,7 @@ using dyn_default_delete = dyn_adopt_delete<>;
 // VT method/construct slots come from the Trait alone. Ops only chooses whether
 // the Ptr-level shallow path uses a slot (or leaves it unsupported).
 // Ops for a Ptr come from pointer_trait<P>::ops when present. The type need
-// not be asf::pointer_ops; dyn reads slot aliases and each slot's call
+// not be asf::dyn::pointer_ops; dyn reads slot aliases and each slot's call
 // operator. If absent, dyn uses that Ptr's native type interface.
 struct op_trivial {};
 struct op_trivial_relocate {};
@@ -225,7 +225,7 @@ struct op_assign_move_of {
 };
 
 // Cache / handle emptiness: dyn is non-empty iff its vt is live. Invoked with
-// the dyn handle (op_modified unwraps to this). See asf::vtable_of.
+// the dyn handle (op_modified unwraps to this). See asf::dyn::vtable_of.
 struct op_bool_vt {
   bool operator()(auto const& h) const noexcept {
     return vtable_of(h) != nullptr;
@@ -2689,12 +2689,12 @@ class dyn_ptr_core
 
  protected:
   template <std::meta::info, std::meta::info, std::meta::info>
-  friend struct ::asf::call_fn;
+  friend struct ::asf::dyn::call_fn;
   template <class, std::meta::info, std::meta::info, std::meta::info>
-  friend struct ::asf::bound_call_fn;
+  friend struct ::asf::dyn::bound_call_fn;
   template <class, std::meta::info, std::meta::info, std::meta::info, class,
             class...>
-  friend struct ::asf::bound_call_exact;
+  friend struct ::asf::dyn::bound_call_exact;
   template <class, std::size_t>
   friend struct op_slot;
 
@@ -2860,12 +2860,12 @@ class dyn_view_body {
 
  private:
   template <std::meta::info, std::meta::info, std::meta::info>
-  friend struct ::asf::call_fn;
+  friend struct ::asf::dyn::call_fn;
   template <class, std::meta::info, std::meta::info, std::meta::info>
-  friend struct ::asf::bound_call_fn;
+  friend struct ::asf::dyn::bound_call_fn;
   template <class, std::meta::info, std::meta::info, std::meta::info, class,
             class...>
-  friend struct ::asf::bound_call_exact;
+  friend struct ::asf::dyn::bound_call_exact;
   template <class, std::size_t>
   friend struct op_slot;
 
@@ -3023,9 +3023,9 @@ class sub_dyn_body
   template <template <class> class, bool, class, class>
   friend class sub_dyn_body;
   template <template <class> class T, class P>
-  friend class ::asf::sub_dyn;
+  friend class ::asf::dyn::sub_dyn;
   template <template <class> class T, class P>
-  friend class ::asf::c_sub_dyn;
+  friend class ::asf::dyn::c_sub_dyn;
 
   // Void* observation flavor of this Const (proxy host).
   using Obs = std::conditional_t<Const, c_sub_dyn<Trait>, sub_dyn<Trait>>;
@@ -3283,13 +3283,13 @@ class dyn_handle_base
   friend class dyn_handle_base;
 
   template <template <class> class T, class P>
-  friend class ::asf::dyn;
+  friend class ::asf::dyn::dyn;
   template <template <class> class T, class P>
-  friend class ::asf::c_dyn;
+  friend class ::asf::dyn::c_dyn;
   template <template <class> class T, class P>
-  friend class ::asf::sub_dyn;
+  friend class ::asf::dyn::sub_dyn;
   template <template <class> class T, class P>
-  friend class ::asf::c_sub_dyn;
+  friend class ::asf::dyn::c_sub_dyn;
   template <template <class> class T, bool C, class P, class D>
   friend class sub_dyn_body;
   template <template <class> class Tr, std::size_t Sz, std::size_t Al,

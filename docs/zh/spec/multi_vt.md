@@ -137,13 +137,13 @@ index   Document 布局         Sealed cover 内存
 安全用法：vt 仍是要命名的那张物理表。典型是还停在叶上的 section-prefix 上行，再 `unsafe_downcast` 回叶，或回到该叶的某个 section-prefix。cover 上没有通向更派生 Trait 的安全 `unsafe_downcast`。
 
 ```cpp
-asf::dyn<Readable> r = doc;                      // 叶
-auto back = asf::unsafe_downcast<Document>(r);   // 同一张叶，槽对齐
+asf_dyn::dyn<Readable> r = doc;                      // 叶
+auto back = asf_dyn::unsafe_downcast<Document>(r);   // 同一张叶，槽对齐
 
-auto p = asf::trait_cast<Printable>(doc);        // Printable cover
-auto s = asf::trait_cast<Sealed>(doc);          // Sealed cover
-// asf::unsafe_downcast<Document>(p);             // UB
-// asf::unsafe_downcast<Document>(s);             // UB
+auto p = asf_dyn::trait_cast<Printable>(doc);        // Printable cover
+auto s = asf_dyn::trait_cast<Sealed>(doc);          // Sealed cover
+// asf_dyn::unsafe_downcast<Document>(p);             // UB
+// asf_dyn::unsafe_downcast<Document>(s);             // UB
 ```
 
 有 RTTI 时，下行和交叉转换用 `dyn_cast`（换到 meta 里那张物理 vt）。判定会过度接受；确切的语义保证见 [features.md](features.md)#asf_has_dyn_rtti。无 MULTI_VT 时没有 cover，常见只剩同表 section-prefix；从叶的前缀标签回到叶是同一张表。

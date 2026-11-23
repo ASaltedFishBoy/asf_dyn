@@ -28,7 +28,9 @@
 // version / option mix does not COMDAT-merge slots / static vt data / erased
 // thunks with another loaded in the same process. Bump ASF_VERSION_* (and the
 // vMAJOR_MINOR_PATCH token below) when breaking the dyn/vtable symbol ABI.
-// Source still spells asf::dyn, asf::detail::... (inline ns is transparent).
+// Library API sits under asf::dyn (umbrella ns asf): source spells
+// asf::dyn::dyn, asf::dyn::detail::... (inline ns is transparent). Users
+// normally alias-spell asf_dyn::... (alias at the bottom of this header).
 
 #ifndef ASF_VERSION_MAJOR
 #define ASF_VERSION_MAJOR 0
@@ -119,10 +121,12 @@
 
 #define ASF_BEGIN_NAMESPACE                                                    \
   ASF_EXPORT namespace asf {                                                   \
+  namespace dyn {                                                              \
   inline namespace ASF_ABI_NAMESPACE {
 
 #define ASF_END_NAMESPACE                                                      \
   } /* inline ASF_ABI_NAMESPACE */                                             \
+  } /* namespace dyn */                                                        \
   } /* namespace asf */
 
 ASF_BEGIN_NAMESPACE
@@ -148,3 +152,6 @@ inline constexpr char const* abi_namespace_name =
     ASF_PP_STRINGIZE(ASF_ABI_NAMESPACE);
 
 ASF_END_NAMESPACE
+
+// User-facing alias: asf_dyn::X == asf::dyn::X (the library ns is asf::dyn).
+ASF_EXPORT namespace asf_dyn = asf::dyn;

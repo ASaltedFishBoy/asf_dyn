@@ -15,13 +15,13 @@ struct Mixed<void> {
 template <>
 struct Mixed<P> final {
   static int plain(P const& self) { return self.x; }
-  static int mir(asf::c_mirror<P> self) { return self.x; }
+  static int mir(asf_dyn::c_mirror<P> self) { return self.x; }
 };
 
 int main() {
   P p{1};
-  auto m = asf::to_pure_mirror(p);  // mirror<P>, no Src
-  auto i = asf::to_iface<Mixed>(m); // bind ok
+  auto m = asf_dyn::to_pure_mirror(p);  // mirror<P>, no Src
+  auto i = asf_dyn::to_iface<Mixed>(m); // bind ok
   (void)i->mir();                   // ok: [[=mirror]]
   return i->plain();                // ERROR: unsourced + non-mirror
 }

@@ -5,18 +5,18 @@ Compile-time macros, defined in [`include/detail/iface_config.hpp`](../../../inc
 Runtime-visible constants:
 
 ```cpp
-asf::version_major / version_minor / version_patch / version
-asf::dyn_rtti_v
-asf::dyn_intermediate_v
-asf::dyn_multi_vt_v
-asf::dyn_single_inherit_v
-asf::dyn_feature_bits
-asf::abi_namespace_name
+asf_dyn::version_major / version_minor / version_patch / version
+asf_dyn::dyn_rtti_v
+asf_dyn::dyn_intermediate_v
+asf_dyn::dyn_multi_vt_v
+asf_dyn::dyn_single_inherit_v
+asf_dyn::dyn_feature_bits
+asf_dyn::abi_namespace_name
 ```
 
 ## ABI version (`ASF_VERSION_*` / `ASF_ABI_NAMESPACE`)
 
-Currently **0.3.0**. The inline ABI namespace is `v0_3_0_b` + a **binary feature tag** (MSB→LSB: `RTTI`, `INTERMEDIATE`, `MULTI_VT`, `SINGLE_INHERIT`) + a `_tNN` suffix (the `ASF_DYN_VT_TAG_HI_BITS` value). Defaults (`0,1,1,0`, width 16) yield `v0_3_0_b0110_t16`. Source still writes `asf::dyn` and the rest; mangling includes that segment so `.dll` / `.so` files built with different ASF versions **or option mixes** in one process do not silently merge COMDAT symbols for slots, static vtable data, and erased thunks. Bump `ASF_VERSION_*` (and the `vMAJOR_MINOR_PATCH` token in `iface_config.hpp`) when breaking the dyn/vtable symbol ABI. Override `ASF_ABI_NAMESPACE` only if you intentionally force a tag. Runtime: `asf::abi_namespace_name`, `asf::dyn_feature_bits`.
+Currently **0.3.0**. The inline ABI namespace is `v0_3_0_b` + a **binary feature tag** (MSB→LSB: `RTTI`, `INTERMEDIATE`, `MULTI_VT`, `SINGLE_INHERIT`) + a `_tNN` suffix (the `ASF_DYN_VT_TAG_HI_BITS` value). Defaults (`0,1,1,0`, width 16) yield `v0_3_0_b0110_t16`. Source still writes `asf_dyn::dyn` and the rest; mangling includes that segment so `.dll` / `.so` files built with different ASF versions **or option mixes** in one process do not silently merge COMDAT symbols for slots, static vtable data, and erased thunks. Bump `ASF_VERSION_*` (and the `vMAJOR_MINOR_PATCH` token in `iface_config.hpp`) when breaking the dyn/vtable symbol ABI. Override `ASF_ABI_NAMESPACE` only if you intentionally force a tag. Runtime: `asf_dyn::abi_namespace_name`, `asf_dyn::dyn_feature_bits`.
 
 ---
 

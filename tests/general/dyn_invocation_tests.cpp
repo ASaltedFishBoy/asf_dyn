@@ -252,9 +252,9 @@ struct IntStringable<IntBox> final {
 
 void TestObserverDispatch() {
   auto sp = std::make_shared<IntBox>(IntBox{99});
-  auto owned = asf::to_dyn<IntStringable>(sp);
+  auto owned = asf_dyn::to_dyn<IntStringable>(sp);
   ASF_CHECK_EQ(owned->to_string(), "int:99");
-  asf::dyn<IntStringable, std::weak_ptr<void>> weak{owned};
+  asf_dyn::dyn<IntStringable, std::weak_ptr<void>> weak{owned};
   ASF_CHECK(static_cast<bool>(weak));
   {
     auto locked = weak.lock();

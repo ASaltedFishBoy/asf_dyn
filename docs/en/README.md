@@ -50,24 +50,24 @@ struct Greeter<Person> final {
 
 int main() {
   Person p{"Ada"};  // object definition
-  asf::dyn<Greeter> d{&p};
+  asf_dyn::dyn<Greeter> d{&p};
   // If you dyn-bind a base and the whole program never ODR-uses a covering
   // final leaf (instantiate_dyn or a pointer/mirror bind like this), pick one
-  // final and instantiate: template struct asf::instantiate_dyn<Greeter, Person>;
+  // final and instantiate: template struct asf_dyn::instantiate_dyn<Greeter, Person>;
 
-  asf::iface<Greeter, Person> i{p};
+  asf_dyn::iface<Greeter, Person> i{p};
   i->greet();
   std::println("iface who = {}", i->who());
 
   d->greet();
   std::println("dyn who = {}", d->who());
 
-  auto d2 = asf::to_dyn<Greeter>(&p);
+  auto d2 = asf_dyn::to_dyn<Greeter>(&p);
   d2->greet();
 }
 ```
 
-`Greeter<void>` is the interface. `Greeter<Person> final` is the implementation leaf. `template struct asf::instantiate_dyn<Greeter, Person>;` instantiates dyn. `Person p{...};` is the object definition.
+`Greeter<void>` is the interface. `Greeter<Person> final` is the implementation leaf. `template struct asf_dyn::instantiate_dyn<Greeter, Person>;` instantiates dyn. `Person p{...};` is the object definition.
 
 ## Concepts
 

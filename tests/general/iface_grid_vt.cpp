@@ -263,47 +263,47 @@ namespace {
 
 template <template <class> class Final>
 consteval std::size_t layout_table_count() {
-  return asf::detail::vtable_instance_count<Final>();
+  return asf_dyn::detail::vtable_instance_count<Final>();
 }
 
-using VtSet = std::unordered_set<asf::detail::vt_ptr>;
+using VtSet = std::unordered_set<asf_dyn::detail::vt_ptr>;
 
 // Upcast geometry (no can_dyn_upcast matrix): direct parents are level�? with
 // same or adjacent b (expand: (a,b)->(a-1,b)/(a-1,b-1); contract:
 // (a,b)->(a-1,b)/(a-1,b+1)); channels = reflexive-transitive closure (=100).
 // Each upcast inserts the resulting vt into `tables`.
 template <template <class> class To, template <class> class From>
-void do_upcast(asf::dyn<From>& from, std::size_t& channels, VtSet& tables) {
-  auto h = asf::trait_cast<To>(from);
+void do_upcast(asf_dyn::dyn<From>& from, std::size_t& channels, VtSet& tables) {
+  auto h = asf_dyn::trait_cast<To>(from);
   ++channels;
-  tables.insert(asf::detail::vt_of(h));
+  tables.insert(asf_dyn::detail::vt_of(h));
 }
 
-void upcasts_from_G0_0(asf::dyn<G0_0>& from, std::size_t& channels,
+void upcasts_from_G0_0(asf_dyn::dyn<G0_0>& from, std::size_t& channels,
                        VtSet& tables) {
   do_upcast<G0_0>(from, channels, tables);
 }
 
-void upcasts_from_G1_0(asf::dyn<G1_0>& from, std::size_t& channels,
+void upcasts_from_G1_0(asf_dyn::dyn<G1_0>& from, std::size_t& channels,
                        VtSet& tables) {
   do_upcast<G0_0>(from, channels, tables);
   do_upcast<G1_0>(from, channels, tables);
 }
 
-void upcasts_from_G1_1(asf::dyn<G1_1>& from, std::size_t& channels,
+void upcasts_from_G1_1(asf_dyn::dyn<G1_1>& from, std::size_t& channels,
                        VtSet& tables) {
   do_upcast<G0_0>(from, channels, tables);
   do_upcast<G1_1>(from, channels, tables);
 }
 
-void upcasts_from_G2_0(asf::dyn<G2_0>& from, std::size_t& channels,
+void upcasts_from_G2_0(asf_dyn::dyn<G2_0>& from, std::size_t& channels,
                        VtSet& tables) {
   do_upcast<G0_0>(from, channels, tables);
   do_upcast<G1_0>(from, channels, tables);
   do_upcast<G2_0>(from, channels, tables);
 }
 
-void upcasts_from_G2_1(asf::dyn<G2_1>& from, std::size_t& channels,
+void upcasts_from_G2_1(asf_dyn::dyn<G2_1>& from, std::size_t& channels,
                        VtSet& tables) {
   do_upcast<G0_0>(from, channels, tables);
   do_upcast<G1_0>(from, channels, tables);
@@ -311,14 +311,14 @@ void upcasts_from_G2_1(asf::dyn<G2_1>& from, std::size_t& channels,
   do_upcast<G2_1>(from, channels, tables);
 }
 
-void upcasts_from_G2_2(asf::dyn<G2_2>& from, std::size_t& channels,
+void upcasts_from_G2_2(asf_dyn::dyn<G2_2>& from, std::size_t& channels,
                        VtSet& tables) {
   do_upcast<G0_0>(from, channels, tables);
   do_upcast<G1_1>(from, channels, tables);
   do_upcast<G2_2>(from, channels, tables);
 }
 
-void upcasts_from_G3_0(asf::dyn<G3_0>& from, std::size_t& channels,
+void upcasts_from_G3_0(asf_dyn::dyn<G3_0>& from, std::size_t& channels,
                        VtSet& tables) {
   do_upcast<G0_0>(from, channels, tables);
   do_upcast<G1_0>(from, channels, tables);
@@ -326,7 +326,7 @@ void upcasts_from_G3_0(asf::dyn<G3_0>& from, std::size_t& channels,
   do_upcast<G3_0>(from, channels, tables);
 }
 
-void upcasts_from_G3_1(asf::dyn<G3_1>& from, std::size_t& channels,
+void upcasts_from_G3_1(asf_dyn::dyn<G3_1>& from, std::size_t& channels,
                        VtSet& tables) {
   do_upcast<G0_0>(from, channels, tables);
   do_upcast<G1_0>(from, channels, tables);
@@ -336,7 +336,7 @@ void upcasts_from_G3_1(asf::dyn<G3_1>& from, std::size_t& channels,
   do_upcast<G3_1>(from, channels, tables);
 }
 
-void upcasts_from_G3_2(asf::dyn<G3_2>& from, std::size_t& channels,
+void upcasts_from_G3_2(asf_dyn::dyn<G3_2>& from, std::size_t& channels,
                        VtSet& tables) {
   do_upcast<G0_0>(from, channels, tables);
   do_upcast<G1_0>(from, channels, tables);
@@ -346,7 +346,7 @@ void upcasts_from_G3_2(asf::dyn<G3_2>& from, std::size_t& channels,
   do_upcast<G3_2>(from, channels, tables);
 }
 
-void upcasts_from_G3_3(asf::dyn<G3_3>& from, std::size_t& channels,
+void upcasts_from_G3_3(asf_dyn::dyn<G3_3>& from, std::size_t& channels,
                        VtSet& tables) {
   do_upcast<G0_0>(from, channels, tables);
   do_upcast<G1_1>(from, channels, tables);
@@ -354,7 +354,7 @@ void upcasts_from_G3_3(asf::dyn<G3_3>& from, std::size_t& channels,
   do_upcast<G3_3>(from, channels, tables);
 }
 
-void upcasts_from_G4_0(asf::dyn<G4_0>& from, std::size_t& channels,
+void upcasts_from_G4_0(asf_dyn::dyn<G4_0>& from, std::size_t& channels,
                        VtSet& tables) {
   do_upcast<G0_0>(from, channels, tables);
   do_upcast<G1_0>(from, channels, tables);
@@ -366,7 +366,7 @@ void upcasts_from_G4_0(asf::dyn<G4_0>& from, std::size_t& channels,
   do_upcast<G4_0>(from, channels, tables);
 }
 
-void upcasts_from_G4_1(asf::dyn<G4_1>& from, std::size_t& channels,
+void upcasts_from_G4_1(asf_dyn::dyn<G4_1>& from, std::size_t& channels,
                        VtSet& tables) {
   do_upcast<G0_0>(from, channels, tables);
   do_upcast<G1_0>(from, channels, tables);
@@ -379,7 +379,7 @@ void upcasts_from_G4_1(asf::dyn<G4_1>& from, std::size_t& channels,
   do_upcast<G4_1>(from, channels, tables);
 }
 
-void upcasts_from_G4_2(asf::dyn<G4_2>& from, std::size_t& channels,
+void upcasts_from_G4_2(asf_dyn::dyn<G4_2>& from, std::size_t& channels,
                        VtSet& tables) {
   do_upcast<G0_0>(from, channels, tables);
   do_upcast<G1_0>(from, channels, tables);
@@ -391,7 +391,7 @@ void upcasts_from_G4_2(asf::dyn<G4_2>& from, std::size_t& channels,
   do_upcast<G4_2>(from, channels, tables);
 }
 
-void upcasts_from_G5_0(asf::dyn<G5_0>& from, std::size_t& channels,
+void upcasts_from_G5_0(asf_dyn::dyn<G5_0>& from, std::size_t& channels,
                        VtSet& tables) {
   do_upcast<G0_0>(from, channels, tables);
   do_upcast<G1_0>(from, channels, tables);
@@ -407,7 +407,7 @@ void upcasts_from_G5_0(asf::dyn<G5_0>& from, std::size_t& channels,
   do_upcast<G5_0>(from, channels, tables);
 }
 
-void upcasts_from_G5_1(asf::dyn<G5_1>& from, std::size_t& channels,
+void upcasts_from_G5_1(asf_dyn::dyn<G5_1>& from, std::size_t& channels,
                        VtSet& tables) {
   do_upcast<G0_0>(from, channels, tables);
   do_upcast<G1_0>(from, channels, tables);
@@ -423,7 +423,7 @@ void upcasts_from_G5_1(asf::dyn<G5_1>& from, std::size_t& channels,
   do_upcast<G5_1>(from, channels, tables);
 }
 
-void upcasts_from_Leaf(asf::dyn<Leaf>& from, std::size_t& channels,
+void upcasts_from_Leaf(asf_dyn::dyn<Leaf>& from, std::size_t& channels,
                        VtSet& tables) {
   do_upcast<G0_0>(from, channels, tables);
   do_upcast<G1_0>(from, channels, tables);
@@ -455,63 +455,63 @@ int run() {
   std::size_t channels = 0;
   VtSet tables;
   {
-    auto h = asf::trait_cast<G0_0>(root);
+    auto h = asf_dyn::trait_cast<G0_0>(root);
     upcasts_from_G0_0(h, channels, tables);
   }
   {
-    auto h = asf::trait_cast<G1_0>(root);
+    auto h = asf_dyn::trait_cast<G1_0>(root);
     upcasts_from_G1_0(h, channels, tables);
   }
   {
-    auto h = asf::trait_cast<G1_1>(root);
+    auto h = asf_dyn::trait_cast<G1_1>(root);
     upcasts_from_G1_1(h, channels, tables);
   }
   {
-    auto h = asf::trait_cast<G2_0>(root);
+    auto h = asf_dyn::trait_cast<G2_0>(root);
     upcasts_from_G2_0(h, channels, tables);
   }
   {
-    auto h = asf::trait_cast<G2_1>(root);
+    auto h = asf_dyn::trait_cast<G2_1>(root);
     upcasts_from_G2_1(h, channels, tables);
   }
   {
-    auto h = asf::trait_cast<G2_2>(root);
+    auto h = asf_dyn::trait_cast<G2_2>(root);
     upcasts_from_G2_2(h, channels, tables);
   }
   {
-    auto h = asf::trait_cast<G3_0>(root);
+    auto h = asf_dyn::trait_cast<G3_0>(root);
     upcasts_from_G3_0(h, channels, tables);
   }
   {
-    auto h = asf::trait_cast<G3_1>(root);
+    auto h = asf_dyn::trait_cast<G3_1>(root);
     upcasts_from_G3_1(h, channels, tables);
   }
   {
-    auto h = asf::trait_cast<G3_2>(root);
+    auto h = asf_dyn::trait_cast<G3_2>(root);
     upcasts_from_G3_2(h, channels, tables);
   }
   {
-    auto h = asf::trait_cast<G3_3>(root);
+    auto h = asf_dyn::trait_cast<G3_3>(root);
     upcasts_from_G3_3(h, channels, tables);
   }
   {
-    auto h = asf::trait_cast<G4_0>(root);
+    auto h = asf_dyn::trait_cast<G4_0>(root);
     upcasts_from_G4_0(h, channels, tables);
   }
   {
-    auto h = asf::trait_cast<G4_1>(root);
+    auto h = asf_dyn::trait_cast<G4_1>(root);
     upcasts_from_G4_1(h, channels, tables);
   }
   {
-    auto h = asf::trait_cast<G4_2>(root);
+    auto h = asf_dyn::trait_cast<G4_2>(root);
     upcasts_from_G4_2(h, channels, tables);
   }
   {
-    auto h = asf::trait_cast<G5_0>(root);
+    auto h = asf_dyn::trait_cast<G5_0>(root);
     upcasts_from_G5_0(h, channels, tables);
   }
   {
-    auto h = asf::trait_cast<G5_1>(root);
+    auto h = asf_dyn::trait_cast<G5_1>(root);
     upcasts_from_G5_1(h, channels, tables);
   }
   upcasts_from_Leaf(root, channels, tables);
@@ -519,24 +519,24 @@ int run() {
     return 2;
 
   constexpr auto layout_n = layout_table_count<Leaf>();
-  constexpr auto section_n = asf::detail::sections_only<Leaf>().size();
+  constexpr auto section_n = asf_dyn::detail::sections_only<Leaf>().size();
   auto n_tables = tables.size();
   if (n_tables != layout_n)
     return 1;
 
   // Spot-check: direct parent (a-1, same b) and a downcast that must fail.
-  static_assert(asf::detail::can_dyn_upcast<G2_1, G3_1>());
-  static_assert(!asf::detail::can_dyn_upcast<G3_1, G2_1>());
-  static_assert(!asf::detail::can_dyn_upcast<G1_0, G1_1>());
+  static_assert(asf_dyn::detail::can_dyn_upcast<G2_1, G3_1>());
+  static_assert(!asf_dyn::detail::can_dyn_upcast<G3_1, G2_1>());
+  static_assert(!asf_dyn::detail::can_dyn_upcast<G1_0, G1_1>());
   {
-    auto i8 = asf::trait_cast<G3_1>(root);
-    auto i5 = asf::trait_cast<G2_1>(i8);
+    auto i8 = asf_dyn::trait_cast<G3_1>(root);
+    auto i5 = asf_dyn::trait_cast<G2_1>(i8);
     int before = person.id;
     if (i5->m_2_1() != (before + 1) * 100 + 21 || person.id != before + 1)
       return 4;
     if (i8->m_3_1() != (before + 2) * 100 + 31 || person.id != before + 2)
       return 4;
-    if (asf::trait_cast<G0_0>(root)->m_0_0() != (before + 3) * 100 + 0 ||
+    if (asf_dyn::trait_cast<G0_0>(root)->m_0_0() != (before + 3) * 100 + 0 ||
         person.id != before + 3)
       return 4;
   }

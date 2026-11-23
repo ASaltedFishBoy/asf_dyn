@@ -29,6 +29,6 @@ struct Named<Person> final {
 
 int main() {
   Person p;
-  asf::dyn<Named> d{&p};
+  asf_dyn::dyn<Named> d{&p};
   (void)d->who();
 }

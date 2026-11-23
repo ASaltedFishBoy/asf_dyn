@@ -11,20 +11,20 @@ namespace asf_test {
 
 template <template <class> class Trait, class Obj>
 auto to_dyn_m(Obj& obj) {
-  auto m = asf::to_mirror(obj);
-  return asf::to_dyn<Trait>(m);
+  auto m = asf_dyn::to_mirror(obj);
+  return asf_dyn::to_dyn<Trait>(m);
 }
 
 template <template <class> class Trait, class Obj>
 auto to_c_dyn_m(Obj& obj) {
-  auto m = asf::to_mirror(obj);
-  return asf::to_c_dyn<Trait>(m);
+  auto m = asf_dyn::to_mirror(obj);
+  return asf_dyn::to_c_dyn<Trait>(m);
 }
 
 template <template <class> class Trait, class Obj>
 auto to_iface_m(Obj& obj) {
-  auto m = asf::to_mirror(obj);
-  return asf::to_iface<Trait>(m);
+  auto m = asf_dyn::to_mirror(obj);
+  return asf_dyn::to_iface<Trait>(m);
 }
 
 }  // namespace asf_test

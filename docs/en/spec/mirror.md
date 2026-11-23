@@ -110,7 +110,7 @@ A user type can bind through a conversion operator:
 ```cpp
 struct Alias {
   std::string name;
-  operator asf::mirror<Person>() { return asf::mirror<Person>{name}; }
+  operator asf_dyn::mirror<Person>() { return asf_dyn::mirror<Person>{name}; }
 };
 ```
 
@@ -230,7 +230,7 @@ Field assembly, `assign_mirror`, `value`, and `src` live on the public `mirror_b
 
 ```cpp
 template <>
-class asf::mirror<Widget> : public asf::mirror_base<Widget> {
+class asf_dyn::mirror<Widget> : public asf_dyn::mirror_base<Widget> {
  public:
   using mirror_base<Widget>::mirror_base;
   int width() const { return w; }

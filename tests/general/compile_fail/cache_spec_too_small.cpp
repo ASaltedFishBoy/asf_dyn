@@ -30,6 +30,6 @@ struct Stringable<Session> final {
 
 int main() {
   Session s{1, "tiny"};
-  auto d = asf::to_dyn<Stringable, asf::cache_ptr<1, 1>>(s);
+  auto d = asf_dyn::to_dyn<Stringable, asf_dyn::cache_ptr<1, 1>>(s);
   return static_cast<int>(static_cast<bool>(d));
 }

@@ -11,7 +11,7 @@
 
 ASF_BEGIN_NAMESPACE
 
-// Annotation markers live in asf::ann (alias asf_ann).
+// Annotation markers live in asf::dyn::ann (alias asf_ann).
 // Method pairs may sit on Trait<void> (applies to every method declared there)
 // or on a single method. A method tag overrides the Trait tag.
 // Yes and no forms are paired; both on the same declaration are ill-formed.
@@ -79,4 +79,4 @@ inline constexpr auto unchecked = [] {
 
 ASF_END_NAMESPACE
 
-ASF_EXPORT namespace asf_ann = asf::ann;
+ASF_EXPORT namespace asf_ann = asf::dyn::ann;

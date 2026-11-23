@@ -16,7 +16,7 @@
 //   multi_final_odr --i3-first
 //   multi_final_odr --report
 
-static void dump(std::string_view label, asf::detail::vt_ptr vt) {
+static void dump(std::string_view label, asf_dyn::detail::vt_ptr vt) {
   std::println("  {} {:#x}", label, reinterpret_cast<std::uintptr_t>(vt));
 }
 
@@ -24,7 +24,7 @@ static int report(Person& person) {
   auto* leaf2 = odr_tu_i2_leaf(person);
   auto* leaf3 = odr_tu_i3_leaf(person);
 #if ASF_HAS_DYN_INTERMEDIATE
-  auto* i1 = asf::detail::vt_of(asf_test::to_dyn<I1>(person));
+  auto* i1 = asf_dyn::detail::vt_of(asf_test::to_dyn<I1>(person));
 
   std::println("--- --report (I1 friend already linked) ---");
   dump("I2 leaf", leaf2);
@@ -55,10 +55,10 @@ static int report(Person& person) {
 }
 
 static int run_ordered(Person& person, bool i2_first) {
-  asf::detail::vt_ptr leaf2 = nullptr;
-  asf::detail::vt_ptr leaf3 = nullptr;
-  asf::detail::vt_ptr i1_a = nullptr;
-  asf::detail::vt_ptr i1_b = nullptr;
+  asf_dyn::detail::vt_ptr leaf2 = nullptr;
+  asf_dyn::detail::vt_ptr leaf3 = nullptr;
+  asf_dyn::detail::vt_ptr i1_a = nullptr;
+  asf_dyn::detail::vt_ptr i1_b = nullptr;
 
   if (i2_first) {
     leaf2 = odr_tu_i2_leaf(person);
@@ -75,7 +75,7 @@ static int run_ordered(Person& person, bool i2_first) {
   }
 
 #if ASF_HAS_DYN_INTERMEDIATE
-  auto* i1_m = asf::detail::vt_of(asf_test::to_dyn<I1>(person));
+  auto* i1_m = asf_dyn::detail::vt_of(asf_test::to_dyn<I1>(person));
   dump("I2 leaf", leaf2);
   dump("I3 leaf", leaf3);
   dump("I1 after first CU", i1_a);
@@ -95,8 +95,8 @@ static int run_ordered(Person& person, bool i2_first) {
   dump("I3 leaf", leaf3);
   dump("I1 after first CU", i1_a);
   dump("I1 after second CU", i1_b);
-  asf::detail::vt_ptr first_leaf = i2_first ? leaf2 : leaf3;
-  asf::detail::vt_ptr second_leaf = i2_first ? leaf3 : leaf2;
+  asf_dyn::detail::vt_ptr first_leaf = i2_first ? leaf2 : leaf3;
+  asf_dyn::detail::vt_ptr second_leaf = i2_first ? leaf3 : leaf2;
   bool ok = leaf2 != leaf3 && i1_a == first_leaf && i1_b == second_leaf;
   std::println("  each I1 upcast keeps its own leaf? {}", ok);
 #endif

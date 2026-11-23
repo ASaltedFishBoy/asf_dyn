@@ -68,9 +68,9 @@ class iface_mut_body {
   template <template <class> class, class, typename, typename>
   friend class iface_const_body;
   template <template <class> class, class, class>
-  friend struct asf::to_dyn_t;
+  friend struct asf::dyn::to_dyn_t;
   template <template <class> class>
-  friend struct asf::to_c_dyn_t;
+  friend struct asf::dyn::to_c_dyn_t;
 
  public:
   template <typename V>
@@ -230,12 +230,12 @@ class iface_mut_body {
             std::size_t, bool, bool>
   friend struct special_op_slot;
   template <std::meta::info, std::meta::info, std::meta::info>
-  friend struct ::asf::call_fn;
+  friend struct ::asf::dyn::call_fn;
   template <class, std::meta::info, std::meta::info, std::meta::info>
-  friend struct ::asf::bound_call_fn;
+  friend struct ::asf::dyn::bound_call_fn;
   template <class, std::meta::info, std::meta::info, std::meta::info, class,
             class...>
-  friend struct ::asf::bound_call_exact;
+  friend struct ::asf::dyn::bound_call_exact;
   template <class, std::size_t>
   friend struct op_slot;
 
@@ -303,9 +303,9 @@ class iface_const_body {
   template <template <class> class, class, typename, typename>
   friend class iface_const_body;
   template <template <class> class, class, class>
-  friend struct asf::to_dyn_t;
+  friend struct asf::dyn::to_dyn_t;
   template <template <class> class>
-  friend struct asf::to_c_dyn_t;
+  friend struct asf::dyn::to_c_dyn_t;
 
  public:
   using mirror_t = Self;
@@ -448,12 +448,12 @@ class iface_const_body {
             std::size_t, bool, bool>
   friend struct special_op_slot;
   template <std::meta::info, std::meta::info, std::meta::info>
-  friend struct ::asf::call_fn;
+  friend struct ::asf::dyn::call_fn;
   template <class, std::meta::info, std::meta::info, std::meta::info>
-  friend struct ::asf::bound_call_fn;
+  friend struct ::asf::dyn::bound_call_fn;
   template <class, std::meta::info, std::meta::info, std::meta::info, class,
             class...>
-  friend struct ::asf::bound_call_exact;
+  friend struct ::asf::dyn::bound_call_exact;
   template <class, std::size_t>
   friend struct op_slot;
 

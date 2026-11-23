@@ -1,6 +1,6 @@
 # ASF API spec
 
-Namespace: `asf` (annotation alias `asf_ann = asf::ann`). Unless noted, the public API is the headers below.
+Namespace: `asf` (annotation alias `asf_ann = asf_dyn::ann`). Unless noted, the public API is the headers below.
 
 You do not need mirror to start: Trait / iface / dyn work from objects and pointers; field views are in [mirror.md](mirror.md) at the end.
 
@@ -67,7 +67,7 @@ You do not need mirror to start: Trait / iface / dyn work from objects and point
 ## Runtime-visible flags
 
 ```cpp
-namespace asf {
+namespace asf::dyn {
   inline constexpr bool dyn_rtti_v;
   inline constexpr bool dyn_intermediate_v;
   inline constexpr bool dyn_multi_vt_v;

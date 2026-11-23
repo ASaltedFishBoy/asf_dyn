@@ -141,74 +141,74 @@ struct LeafSideCut<Obj> final {
 };
 
 // --- Mid: truncate on self ---
-static_assert(asf::detail::can_dyn_upcast<Mid, Mid>());
-static_assert(!asf::detail::can_dyn_upcast<A, Mid>());
-static_assert(std::is_convertible_v<asf::dyn<Mid>, asf::dyn<Mid>>);
-static_assert(!std::is_convertible_v<asf::dyn<Mid>, asf::dyn<A>>);
-static_assert(asf::detail::vtable_instance_count<Mid>() == 1);
+static_assert(asf_dyn::detail::can_dyn_upcast<Mid, Mid>());
+static_assert(!asf_dyn::detail::can_dyn_upcast<A, Mid>());
+static_assert(std::is_convertible_v<asf_dyn::dyn<Mid>, asf_dyn::dyn<Mid>>);
+static_assert(!std::is_convertible_v<asf_dyn::dyn<Mid>, asf_dyn::dyn<A>>);
+static_assert(asf_dyn::detail::vtable_instance_count<Mid>() == 1);
 
 // --- LeafViaMid: ancestor MidCut is truncate ---
-static_assert(asf::detail::can_dyn_upcast<LeafViaMid, LeafViaMid>());
-static_assert(asf::detail::can_dyn_upcast<MidCut, LeafViaMid>());
-static_assert(!asf::detail::can_dyn_upcast<A, LeafViaMid>());
+static_assert(asf_dyn::detail::can_dyn_upcast<LeafViaMid, LeafViaMid>());
+static_assert(asf_dyn::detail::can_dyn_upcast<MidCut, LeafViaMid>());
+static_assert(!asf_dyn::detail::can_dyn_upcast<A, LeafViaMid>());
 #if ASF_HAS_DYN_MULTI_VT
-static_assert(asf::detail::can_dyn_upcast<B, LeafViaMid>());
-static_assert(asf::detail::vtable_instance_count<LeafViaMid>() == 2);  // leaf + B cover
+static_assert(asf_dyn::detail::can_dyn_upcast<B, LeafViaMid>());
+static_assert(asf_dyn::detail::vtable_instance_count<LeafViaMid>() == 2);  // leaf + B cover
 #else
-static_assert(!asf::detail::can_dyn_upcast<B, LeafViaMid>());
-static_assert(asf::detail::vtable_instance_count<LeafViaMid>() == 1);
+static_assert(!asf_dyn::detail::can_dyn_upcast<B, LeafViaMid>());
+static_assert(asf_dyn::detail::vtable_instance_count<LeafViaMid>() == 1);
 #endif
 
 // --- LeafEdge: truncate on base-specifier to B ---
-static_assert(asf::detail::can_dyn_upcast<A, LeafEdge>());
-static_assert(!asf::detail::can_dyn_upcast<B, LeafEdge>());
-static_assert(asf::detail::vtable_instance_count<LeafEdge>() == 1);
+static_assert(asf_dyn::detail::can_dyn_upcast<A, LeafEdge>());
+static_assert(!asf_dyn::detail::can_dyn_upcast<B, LeafEdge>());
+static_assert(asf_dyn::detail::vtable_instance_count<LeafEdge>() == 1);
 
 // --- LeafPassive: truncated on BTrunc ---
-static_assert(asf::detail::can_dyn_upcast<A, LeafPassive>());
-static_assert(!asf::detail::can_dyn_upcast<BTrunc, LeafPassive>());
-static_assert(asf::detail::vtable_instance_count<LeafPassive>() == 1);
+static_assert(asf_dyn::detail::can_dyn_upcast<A, LeafPassive>());
+static_assert(!asf_dyn::detail::can_dyn_upcast<BTrunc, LeafPassive>());
+static_assert(asf_dyn::detail::vtable_instance_count<LeafPassive>() == 1);
 
 // --- LeafSideCut: truncate secondary Side (drops Side/C; A shared OK) ---
-static_assert(asf::detail::can_dyn_upcast<A, LeafSideCut>());
-static_assert(!asf::detail::can_dyn_upcast<Side, LeafSideCut>());
-static_assert(!asf::detail::can_dyn_upcast<C, LeafSideCut>());
-static_assert(asf::detail::vtable_instance_count<LeafSideCut>() == 1);
+static_assert(asf_dyn::detail::can_dyn_upcast<A, LeafSideCut>());
+static_assert(!asf_dyn::detail::can_dyn_upcast<Side, LeafSideCut>());
+static_assert(!asf_dyn::detail::can_dyn_upcast<C, LeafSideCut>());
+static_assert(asf_dyn::detail::vtable_instance_count<LeafSideCut>() == 1);
 
 // iface still converts along the full Trait DAG (truncate is dyn/MULTI_VT).
-static_assert(std::is_convertible_v<asf::iface<LeafEdge, Obj>,
-                                    asf::iface<B, Obj>>);
-static_assert(std::is_convertible_v<asf::iface<LeafPassive, Obj>,
-                                    asf::iface<BTrunc, Obj>>);
+static_assert(std::is_convertible_v<asf_dyn::iface<LeafEdge, Obj>,
+                                    asf_dyn::iface<B, Obj>>);
+static_assert(std::is_convertible_v<asf_dyn::iface<LeafPassive, Obj>,
+                                    asf_dyn::iface<BTrunc, Obj>>);
 
 int main() {
   Obj o{asf_test::no_sso("T")};
   auto tag = [&](char const* m) { return o.name + "/" + m; };
-  auto mid = asf::to_dyn<Mid>(&o);
+  auto mid = asf_dyn::to_dyn<Mid>(&o);
   if (mid->mid() != tag("mid") || mid.as<A>()->a() != tag("a"))
     return 1;
 
-  auto leaf = asf::to_dyn<LeafViaMid>(&o);
+  auto leaf = asf_dyn::to_dyn<LeafViaMid>(&o);
   if (leaf->leaf() != tag("leaf") || leaf.as<A>()->a() != tag("a") ||
       leaf.as<B>()->b() != tag("b"))
     return 1;
-  asf::dyn<MidCut> to_mid = leaf;
+  asf_dyn::dyn<MidCut> to_mid = leaf;
   if (to_mid->mid() != tag("mid"))
     return 1;
 
-  auto edge = asf::to_dyn<LeafEdge>(&o);
+  auto edge = asf_dyn::to_dyn<LeafEdge>(&o);
   if (edge->leaf() != tag("leaf") || edge.as<B>()->b() != tag("b"))
     return 1;
-  asf::dyn<A> to_a = edge;
+  asf_dyn::dyn<A> to_a = edge;
   if (to_a->a() != tag("a"))
     return 1;
 
-  auto pass = asf::to_dyn<LeafPassive>(&o);
+  auto pass = asf_dyn::to_dyn<LeafPassive>(&o);
   if (pass.as<BTrunc>()->b() != tag("b"))
     return 1;
 
   std::println("iface_truncate ok, mid_vt={} leaf_vt={} multi_vt={}",
-               asf::detail::vtable_instance_count<Mid>(),
-               asf::detail::vtable_instance_count<LeafViaMid>(),
-               asf::dyn_multi_vt_v);
+               asf_dyn::detail::vtable_instance_count<Mid>(),
+               asf_dyn::detail::vtable_instance_count<LeafViaMid>(),
+               asf_dyn::dyn_multi_vt_v);
 }

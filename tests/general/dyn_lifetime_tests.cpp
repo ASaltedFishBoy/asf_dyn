@@ -1,4 +1,4 @@
-// Handle lifetime for asf::dyn (void* / uptr). Skips SBO/inplace value poly.
+// Handle lifetime for asf_dyn::dyn (void* / uptr). Skips SBO/inplace value poly.
 
 #include "asf_check.hpp"
 #include "test_bind.hpp"
@@ -14,12 +14,14 @@ struct lifetime_sub_del {
 };
 
 namespace asf {
+namespace dyn {
 template <>
 struct pointer_trait<std::unique_ptr<void, lifetime_sub_del>> {
   using kind = pointer_vt_destroy_tag;
   static void release(auto& h) { h.get().reset(); }
 };
-}
+}  // namespace dyn
+}  // namespace asf
 
 namespace dyn_lifetime_tests_detail {
 
@@ -118,37 +120,37 @@ struct NoCtor<void> {
   void ping(auto const&);
 };
 
-static_assert(asf_test::detect_size<asf::dyn<Stringable>>);
-static_assert(asf_test::detect_align<asf::dyn<Stringable>>);
-static_assert(!asf_test::detect_size<asf::dyn<NoCtor>>);
-static_assert(!asf_test::detect_align<asf::dyn<NoCtor>>);
-static_assert(std::is_destructible_v<asf::sub_dyn<Stringable>>);
-static_assert(std::is_destructible_v<asf::unique_dyn<Stringable>>);
+static_assert(asf_test::detect_size<asf_dyn::dyn<Stringable>>);
+static_assert(asf_test::detect_align<asf_dyn::dyn<Stringable>>);
+static_assert(!asf_test::detect_size<asf_dyn::dyn<NoCtor>>);
+static_assert(!asf_test::detect_align<asf_dyn::dyn<NoCtor>>);
+static_assert(std::is_destructible_v<asf_dyn::sub_dyn<Stringable>>);
+static_assert(std::is_destructible_v<asf_dyn::unique_dyn<Stringable>>);
 static_assert(!std::is_destructible_v<
-              asf::sub_dyn<Stringable, std::unique_ptr<void>>>);
+              asf_dyn::sub_dyn<Stringable, std::unique_ptr<void>>>);
 static_assert(std::is_destructible_v<
-              asf::sub_dyn<Stringable, std::unique_ptr<void, lifetime_sub_del>>>);
-static_assert(asf_test::detect_destroy<asf::dyn<Stringable>>);
-static_assert(!asf_test::detect_destroy<asf::sub_dyn<Stringable>>);
+              asf_dyn::sub_dyn<Stringable, std::unique_ptr<void, lifetime_sub_del>>>);
+static_assert(asf_test::detect_destroy<asf_dyn::dyn<Stringable>>);
+static_assert(!asf_test::detect_destroy<asf_dyn::sub_dyn<Stringable>>);
 #if ASF_HAS_DYN_RTTI
-static_assert(asf_test::detect_typeid_of<asf::dyn<Stringable>>);
-static_assert(!asf_test::detect_typeid_of<asf::sub_dyn<Stringable>>);
-static_assert(!asf_test::detect_typeid_of<asf::c_sub_dyn<Stringable>>);
+static_assert(asf_test::detect_typeid_of<asf_dyn::dyn<Stringable>>);
+static_assert(!asf_test::detect_typeid_of<asf_dyn::sub_dyn<Stringable>>);
+static_assert(!asf_test::detect_typeid_of<asf_dyn::c_sub_dyn<Stringable>>);
 #endif
 
 void TestDestroyThunk_Alignment() {
   // tag_destroy_align packs the align log into the destroy pointer's low
   // bits: the two vtable destroy thunks must stay max-aligned.
   ASF_CHECK((reinterpret_cast<std::uintptr_t>(
-                 &asf::detail::vt_src_destroy<Session>) &
-             asf::detail::dyn_align_tag_mask) == 0);
-  ASF_CHECK((reinterpret_cast<std::uintptr_t>(&asf::detail::vt_destroy_nop) &
-             asf::detail::dyn_align_tag_mask) == 0);
+                 &asf_dyn::detail::vt_src_destroy<Session>) &
+             asf_dyn::detail::dyn_align_tag_mask) == 0);
+  ASF_CHECK((reinterpret_cast<std::uintptr_t>(&asf_dyn::detail::vt_destroy_nop) &
+             asf_dyn::detail::dyn_align_tag_mask) == 0);
 }
 
 void TestDefaultBodyUsesMembers() {
   Session s{1, "lab"};
-  auto p = asf::to_dyn<Labeled>(&s);
+  auto p = asf_dyn::to_dyn<Labeled>(&s);
   ASF_CHECK_EQ(p->tag(), asf_test::no_sso("lab"));
   auto q = p;
   ASF_CHECK_EQ(q->tag(), asf_test::no_sso("lab"));
@@ -159,26 +161,26 @@ void TestConstructExtrasUseMembers() {
   Session s{1, "lab"};
   auto p = asf_test::to_dyn<RelabelByParts>(s);
   ASF_CHECK_EQ(p->tag(), asf_test::session_text("lab", 1));
-  auto by_str = asf::construct(*p, asf_test::no_sso("pre"));
+  auto by_str = asf_dyn::construct(*p, asf_test::no_sso("pre"));
   ASF_CHECK_EQ(by_str->tag(), asf_test::session_text("pre", 1));
-  auto by_int = asf::construct(*p, 7);
+  auto by_int = asf_dyn::construct(*p, 7);
   ASF_CHECK_EQ(by_int->tag(), asf_test::session_text("lab", 7));
-  auto q = asf::construct(*p, 7, asf_test::no_sso("pre"));
+  auto q = asf_dyn::construct(*p, 7, asf_test::no_sso("pre"));
   ASF_CHECK_EQ(q->tag(), asf_test::session_text("pre", 7));
   ASF_CHECK_EQ(p->tag(), asf_test::session_text("lab", 1));
-  auto owned = asf::construct<std::unique_ptr>(*p, 8, asf_test::no_sso("own"));
+  auto owned = asf_dyn::construct<std::unique_ptr>(*p, 8, asf_test::no_sso("own"));
   ASF_CHECK_EQ(owned->tag(), asf_test::session_text("own", 8));
   ASF_CHECK_EQ(p->tag(), asf_test::session_text("lab", 1));
 }
 #endif
 
 void TestDefaultConstruction() {
-  asf::dyn<Stringable> p;
+  asf_dyn::dyn<Stringable> p;
   ASF_CHECK(!p);
 }
 
 void TestNullConstruction_Nullptr() {
-  asf::dyn<Stringable> p = nullptr;
+  asf_dyn::dyn<Stringable> p = nullptr;
   ASF_CHECK(!p);
 }
 
@@ -200,7 +202,7 @@ void TestCopyConstruction_FromValue() {
 }
 
 void TestCopyConstruction_FromNull() {
-  asf::dyn<Stringable> p1;
+  asf_dyn::dyn<Stringable> p1;
   auto p2 = p1;
   ASF_CHECK(!p1);
   ASF_CHECK(!p2);
@@ -215,7 +217,7 @@ void TestMoveConstruction_FromValue() {
 }
 
 void TestMoveConstruction_FromNull() {
-  asf::dyn<Stringable> p1;
+  asf_dyn::dyn<Stringable> p1;
   auto p2 = std::move(p1);
   ASF_CHECK(!p2);
 }
@@ -229,7 +231,7 @@ void TestNullAssignment_FromNullptr_ToValue() {
 }
 
 void TestNullAssignment_ToNull() {
-  asf::dyn<Stringable> p;
+  asf_dyn::dyn<Stringable> p;
   p = nullptr;
   ASF_CHECK(!p);
 }
@@ -247,7 +249,7 @@ void TestCopyAssignment_FromValue_ToValue() {
 void TestCopyAssignment_FromValue_ToNull() {
   Session a{1, "A"};
   auto p1 = asf_test::to_dyn<Stringable>(a);
-  asf::dyn<Stringable> p2;
+  asf_dyn::dyn<Stringable> p2;
   p2 = p1;
   ASF_CHECK(p1 == p2);
   ASF_CHECK_EQ(p2->to_string(), asf_test::session_text("A", 1));
@@ -256,7 +258,7 @@ void TestCopyAssignment_FromValue_ToNull() {
 void TestCopyAssignment_FromNull_ToValue() {
   Session a{1, "A"};
   auto p1 = asf_test::to_dyn<Stringable>(a);
-  asf::dyn<Stringable> p2;
+  asf_dyn::dyn<Stringable> p2;
   p1 = p2;
   ASF_CHECK(!p1);
 }
@@ -281,16 +283,16 @@ void TestMoveAssignment_FromValue_ToSelf() {
 }
 
 void TestCopyAssignment_FromNull_ToNull() {
-  asf::dyn<Stringable> p1;
-  asf::dyn<Stringable> p2;
+  asf_dyn::dyn<Stringable> p1;
+  asf_dyn::dyn<Stringable> p2;
   p1 = p2;
   ASF_CHECK(!p1);
   ASF_CHECK(!p2);
 }
 
 void TestMoveAssignment_FromNull_ToNull() {
-  asf::dyn<Stringable> p1;
-  asf::dyn<Stringable> p2;
+  asf_dyn::dyn<Stringable> p1;
+  asf_dyn::dyn<Stringable> p2;
   p1 = std::move(p2);
   ASF_CHECK(!p1);
   ASF_CHECK(!p2);
@@ -309,14 +311,14 @@ void TestMoveAssignment_FromValue_ToValue() {
 void TestMoveAssignment_FromValue_ToNull() {
   Session a{1, "A"};
   auto p1 = asf_test::to_dyn<Stringable>(a);
-  asf::dyn<Stringable> p2;
+  asf_dyn::dyn<Stringable> p2;
   p2 = std::move(p1);
   ASF_CHECK(static_cast<bool>(p2));
   ASF_CHECK_EQ(p2->to_string(), asf_test::session_text("A", 1));
 }
 
 void TestOperatorBool() {
-  asf::dyn<Stringable> empty;
+  asf_dyn::dyn<Stringable> empty;
   ASF_CHECK(!empty);
   Session s{1, "S"};
   auto p = asf_test::to_dyn<Stringable>(s);
@@ -324,7 +326,7 @@ void TestOperatorBool() {
 }
 
 void TestEqualsToNullptr() {
-  asf::dyn<Stringable> empty;
+  asf_dyn::dyn<Stringable> empty;
   ASF_CHECK(empty == nullptr);
   ASF_CHECK(nullptr == empty);
   Session s{1, "S"};
@@ -341,7 +343,7 @@ void TestReset_FromValue() {
 }
 
 void TestReset_FromNull() {
-  asf::dyn<Stringable> p;
+  asf_dyn::dyn<Stringable> p;
   p.reset();
   ASF_CHECK(!p);
 }
@@ -360,7 +362,7 @@ void TestSwap_Value_Value() {
 void TestSwap_Value_Null() {
   Session a{1, "A"};
   auto p1 = asf_test::to_dyn<Stringable>(a);
-  asf::dyn<Stringable> p2;
+  asf_dyn::dyn<Stringable> p2;
   using std::swap;
   swap(p1, p2);
   ASF_CHECK(!p1);
@@ -378,7 +380,7 @@ void TestSwap_Value_Self() {
 
 void TestSwap_Null_Value() {
   Session a{1, "A"};
-  asf::dyn<Stringable> p1;
+  asf_dyn::dyn<Stringable> p1;
   auto p2 = asf_test::to_dyn<Stringable>(a);
   using std::swap;
   swap(p1, p2);
@@ -387,8 +389,8 @@ void TestSwap_Null_Value() {
 }
 
 void TestSwap_Null_Null() {
-  asf::dyn<Stringable> p1;
-  asf::dyn<Stringable> p2;
+  asf_dyn::dyn<Stringable> p1;
+  asf_dyn::dyn<Stringable> p2;
   using std::swap;
   swap(p1, p2);
   ASF_CHECK(!p1);
@@ -396,7 +398,7 @@ void TestSwap_Null_Null() {
 }
 
 void TestHasValue() {
-  asf::dyn<Stringable> empty;
+  asf_dyn::dyn<Stringable> empty;
   ASF_CHECK(!static_cast<bool>(empty));
   Session s{1, "S"};
   auto p = asf_test::to_dyn<Stringable>(s);
@@ -404,23 +406,23 @@ void TestHasValue() {
 }
 
 void TestSizeAlign() {
-  asf::dyn<Stringable> empty;
+  asf_dyn::dyn<Stringable> empty;
   ASF_CHECK_EQ(empty.size(), 0);
   ASF_CHECK_EQ(empty.align(), 0);
   Session s{1, "S"};
   auto p = asf_test::to_dyn<Stringable>(s);
   ASF_CHECK_EQ(p.size(), sizeof(Session));
   ASF_CHECK_EQ(p.align(), alignof(Session));
-  asf::c_dyn<Stringable> cp{p};
+  asf_dyn::c_dyn<Stringable> cp{p};
   ASF_CHECK_EQ(cp.size(), sizeof(Session));
   ASF_CHECK_EQ(cp.align(), alignof(Session));
 }
 
 void TestOwnedMove_Unique() {
   Session s{7, "Owned"};
-  auto _m_s = asf::to_mirror(s);
-  asf::dyn<Stringable> obs{_m_s};
-  auto p1 = asf::construct<std::unique_ptr>(*obs);
+  auto _m_s = asf_dyn::to_mirror(s);
+  asf_dyn::dyn<Stringable> obs{_m_s};
+  auto p1 = asf_dyn::construct<std::unique_ptr>(*obs);
   ASF_CHECK_EQ(p1->to_string(), asf_test::session_text("Owned", 7));
   auto p2 = std::move(p1);
   ASF_CHECK(static_cast<bool>(p2));
@@ -430,9 +432,9 @@ void TestOwnedMove_Unique() {
 
 void TestOwnedMove_Shared() {
   Session s{8, "SharedOwned"};
-  auto _m_s = asf::to_mirror(s);
-  asf::dyn<Stringable> obs{_m_s};
-  auto p1 = asf::construct<std::shared_ptr>(*obs);
+  auto _m_s = asf_dyn::to_mirror(s);
+  asf_dyn::dyn<Stringable> obs{_m_s};
+  auto p1 = asf_dyn::construct<std::shared_ptr>(*obs);
   ASF_CHECK_EQ(p1->to_string(), asf_test::session_text("SharedOwned", 8));
   auto p2 = std::move(p1);
   ASF_CHECK(static_cast<bool>(p2));
@@ -443,7 +445,7 @@ void TestOwnedMove_Shared() {
 #if 1
 void TestOwnedMove_Cache() {
   Session s{9, "CacheOwned"};
-  auto d = asf::to_dyn<Stringable, asf::cache_ptr>(s);
+  auto d = asf_dyn::to_dyn<Stringable, asf_dyn::cache_ptr>(s);
   ASF_CHECK(static_cast<bool>(d));
   ASF_CHECK_EQ(d->to_string(), asf_test::session_text("CacheOwned", 9));
   auto p2 = std::move(d);
@@ -564,27 +566,27 @@ struct ProbeCAssignHdlOnly {
 };
 
 using ProbeOps =
-    asf::pointer_ops<ProbeDestroy, ProbeCopy, ProbeMove, ProbeCAssign,
+    asf_dyn::pointer_ops<ProbeDestroy, ProbeCopy, ProbeMove, ProbeCAssign,
                    ProbeMAssign>;
-using ProbeOpsNoAssign = asf::pointer_ops<ProbeDestroy, ProbeCopy, ProbeMove>;
+using ProbeOpsNoAssign = asf_dyn::pointer_ops<ProbeDestroy, ProbeCopy, ProbeMove>;
 using ProbeOpsHdlAssign =
-    asf::pointer_ops<ProbeDestroy, ProbeCopy, ProbeMove, ProbeCAssignHdlOnly,
+    asf_dyn::pointer_ops<ProbeDestroy, ProbeCopy, ProbeMove, ProbeCAssignHdlOnly,
                    ProbeMAssign>;
 
 // Ops is structural: any type with the slot aliases (and call operators /
-// tags) works — not only asf::pointer_ops.
+// tags) works — not only asf_dyn::pointer_ops.
 struct ProbeDuckOps {
   using destroy_type = ProbeDestroy;
   using copy_type = ProbeCopy;
   using move_type = ProbeMove;
 };
-static_assert(asf::is_pointer_ops_v<ProbeDuckOps>);
-static_assert(asf::is_pointer_ops_v<ProbeOpsNoAssign>);
-static_assert(std::is_same_v<asf::ops_copy_assign_t<ProbeDuckOps>,
-                             asf::op_unset>);
+static_assert(asf_dyn::is_pointer_ops_v<ProbeDuckOps>);
+static_assert(asf_dyn::is_pointer_ops_v<ProbeOpsNoAssign>);
+static_assert(std::is_same_v<asf_dyn::ops_copy_assign_t<ProbeDuckOps>,
+                             asf_dyn::op_unset>);
 static_assert(
-    std::is_constructible_v<asf::cache_ptr<16, 8, ProbeDuckOps>,
-                            asf::cache_ptr<16, 8, ProbeDuckOps> const&>);
+    std::is_constructible_v<asf_dyn::cache_ptr<16, 8, ProbeDuckOps>,
+                            asf_dyn::cache_ptr<16, 8, ProbeDuckOps> const&>);
 
 // ProbeView has no op_construct: typed copy/move survive as op_modified
 // (the Trait chain cannot construct), destroy is always vt[-1].
@@ -618,71 +620,71 @@ struct ProbeMake<Probe> final {
 };
 
 // Grow-only cache -> cache (compile-time; shrink is an error).
-using ProbeNatOps = asf::pointer_ops_of<Probe>;
+using ProbeNatOps = asf_dyn::pointer_ops_of<Probe>;
 static_assert(
-    std::is_constructible_v<asf::cache_ptr<32, 16, ProbeNatOps>,
-                            asf::cache_ptr<16, 8, ProbeNatOps> const&>);
-static_assert(std::is_constructible_v<asf::cache_ptr<32, 16, ProbeNatOps>,
-                                      asf::cache_ptr<16, 8, ProbeNatOps>&&>);
+    std::is_constructible_v<asf_dyn::cache_ptr<32, 16, ProbeNatOps>,
+                            asf_dyn::cache_ptr<16, 8, ProbeNatOps> const&>);
+static_assert(std::is_constructible_v<asf_dyn::cache_ptr<32, 16, ProbeNatOps>,
+                                      asf_dyn::cache_ptr<16, 8, ProbeNatOps>&&>);
 static_assert(
-    !std::is_constructible_v<asf::cache_ptr<16, 8, ProbeNatOps>,
-                             asf::cache_ptr<32, 16, ProbeNatOps> const&>);
+    !std::is_constructible_v<asf_dyn::cache_ptr<16, 8, ProbeNatOps>,
+                             asf_dyn::cache_ptr<32, 16, ProbeNatOps> const&>);
 static_assert(
-    !std::is_constructible_v<asf::cache_ptr<16, 8, ProbeNatOps>,
-                             asf::cache_ptr<32, 16, ProbeNatOps>&&>);
+    !std::is_constructible_v<asf_dyn::cache_ptr<16, 8, ProbeNatOps>,
+                             asf_dyn::cache_ptr<32, 16, ProbeNatOps>&&>);
 // Align may not shrink even when size grows.
 static_assert(
-    !std::is_constructible_v<asf::cache_ptr<32, 4, ProbeNatOps>,
-                             asf::cache_ptr<16, 8, ProbeNatOps> const&>);
-using ProbeErasedOps = asf::pointer_ops_erase_typed<ProbeNatOps>;
+    !std::is_constructible_v<asf_dyn::cache_ptr<32, 4, ProbeNatOps>,
+                             asf_dyn::cache_ptr<16, 8, ProbeNatOps> const&>);
+using ProbeErasedOps = asf_dyn::pointer_ops_erase_typed<ProbeNatOps>;
 static_assert(
-    std::is_constructible_v<asf::cache_ptr<32, 16, ProbeErasedOps>,
-                            asf::cache_ptr<16, 8, ProbeNatOps> const&>);
+    std::is_constructible_v<asf_dyn::cache_ptr<32, 16, ProbeErasedOps>,
+                            asf_dyn::cache_ptr<16, 8, ProbeNatOps> const&>);
 static_assert(
-    !std::is_constructible_v<asf::cache_ptr<16, 8, ProbeErasedOps>,
-                             asf::cache_ptr<32, 16, ProbeNatOps> const&>);
+    !std::is_constructible_v<asf_dyn::cache_ptr<16, 8, ProbeErasedOps>,
+                             asf_dyn::cache_ptr<32, 16, ProbeNatOps> const&>);
 
 // Capability checks unwrap modified proxies (recursively); a fixed typed
 // op is itself the callable.
-static_assert(asf::cache_copy_live<ProbeCopy>());
-static_assert(asf::cache_copy_live<asf::detail::op_modified<ProbeCopy>>());
-static_assert(asf::cache_copy_live<
-              asf::detail::op_modified<asf::detail::op_modified<ProbeCopy>>>());
+static_assert(asf_dyn::cache_copy_live<ProbeCopy>());
+static_assert(asf_dyn::cache_copy_live<asf_dyn::detail::op_modified<ProbeCopy>>());
+static_assert(asf_dyn::cache_copy_live<
+              asf_dyn::detail::op_modified<asf_dyn::detail::op_modified<ProbeCopy>>>());
 static_assert(
     std::same_as<
-        asf::cache_slot_op_t<
-            asf::detail::op_modified<asf::detail::op_modified<ProbeCopy>>>,
+        asf_dyn::cache_slot_op_t<
+            asf_dyn::detail::op_modified<asf_dyn::detail::op_modified<ProbeCopy>>>,
         ProbeCopy>);
 // Re-erasing an already-erased ops bundle keeps the slots usable.
-using ProbeReErasedOps = asf::pointer_ops_erase_typed<ProbeErasedOps>;
+using ProbeReErasedOps = asf_dyn::pointer_ops_erase_typed<ProbeErasedOps>;
 static_assert(
-    std::is_constructible_v<asf::cache_ptr<32, 16, ProbeReErasedOps>,
-                            asf::cache_ptr<16, 8, ProbeErasedOps> const&>);
+    std::is_constructible_v<asf_dyn::cache_ptr<32, 16, ProbeReErasedOps>,
+                            asf_dyn::cache_ptr<16, 8, ProbeErasedOps> const&>);
 
 using ProbeSrcDyn = std::remove_cvref_t<decltype(
-    asf::to_dyn<ProbeMake, asf::cache_ptr<16, 8>>(std::declval<Probe&&>()))>;
+    asf_dyn::to_dyn<ProbeMake, asf_dyn::cache_ptr<16, 8>>(std::declval<Probe&&>()))>;
 // Same erased ops as the source, bigger geometry: copy converts through the
 // dyn-level vt construct (both sides op_from_trait for copy); move converts
 // through the same-ops cache_ptr converting ctor (op_modified move op).
-using ProbeBigDyn = asf::cache_dyn<ProbeMake, 32, 16,
-                                   asf::pointer_ops_from_trait_or_t<ProbeMake,
+using ProbeBigDyn = asf_dyn::cache_dyn<ProbeMake, 32, 16,
+                                   asf_dyn::pointer_ops_from_trait_or_t<ProbeMake,
                                                                   Probe>>;
 static_assert(std::is_constructible_v<ProbeBigDyn, ProbeSrcDyn const&>);
 static_assert(std::is_constructible_v<ProbeBigDyn, ProbeSrcDyn&&>);
-using ProbeSmallDyn = asf::cache_dyn<ProbeMake, 8, 4,
-                                     asf::pointer_ops_from_trait_or_t<ProbeMake,
+using ProbeSmallDyn = asf_dyn::cache_dyn<ProbeMake, 8, 4,
+                                     asf_dyn::pointer_ops_from_trait_or_t<ProbeMake,
                                                                     Probe>>;
 static_assert(!std::is_constructible_v<ProbeSmallDyn, ProbeSrcDyn const&>);
 static_assert(!std::is_constructible_v<ProbeSmallDyn, ProbeSrcDyn&&>);
-using ProbeMisalDyn = asf::cache_dyn<ProbeMake, 32, 4,
-                                     asf::pointer_ops_from_trait_or_t<ProbeMake,
+using ProbeMisalDyn = asf_dyn::cache_dyn<ProbeMake, 32, 4,
+                                     asf_dyn::pointer_ops_from_trait_or_t<ProbeMake,
                                                                     Probe>>;
 static_assert(!std::is_constructible_v<ProbeMisalDyn, ProbeSrcDyn const&>);
 
 void TestCacheOps_AssignHandleForms() {
-  using Ptr16 = asf::cache_ptr<16, 8, ProbeOps>;
-  auto a = asf::to_dyn<ProbeView, Ptr16>(Probe{61});
-  auto b = asf::to_dyn<ProbeView, Ptr16>(Probe{62});
+  using Ptr16 = asf_dyn::cache_ptr<16, 8, ProbeOps>;
+  auto a = asf_dyn::to_dyn<ProbeView, Ptr16>(Probe{61});
+  auto b = asf_dyn::to_dyn<ProbeView, Ptr16>(Probe{62});
   OpForms::reset();
   b = a;
   ASF_CHECK_EQ(OpForms::cassign_hdl, 1);
@@ -699,8 +701,8 @@ void TestCacheOps_AssignHandleForms() {
 // The two-overload dispatch is not assign-only: dyn copy/move construction
 // also offers the source handle to the typed op.
 void TestCacheOps_CopyMoveHandleForms() {
-  using Ptr16 = asf::cache_ptr<16, 8, ProbeOps>;
-  auto a = asf::to_dyn<ProbeView, Ptr16>(Probe{63});
+  using Ptr16 = asf_dyn::cache_ptr<16, 8, ProbeOps>;
+  auto a = asf_dyn::to_dyn<ProbeView, Ptr16>(Probe{63});
   OpForms::reset();
   auto b = a;
   ASF_CHECK_EQ(OpForms::copy_hdl, 1);
@@ -716,9 +718,9 @@ void TestCacheOps_CopyMoveHandleForms() {
 
 // Assign is special: it can always be substituted by destroy + construct.
 void TestCacheOps_AssignFallback() {
-  using Ptr16 = asf::cache_ptr<16, 8, ProbeOpsNoAssign>;
-  auto a = asf::to_dyn<ProbeView, Ptr16>(Probe{71});
-  auto b = asf::to_dyn<ProbeView, Ptr16>(Probe{72});
+  using Ptr16 = asf_dyn::cache_ptr<16, 8, ProbeOpsNoAssign>;
+  auto a = asf_dyn::to_dyn<ProbeView, Ptr16>(Probe{71});
+  auto b = asf_dyn::to_dyn<ProbeView, Ptr16>(Probe{72});
   Probe::dtor_count = 0;
   OpForms::reset();
   b = a;
@@ -739,9 +741,9 @@ void TestCacheOps_AssignFallback() {
 // tier stays dead even though a dyn handle exists at the call site:
 // destroy + construct substitutes (liveness is a storage-level property).
 void TestCacheOps_HandleOnlyAssignFallsBack() {
-  using Ptr16 = asf::cache_ptr<16, 8, ProbeOpsHdlAssign>;
-  auto a = asf::to_dyn<ProbeView, Ptr16>(Probe{91});
-  auto b = asf::to_dyn<ProbeView, Ptr16>(Probe{92});
+  using Ptr16 = asf_dyn::cache_ptr<16, 8, ProbeOpsHdlAssign>;
+  auto a = asf_dyn::to_dyn<ProbeView, Ptr16>(Probe{91});
+  auto b = asf_dyn::to_dyn<ProbeView, Ptr16>(Probe{92});
   Probe::dtor_count = 0;
   OpForms::reset();
   b = a;
@@ -754,7 +756,7 @@ void TestCacheOps_HandleOnlyAssignFallsBack() {
 // Erased cache_dyn -> cache_dyn, grow-only: payload provably fits, so the
 // transfer is a vt construct into the bigger buffer (no runtime check).
 void TestCacheDyn_GrowConversion() {
-  auto small = asf::to_dyn<ProbeMake, asf::cache_ptr<16, 8>>(Probe{81});
+  auto small = asf_dyn::to_dyn<ProbeMake, asf_dyn::cache_ptr<16, 8>>(Probe{81});
   static_assert(std::same_as<decltype(small), ProbeSrcDyn>);
   ProbeBigDyn copied{small};
   ASF_CHECK(static_cast<bool>(copied));
@@ -768,7 +770,7 @@ void TestCacheDyn_GrowConversion() {
   ASF_CHECK_EQ(moved->value(), 81);
   ASF_CHECK(!small);
 
-  auto small2 = asf::to_dyn<ProbeMake, asf::cache_ptr<16, 8>>(Probe{82});
+  auto small2 = asf_dyn::to_dyn<ProbeMake, asf_dyn::cache_ptr<16, 8>>(Probe{82});
   ProbeBigDyn massigned;
   massigned = std::move(small2);
   ASF_CHECK_EQ(massigned->value(), 82);
@@ -782,7 +784,7 @@ void TestDestroy_ObserverNeverDestroys() {
   Probe::dtor_count = 0;
   {
     Probe p{44};
-    asf::dyn<ProbeView> obs{&p};
+    asf_dyn::dyn<ProbeView> obs{&p};
     obs.reset();
     ASF_CHECK_EQ(Probe::dtor_count, 0);
   }
@@ -792,9 +794,9 @@ void TestDestroy_ObserverNeverDestroys() {
 // unique_ptr default (vt_destroy kind): vt[-1] runs ~Src on reset.
 void TestDestroy_UniqueDefault_Vt() {
   Probe ps{45};
-  auto obs = asf::to_dyn<ProbeMake>(&ps);
+  auto obs = asf_dyn::to_dyn<ProbeMake>(&ps);
   Probe::dtor_count = 0;
-  auto owned = asf::construct<std::unique_ptr>(*obs);
+  auto owned = asf_dyn::construct<std::unique_ptr>(*obs);
   ASF_CHECK_EQ(owned->value(), 45);
   owned.reset();
   ASF_CHECK_EQ(Probe::dtor_count, 1);
@@ -814,9 +816,9 @@ struct FreeCount {
 void TestDestroy_AdoptDelete_VtThenFree() {
   FreeCount::count = 0;
   Probe::dtor_count = 0;
-  std::unique_ptr<Probe, asf::dyn_adopt_delete<FreeCount>> src(
-      new Probe{46}, asf::dyn_adopt_delete<FreeCount>{});
-  auto d = asf::to_dyn<ProbeMake>(std::move(src));
+  std::unique_ptr<Probe, asf_dyn::dyn_adopt_delete<FreeCount>> src(
+      new Probe{46}, asf_dyn::dyn_adopt_delete<FreeCount>{});
+  auto d = asf_dyn::to_dyn<ProbeMake>(std::move(src));
   ASF_CHECK_EQ(d->value(), 46);
   d.reset();
   ASF_CHECK_EQ(Probe::dtor_count, 1);
@@ -825,8 +827,8 @@ void TestDestroy_AdoptDelete_VtThenFree() {
 
   // Default-Free form (dyn_default_delete): vt[-1] teardown is wired too.
   Probe::dtor_count = 0;
-  std::unique_ptr<Probe, asf::dyn_default_delete> src2(new Probe{47});
-  auto d2 = asf::to_dyn<ProbeMake>(std::move(src2));
+  std::unique_ptr<Probe, asf_dyn::dyn_default_delete> src2(new Probe{47});
+  auto d2 = asf_dyn::to_dyn<ProbeMake>(std::move(src2));
   ASF_CHECK_EQ(d2->value(), 47);
   d2.reset();
   ASF_CHECK_EQ(Probe::dtor_count, 1);
@@ -847,7 +849,7 @@ void TestDestroy_TypedDeleter_NoDoubleDestroy() {
   ProbeDel::count = 0;
   Probe::dtor_count = 0;
   std::unique_ptr<Probe, ProbeDel> src(new Probe{47});
-  auto d = asf::to_dyn<ProbeMake>(std::move(src));
+  auto d = asf_dyn::to_dyn<ProbeMake>(std::move(src));
   ASF_CHECK_EQ(d->value(), 47);
   d.reset();
   ASF_CHECK_EQ(ProbeDel::count, 1);
@@ -858,9 +860,9 @@ void TestDestroy_TypedDeleter_NoDoubleDestroy() {
 // payload; the last reset destroys it.
 void TestDestroy_SharedControlBlock_LastReset() {
   Probe ps{48};
-  auto obs = asf::to_dyn<ProbeMake>(&ps);
+  auto obs = asf_dyn::to_dyn<ProbeMake>(&ps);
   Probe::dtor_count = 0;
-  auto p1 = asf::construct<std::shared_ptr>(*obs);
+  auto p1 = asf_dyn::construct<std::shared_ptr>(*obs);
   auto p2 = p1;
   ASF_CHECK(p1.raw() == p2.raw());
   static_cast<Probe*>(p1.raw())->v = 49;
@@ -874,8 +876,8 @@ void TestDestroy_SharedControlBlock_LastReset() {
 // Shallow moves hand the pointer over: the payload address is unchanged.
 void TestShallowMove_UniqueKeepsAddress() {
   Probe ps{50};
-  auto obs = asf::to_dyn<ProbeMake>(&ps);
-  auto p1 = asf::construct<std::unique_ptr>(*obs);
+  auto obs = asf_dyn::to_dyn<ProbeMake>(&ps);
+  auto p1 = asf_dyn::construct<std::unique_ptr>(*obs);
   void* addr = p1.raw();
   auto p2 = std::move(p1);
   ASF_CHECK_EQ(p2.raw(), addr);
@@ -885,8 +887,8 @@ void TestShallowMove_UniqueKeepsAddress() {
 
 void TestShallowMove_SharedKeepsAddress() {
   Probe ps{51};
-  auto obs = asf::to_dyn<ProbeMake>(&ps);
-  auto p1 = asf::construct<std::shared_ptr>(*obs);
+  auto obs = asf_dyn::to_dyn<ProbeMake>(&ps);
+  auto p1 = asf_dyn::construct<std::shared_ptr>(*obs);
   void* addr = p1.raw();
   auto p2 = std::move(p1);
   ASF_CHECK_EQ(p2.raw(), addr);
@@ -900,9 +902,9 @@ void TestShallowMove_SharedKeepsAddress() {
 void TestShallowMove_AdoptDeleteTravels() {
   FreeCount::count = 0;
   Probe::dtor_count = 0;
-  std::unique_ptr<Probe, asf::dyn_adopt_delete<FreeCount>> src(
-      new Probe{52}, asf::dyn_adopt_delete<FreeCount>{});
-  auto d1 = asf::to_dyn<ProbeMake>(std::move(src));
+  std::unique_ptr<Probe, asf_dyn::dyn_adopt_delete<FreeCount>> src(
+      new Probe{52}, asf_dyn::dyn_adopt_delete<FreeCount>{});
+  auto d1 = asf_dyn::to_dyn<ProbeMake>(std::move(src));
   void* addr = d1.raw();
   auto d2 = std::move(d1);
   ASF_CHECK_EQ(d2.raw(), addr);
@@ -916,7 +918,7 @@ void TestShallowMove_AdoptDeleteTravels() {
 void TestShallowMove_TypedDeleterTravels() {
   ProbeDel::count = 0;
   std::unique_ptr<Probe, ProbeDel> src(new Probe{53});
-  auto d1 = asf::to_dyn<ProbeMake>(std::move(src));
+  auto d1 = asf_dyn::to_dyn<ProbeMake>(std::move(src));
   void* addr = d1.raw();
   auto d2 = std::move(d1);
   ASF_CHECK_EQ(d2.raw(), addr);
@@ -952,7 +954,7 @@ struct ProbeAlloc {
 };
 
 void TestDeleterHandoff_NonDefaultForwarded() {
-  auto d1 = asf::to_dyn<ProbeMake, std::unique_ptr>(ProbeAlloc<void>{},
+  auto d1 = asf_dyn::to_dyn<ProbeMake, std::unique_ptr>(ProbeAlloc<void>{},
                                                   Probe{54});
   // Reset after creation: the forwarded Probe{54} temporary has its own
   // destructor; only the payload teardown counts below.
@@ -960,9 +962,9 @@ void TestDeleterHandoff_NonDefaultForwarded() {
   Probe::dtor_count = 0;
   using DstPtr =
       std::unique_ptr<void,
-                      asf::dyn_adopt_delete<
-                          asf::alloc_delete<ProbeAlloc<void>>>>;
-  asf::dyn<ProbeMake, DstPtr> d2{std::move(d1)};
+                      asf_dyn::dyn_adopt_delete<
+                          asf_dyn::alloc_delete<ProbeAlloc<void>>>>;
+  asf_dyn::dyn<ProbeMake, DstPtr> d2{std::move(d1)};
   ASF_CHECK_EQ(d2->value(), 54);
   ASF_CHECK(!d1);
   d2.reset();
@@ -974,10 +976,10 @@ void TestDeleterHandoff_NonDefaultForwarded() {
 // default-Free dyn_default_delete.
 void TestDeleterHandoff_DefaultNotForwarded() {
   Probe ps{55};
-  auto obs = asf::to_dyn<ProbeMake>(&ps);
+  auto obs = asf_dyn::to_dyn<ProbeMake>(&ps);
   Probe::dtor_count = 0;
-  auto d1 = asf::construct<std::unique_ptr>(*obs);
-  asf::dyn<ProbeMake, std::unique_ptr<void, asf::dyn_default_delete>> d2{
+  auto d1 = asf_dyn::construct<std::unique_ptr>(*obs);
+  asf_dyn::dyn<ProbeMake, std::unique_ptr<void, asf_dyn::dyn_default_delete>> d2{
       std::move(d1)};
   ASF_CHECK_EQ(d2->value(), 55);
   d2.reset();
@@ -991,27 +993,27 @@ void TestDeleterHandoff_DefaultNotForwarded() {
 // not formally trivial: the RAII dtor must run before member teardown, so
 // it stays user-provided.)
 static_assert(
-    std::is_trivially_assignable_v<asf::dyn<ProbeView>&,
-                                   asf::dyn<ProbeView>&&>);
-static_assert(!std::is_copy_constructible_v<asf::unique_dyn<ProbeMake>>);
-static_assert(std::is_move_constructible_v<asf::unique_dyn<ProbeMake>>);
-static_assert(std::is_copy_constructible_v<asf::shared_dyn<ProbeMake>>);
-static_assert(std::is_move_constructible_v<asf::shared_dyn<ProbeMake>>);
-static_assert(std::is_copy_constructible_v<asf::dyn<ProbeView>>);
+    std::is_trivially_assignable_v<asf_dyn::dyn<ProbeView>&,
+                                   asf_dyn::dyn<ProbeView>&&>);
+static_assert(!std::is_copy_constructible_v<asf_dyn::unique_dyn<ProbeMake>>);
+static_assert(std::is_move_constructible_v<asf_dyn::unique_dyn<ProbeMake>>);
+static_assert(std::is_copy_constructible_v<asf_dyn::shared_dyn<ProbeMake>>);
+static_assert(std::is_move_constructible_v<asf_dyn::shared_dyn<ProbeMake>>);
+static_assert(std::is_copy_constructible_v<asf_dyn::dyn<ProbeView>>);
 using StripCopyOps =
-    asf::pointer_ops<asf::op_destroy_of<Probe>, asf::op_unsupported,
-                   asf::op_move_of<Probe>>;
+    asf_dyn::pointer_ops<asf_dyn::op_destroy_of<Probe>, asf_dyn::op_unsupported,
+                   asf_dyn::op_move_of<Probe>>;
 static_assert(
-    !std::is_copy_constructible_v<asf::cache_ptr<16, 8, StripCopyOps>>);
+    !std::is_copy_constructible_v<asf_dyn::cache_ptr<16, 8, StripCopyOps>>);
 static_assert(
-    std::is_move_constructible_v<asf::cache_ptr<16, 8, StripCopyOps>>);
+    std::is_move_constructible_v<asf_dyn::cache_ptr<16, 8, StripCopyOps>>);
 using StripMoveOps =
-    asf::pointer_ops<asf::op_destroy_of<Probe>, asf::op_copy_of<Probe>,
-                   asf::op_unsupported>;
+    asf_dyn::pointer_ops<asf_dyn::op_destroy_of<Probe>, asf_dyn::op_copy_of<Probe>,
+                   asf_dyn::op_unsupported>;
 static_assert(
-    !std::is_move_constructible_v<asf::cache_ptr<16, 8, StripMoveOps>>);
+    !std::is_move_constructible_v<asf_dyn::cache_ptr<16, 8, StripMoveOps>>);
 static_assert(
-    std::is_copy_constructible_v<asf::cache_ptr<16, 8, StripMoveOps>>);
+    std::is_copy_constructible_v<asf_dyn::cache_ptr<16, 8, StripMoveOps>>);
 
 }  // namespace dyn_lifetime_tests_detail
 

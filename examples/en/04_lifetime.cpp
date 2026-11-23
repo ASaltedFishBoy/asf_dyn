@@ -46,7 +46,7 @@ int main() {
   // --- destroy on dyn: always vt[-1] (~Src) ---
   {
     auto* heap = new Person{"Yan"};
-    asf::dyn<Droppable> hd{heap};
+    asf_dyn::dyn<Droppable> hd{heap};
     std::println("before destroy who = {}", hd->who());
     hd.destroy();  // ~Person via vt[-1]; handle clears
     std::println("after destroy engaged = {}", static_cast<bool>(hd));
@@ -56,10 +56,10 @@ int main() {
   // --- *dyn proxy: shallow copy vs construct() deep clone ---
   {
     Person src{"Ada"};
-    asf::dyn<Droppable> d{&src};
+    asf_dyn::dyn<Droppable> d{&src};
     auto view = *d;
     auto alias = view;                 // shallow: same observation
-    auto clone = asf::construct(view); // deep: owned copy (default Ptr)
+    auto clone = asf_dyn::construct(view); // deep: owned copy (default Ptr)
 
     src.name = "Zed";
     std::println("alias sees = {}", alias->who());  // Zed
@@ -67,16 +67,16 @@ int main() {
 
     // rproxy selects move-construct overload (non-const observation)
     Person mv{"MoveMe"};
-    asf::dyn<Droppable> md{&mv};
-    auto moved = asf::construct(md.rproxy());
+    asf_dyn::dyn<Droppable> md{&mv};
+    auto moved = asf_dyn::construct(md.rproxy());
     std::println("construct(rproxy) who = {}", moved->who());
   }
 
   // --- unique_ptr ownership: last owner runs ~Src then frees storage ---
   {
     Person drop_src{"Uptr"};
-    asf::dyn<Droppable> obs{&drop_src};
-    auto owned = asf::construct<std::unique_ptr>(*obs);
+    asf_dyn::dyn<Droppable> obs{&drop_src};
+    auto owned = asf_dyn::construct<std::unique_ptr>(*obs);
     std::println("unique_dyn who = {}", owned->who());
     // scope end: ~Person via vt[-1], then ::operator delete
   }
@@ -84,13 +84,13 @@ int main() {
   // --- shared_ptr / weak_ptr ---
   {
     Person sp_src{"Sptr"};
-    asf::dyn<Droppable> obs{&sp_src};
-    auto a = asf::construct<std::shared_ptr>(*obs);
+    asf_dyn::dyn<Droppable> obs{&sp_src};
+    auto a = asf_dyn::construct<std::shared_ptr>(*obs);
     auto b = a;
     a.reset();
     std::println("shared remaining = {}", b->who());
 
-    asf::weak_dyn<Droppable> weak{b};
+    asf_dyn::weak_dyn<Droppable> weak{b};
     if (auto locked = weak.lock())
       std::println("weak lock = {}", locked->who());
     b.reset();
@@ -100,16 +100,16 @@ int main() {
   // --- sub_dyn: own-section methods only; no table-origin prefix ---
   {
     Person own_src{"Sub"};
-    asf::dyn<OwnLeaf> leaf{&own_src};
-    asf::sub_dyn<OwnBase> sub{leaf};
+    asf_dyn::dyn<OwnLeaf> leaf{&own_src};
+    asf_dyn::sub_dyn<OwnBase> sub{leaf};
     std::println("sub_dyn who = {}", sub->who());
   }
 
 #if 0  // --- wrong / ill-formed ---
   // Store destroy in a deleter, then hand off: see examples/*/07_pointer_trait.cpp.
-  // *c_dyn construct is always a deep copy, even asf::construct(cd.rproxy()).
+  // *c_dyn construct is always a deep copy, even asf_dyn::construct(cd.rproxy()).
   // weak_dyn has no method surface; lock() first.
-  asf::weak_dyn<Droppable> w;
+  asf_dyn::weak_dyn<Droppable> w;
   w->who();
 #endif
 }

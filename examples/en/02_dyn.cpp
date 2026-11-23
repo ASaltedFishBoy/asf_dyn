@@ -45,15 +45,15 @@ int main() {
   const Person cperson{"Eve"};
 
   // Default Ptr = void*: non-owning observation (pass address).
-  asf::dyn<Greeter> d{&person};
+  asf_dyn::dyn<Greeter> d{&person};
   d->greet();
   std::println("dyn who = {}", d->who());
 
-  auto d2 = asf::to_dyn<Greeter>(&person);
+  auto d2 = asf_dyn::to_dyn<Greeter>(&person);
   d2->greet();
 
   // Empty / null check (pointer-like)
-  asf::dyn<Greeter> empty;
+  asf_dyn::dyn<Greeter> empty;
   std::println("empty = {}", static_cast<bool>(empty));
   std::println("d ok = {}", static_cast<bool>(d));
 
@@ -62,11 +62,11 @@ int main() {
   std::println("via ptr = {}", raw->name);
 
   // const observation surface
-  asf::c_dyn<Greeter> cd{&cperson};
+  asf_dyn::c_dyn<Greeter> cd{&cperson};
   std::println("c_dyn who = {}", cd->who());
 
   // Hook mutable dyn into c_dyn (const view of the same observation)
-  asf::c_dyn<Greeter> hooked{d};
+  asf_dyn::c_dyn<Greeter> hooked{d};
   std::println("hooked who = {}", hooked->who());
 
   // const dyn (a const HANDLE) is not c_dyn: `const_handle` is const, yet
@@ -74,14 +74,14 @@ int main() {
   // `Person* const`. c_dyn is the other mechanism: a const VIEW (only
   // const-self methods, masked vtable). Use a const dyn to share a mutable
   // observation you will not reseat; use c_dyn to actually const-observe.
-  const asf::dyn<Greeter> const_handle{&person};
+  const asf_dyn::dyn<Greeter> const_handle{&person};
   const_handle->greet();  // OK: mutable call through a const handle
   std::println("const dyn who = {}", const_handle->who());
 
   // static who: iface-only (statics are never dyn slots)
-  asf::dyn<Mixed> md{&person};
+  asf_dyn::dyn<Mixed> md{&person};
   md->greet();
-  asf::iface<Mixed, Person> mi{person};
+  asf_dyn::iface<Mixed, Person> mi{person};
   std::println("mixed who via iface = {}", mi->who());
 
 #if 0  // --- wrong / ill-formed ---

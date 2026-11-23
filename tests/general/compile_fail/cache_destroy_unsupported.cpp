@@ -4,7 +4,7 @@
 #include "asf.hpp"
 
 int main() {
-  using BadOps = asf::pointer_ops<asf::op_unsupported, asf::op_trivial,
-                                asf::op_trivial>;
+  using BadOps = asf_dyn::pointer_ops<asf_dyn::op_unsupported, asf_dyn::op_trivial,
+                                asf_dyn::op_trivial>;
   return static_cast<int>(sizeof(BadOps));
 }

@@ -3,11 +3,11 @@
 ## 注解命名空间
 
 ```cpp
-namespace asf::ann {
+namespace asf::dyn::ann {
   /* expl/no_expl, imple/no_imple, mirror/no_mirror,
      truncate, truncated */
 }
-namespace asf_ann = asf::ann;
+namespace asf_ann = asf::dyn::ann;
 ```
 
 用法：C++26 注解语法 `[[=asf_ann::name]]`。方法对可挂在 **方法** 或 **`Trait<void>`** 上。挂在 `Trait<void>` 上时，该类声明的每个方法继承该注解。方法上的注解覆盖 Trait 上的。同一声明上同时写是、否两种形式是错的。

@@ -69,25 +69,25 @@ int main() {
   Person person{"Ada"};
 
   // --- as<> is zero-cost on iface and dyn (iface: Self rewrap) ---
-  auto doc_i = asf::to_iface<Document>(person);
+  auto doc_i = asf_dyn::to_iface<Document>(person);
   std::println("tag = {}", doc_i->tag());
   doc_i.as<Writable>()->rename("Bob");
   doc_i.as<Printable>()->print();
   std::println("via Readable = {}", doc_i.as<Readable>()->title());
 
   // Implicit iface upcast (derived -> base Trait)
-  asf::iface<Readable, Person> as_readable = doc_i;
+  asf_dyn::iface<Readable, Person> as_readable = doc_i;
   std::println("upcast title = {}", as_readable->title());
 
   // iface can also downcast Trait (Self is known)
-  asf::iface<Document, Person> back_i = as_readable;
+  asf_dyn::iface<Document, Person> back_i = as_readable;
   std::println("iface down tag = {}", back_i->tag());
 
   // --- dyn: leaf bind, then upcast / as<> ---
-  auto doc = asf::to_dyn<Document>(&person);
+  auto doc = asf_dyn::to_dyn<Document>(&person);
   std::println("dyn tag = {}", doc->tag());
 
-  asf::dyn<Readable> up = doc;  // implicit upcast
+  asf_dyn::dyn<Readable> up = doc;  // implicit upcast
   std::println("dyn up title = {}", up->title());
 
   // Same physical vt: as<> is a zero-cost same-table view (no convert)
@@ -97,7 +97,7 @@ int main() {
 
 #if ASF_HAS_DYN_MULTI_VT
   // Non-section-prefix base may Redirect to a cover vt (storable as dyn<Printable>)
-  auto printable = asf::trait_cast<Printable>(doc);
+  auto printable = asf_dyn::trait_cast<Printable>(doc);
   printable->print();
 #endif
 
@@ -105,23 +105,23 @@ int main() {
   // dyn_cast: the handle stays anchored at the construction leaf; the walk
   // scans the anchor's live-ancestor closure. A hit is exact and switches
   // only the table (the anchor tag is construction-fixed).
-  asf::dyn<Readable> base = doc;
-  if (auto back = asf::dyn_cast<Document>(base))
+  asf_dyn::dyn<Readable> base = doc;
+  if (auto back = asf_dyn::dyn_cast<Document>(base))
     std::println("dyn_cast back = {}", back->tag());
-  if (auto cross = asf::dyn_cast<Writable>(base)) {
+  if (auto cross = asf_dyn::dyn_cast<Writable>(base)) {
     cross->rename("Dale");
     // Own-section methods only on the dyn surface; base slots via as<>
     std::println("dyn_cast cross title = {}", cross.as<Readable>()->title());
   }
 #else
   // Without RTTI: only unsafe_downcast when you know the physical leaf vt
-  auto leaf_again = asf::unsafe_downcast<Document>(up);
+  auto leaf_again = asf_dyn::unsafe_downcast<Document>(up);
   std::println("unsafe_downcast tag = {}", leaf_again->tag());
 #endif
 
 #if 0  // --- wrong / ill-formed or UB ---
   // No implicit dyn downcast.
-  asf::dyn<Document> down = up;
+  asf_dyn::dyn<Document> down = up;
   // Base method names are not on the derived dyn section surface.
   doc->title();
   // unsafe_downcast after Redirect cover: UB if the vt is not the leaf.

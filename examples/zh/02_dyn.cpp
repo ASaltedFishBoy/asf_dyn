@@ -45,15 +45,15 @@ int main() {
   const Person cperson{"Eve"};
 
   // 默认 Ptr = void*：非拥有观察（传地址）
-  asf::dyn<Greeter> d{&person};
+  asf_dyn::dyn<Greeter> d{&person};
   d->greet();
   std::println("dyn who = {}", d->who());
 
-  auto d2 = asf::to_dyn<Greeter>(&person);
+  auto d2 = asf_dyn::to_dyn<Greeter>(&person);
   d2->greet();
 
   // 空句柄 / 空指针判定（指针语义）
-  asf::dyn<Greeter> empty;
+  asf_dyn::dyn<Greeter> empty;
   std::println("empty = {}", static_cast<bool>(empty));
   std::println("d ok = {}", static_cast<bool>(d));
 
@@ -62,11 +62,11 @@ int main() {
   std::println("via ptr = {}", raw->name);
 
   // const 观察面
-  asf::c_dyn<Greeter> cd{&cperson};
+  asf_dyn::c_dyn<Greeter> cd{&cperson};
   std::println("c_dyn who = {}", cd->who());
 
   // 可变 dyn 挂到 c_dyn（同一观察的 const 视图）
-  asf::c_dyn<Greeter> hooked{d};
+  asf_dyn::c_dyn<Greeter> hooked{d};
   std::println("hooked who = {}", hooked->who());
 
   // const dyn（const 句柄）不是 c_dyn：const_handle 本身是 const，
@@ -74,14 +74,14 @@ int main() {
   // c_dyn 是另一套机制：const 视图（仅 const-self 方法、屏蔽虚表）。
   // 想分享一个不再重绑的可变观察用 const dyn；想真正只读观察用 c_dyn。
 
-  const asf::dyn<Greeter> const_handle{&person};
+  const asf_dyn::dyn<Greeter> const_handle{&person};
   const_handle->greet();  // 可以：const 句柄上的可变调用
   std::println("const dyn who = {}", const_handle->who());
 
   // static who：仅 iface（static 永远不是 dyn 槽）
-  asf::dyn<Mixed> md{&person};
+  asf_dyn::dyn<Mixed> md{&person};
   md->greet();
-  asf::iface<Mixed, Person> mi{person};
+  asf_dyn::iface<Mixed, Person> mi{person};
   std::println("mixed who via iface = {}", mi->who());
 
 #if 0  // --- 错误 / 不合法 ---

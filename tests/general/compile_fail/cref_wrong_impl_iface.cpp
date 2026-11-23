@@ -27,6 +27,6 @@ struct Named<Person> final {
 
 int main() {
   Person p;
-  asf::iface<Named, Person> i{p};
+  asf_dyn::iface<Named, Person> i{p};
   (void)i->who();
 }

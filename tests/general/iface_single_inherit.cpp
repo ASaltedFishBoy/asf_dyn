@@ -94,25 +94,25 @@ struct TruncPassive<Obj> final {
 };
 
 // --- compile-time: live-edge MI detection (independent of the flag) ---
-static_assert(!asf::detail::trait_has_multi_inherit<Linear>());
-static_assert(asf::detail::trait_has_multi_inherit<LiveMI>());
-static_assert(!asf::detail::trait_has_multi_inherit<TruncEdge>());
-static_assert(!asf::detail::trait_has_multi_inherit<TruncPassive>());
-static_assert(asf::detail::live_dyn_base_count<TruncEdge<void>>() == 1);
-static_assert(asf::detail::live_dyn_base_count<LiveMI<void>>() == 2);
+static_assert(!asf_dyn::detail::trait_has_multi_inherit<Linear>());
+static_assert(asf_dyn::detail::trait_has_multi_inherit<LiveMI>());
+static_assert(!asf_dyn::detail::trait_has_multi_inherit<TruncEdge>());
+static_assert(!asf_dyn::detail::trait_has_multi_inherit<TruncPassive>());
+static_assert(asf_dyn::detail::live_dyn_base_count<TruncEdge<void>>() == 1);
+static_assert(asf_dyn::detail::live_dyn_base_count<LiveMI<void>>() == 2);
 
 #if ASF_HAS_DYN_SINGLE_INHERIT
-static_assert(asf::dyn_single_inherit_v);
-static_assert(!asf::dyn_multi_vt_v);
+static_assert(asf_dyn::dyn_single_inherit_v);
+static_assert(!asf_dyn::dyn_multi_vt_v);
 
-static_assert(asf::detail::can_dyn_upcast<A, Linear>());
-static_assert(asf::detail::can_dyn_upcast<A, TruncEdge>());
-static_assert(!asf::detail::can_dyn_upcast<B, TruncEdge>());
-static_assert(asf::detail::can_dyn_upcast<A, TruncPassive>());
-static_assert(!asf::detail::can_dyn_upcast<BTrunc, TruncPassive>());
-static_assert(std::is_convertible_v<asf::dyn<Linear>, asf::dyn<A>>);
-static_assert(std::is_convertible_v<asf::dyn<TruncEdge>, asf::dyn<A>>);
-static_assert(!std::is_convertible_v<asf::dyn<TruncEdge>, asf::dyn<B>>);
+static_assert(asf_dyn::detail::can_dyn_upcast<A, Linear>());
+static_assert(asf_dyn::detail::can_dyn_upcast<A, TruncEdge>());
+static_assert(!asf_dyn::detail::can_dyn_upcast<B, TruncEdge>());
+static_assert(asf_dyn::detail::can_dyn_upcast<A, TruncPassive>());
+static_assert(!asf_dyn::detail::can_dyn_upcast<BTrunc, TruncPassive>());
+static_assert(std::is_convertible_v<asf_dyn::dyn<Linear>, asf_dyn::dyn<A>>);
+static_assert(std::is_convertible_v<asf_dyn::dyn<TruncEdge>, asf_dyn::dyn<A>>);
+static_assert(!std::is_convertible_v<asf_dyn::dyn<TruncEdge>, asf_dyn::dyn<B>>);
 #endif
 
 int main() {
@@ -123,21 +123,21 @@ int main() {
   Obj o{asf_test::no_sso("T")};
   auto tag = [&](char const* m) { return o.name + "/" + m; };
 
-  auto lin = asf::to_dyn<Linear>(&o);
-  asf::dyn<A> from_lin = lin;
+  auto lin = asf_dyn::to_dyn<Linear>(&o);
+  asf_dyn::dyn<A> from_lin = lin;
   if (from_lin->a() != tag("a") || lin->lin() != tag("lin"))
     return 1;
 
-  auto edge = asf::to_dyn<TruncEdge>(&o);
-  asf::dyn<A> from_edge = edge;
+  auto edge = asf_dyn::to_dyn<TruncEdge>(&o);
+  asf_dyn::dyn<A> from_edge = edge;
   if (from_edge->a() != tag("a") || edge->leaf() != tag("leaf"))
     return 1;
   // same-table view still sees truncated branch methods
   if (edge.as<B>()->b() != tag("b"))
     return 1;
 
-  auto pass = asf::to_dyn<TruncPassive>(&o);
-  asf::dyn<A> from_pass = pass;
+  auto pass = asf_dyn::to_dyn<TruncPassive>(&o);
+  asf_dyn::dyn<A> from_pass = pass;
   if (from_pass->a() != tag("a"))
     return 1;
 

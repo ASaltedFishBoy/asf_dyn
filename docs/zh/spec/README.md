@@ -1,6 +1,6 @@
 # ASF API 规格
 
-命名空间：`asf`（注解别名 `asf_ann = asf::ann`）。除另有说明，公开 API 即下列头文件。
+命名空间：`asf`（注解别名 `asf_ann = asf_dyn::ann`）。除另有说明，公开 API 即下列头文件。
 
 上手不需要 mirror：Trait / iface / dyn 可从对象与指针使用；字段视图见文末 [mirror.md](mirror.md)。
 
@@ -67,7 +67,7 @@
 ## 运行时可见常量
 
 ```cpp
-namespace asf {
+namespace asf::dyn {
   inline constexpr bool dyn_rtti_v;
   inline constexpr bool dyn_intermediate_v;
   inline constexpr bool dyn_multi_vt_v;

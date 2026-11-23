@@ -259,7 +259,7 @@ template <template <class> class Trait, class As>
 struct instantiate_dyn;
 ```
 
-Explicitly instantiate: `template struct asf::instantiate_dyn<Trait, As>;`.
+Explicitly instantiate: `template struct asf_dyn::instantiate_dyn<Trait, As>;`.
 
 ## See also
 

@@ -3,11 +3,11 @@
 ## Annotation namespace
 
 ```cpp
-namespace asf::ann {
+namespace asf::dyn::ann {
   /* expl/no_expl, imple/no_imple, mirror/no_mirror,
      truncate, truncated */
 }
-namespace asf_ann = asf::ann;
+namespace asf_ann = asf::dyn::ann;
 ```
 
 C++26 annotation syntax `[[=asf_ann::name]]`. Method pairs may sit on a **method** or on **`Trait<void>`**. On `Trait<void>`, every method declared there inherits that annotation. A method annotation overrides the Trait annotation. Putting both forms on the same declaration is ill-formed.

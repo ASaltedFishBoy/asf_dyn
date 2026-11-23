@@ -10,14 +10,14 @@ template <typename T = void>
 struct Ident;
 template <>
 struct Ident<void> {
-  int get(asf::mirror<P, P> self);
+  int get(asf_dyn::mirror<P, P> self);
 };
 template <>
 struct Ident<P> final {};
 
 int main() {
   P p{1};
-  auto d = asf::to_dyn<Ident>(&p);  // ERROR: identity_mirror Self needs
+  auto d = asf_dyn::to_dyn<Ident>(&p);  // ERROR: identity_mirror Self needs
   (void)d;                          // Storage = identity_mirror<P>
   return 0;
 }

@@ -25,16 +25,16 @@ template <>
 struct Named<Person> final {};
 
 template <class T>
-using slot_uptr = std::unique_ptr<T, asf::dyn_default_delete>;
+using slot_uptr = std::unique_ptr<T, asf_dyn::dyn_default_delete>;
 
 int main() {
   Person src{"Ada"};
-  asf::dyn<Named> obs{&src};
-  auto owned = asf::construct<std::unique_ptr>(*obs);
+  asf_dyn::dyn<Named> obs{&src};
+  auto owned = asf_dyn::construct<std::unique_ptr>(*obs);
   std::println("owned who = {}", owned->who());
 
   // Put destroy in the pointer, then hand it to c_dyn.
-  auto bridged = asf::to_dyn<Named, slot_uptr>(std::move(owned));
-  asf::c_dyn<Named, slot_uptr<void>> cd{std::move(bridged)};
+  auto bridged = asf_dyn::to_dyn<Named, slot_uptr>(std::move(owned));
+  asf_dyn::c_dyn<Named, slot_uptr<void>> cd{std::move(bridged)};
   std::println("c_dyn who = {}", cd->who());
 }

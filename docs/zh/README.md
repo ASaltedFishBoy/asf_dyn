@@ -52,22 +52,22 @@ struct Greeter<Person> final {
 
 int main() {
   Person p{"Ada"};  // 对象定义
-  asf::dyn<Greeter> d{&p};
-  // 若对某基使用 dyn，且全程序没有任何覆盖该基的 final 叶上的，类似此处dyn的指针/mirror绑定或instantiate_dyn，则须选定一个 final 使用 template struct asf::instantiate_dyn<Greeter, Person>; 语句实例化。
+  asf_dyn::dyn<Greeter> d{&p};
+  // 若对某基使用 dyn，且全程序没有任何覆盖该基的 final 叶上的，类似此处dyn的指针/mirror绑定或instantiate_dyn，则须选定一个 final 使用 template struct asf_dyn::instantiate_dyn<Greeter, Person>; 语句实例化。
 
-  asf::iface<Greeter, Person> i{p};
+  asf_dyn::iface<Greeter, Person> i{p};
   i->greet();
   std::println("iface who = {}", i->who());
 
   d->greet();
   std::println("dyn who = {}", d->who());
 
-  auto d2 = asf::to_dyn<Greeter>(&p);
+  auto d2 = asf_dyn::to_dyn<Greeter>(&p);
   d2->greet();
 }
 ```
 
-`Greeter<void>` 为接口。 `Greeter<Person> final` 为实现叶。 `template struct asf::instantiate_dyn<Greeter, Person>;` 为实例化 dyn。 `Person p{...};` 为对象定义。
+`Greeter<void>` 为接口。 `Greeter<Person> final` 为实现叶。 `template struct asf_dyn::instantiate_dyn<Greeter, Person>;` 为实例化 dyn。 `Person p{...};` 为对象定义。
 
 ## 概念
 

@@ -1,4 +1,4 @@
-// (Drawable / Logger) onto asf::dyn.
+// (Drawable / Logger) onto asf_dyn::dyn.
 
 #include "asf_check.hpp"
 #include "test_bind.hpp"
@@ -68,11 +68,11 @@ struct Drawable<Circle> final {
 
 template <>
 struct Drawable<Point> final {
-  static void draw(asf::c_mirror<Point>, std::ostream& out) { out << "{Point}"; }
-  static double area(asf::c_mirror<Point>) { return 0; }
+  static void draw(asf_dyn::c_mirror<Point>, std::ostream& out) { out << "{Point}"; }
+  static double area(asf_dyn::c_mirror<Point>) { return 0; }
 };
 
-std::string PrintDrawableToString(asf::dyn<Drawable> p) {
+std::string PrintDrawableToString(asf_dyn::dyn<Drawable> p) {
   std::stringstream result;
   result << std::fixed << std::setprecision(5) << "shape = ";
   p->draw(result);
@@ -123,18 +123,18 @@ struct OwnDrawable<Rectangle> final {
   }
 };
 
-asf::unique_dyn<OwnDrawable> MakeOwnedDrawable(const std::string& s) {
+asf_dyn::unique_dyn<OwnDrawable> MakeOwnedDrawable(const std::string& s) {
   std::vector<std::string> parsed = ParseCommand(s);
   if (!parsed.empty() && parsed[0u] == "Rectangle" && parsed.size() == 3u) {
     Rectangle tmp{std::stod(parsed[1u]), std::stod(parsed[2u])};
-    auto mtmp = asf::to_mirror(tmp);
-    asf::dyn<OwnDrawable> obs{mtmp};
-    return asf::construct<std::unique_ptr>(*obs);
+    auto mtmp = asf_dyn::to_mirror(tmp);
+    asf_dyn::dyn<OwnDrawable> obs{mtmp};
+    return asf_dyn::construct<std::unique_ptr>(*obs);
   }
   throw std::runtime_error{"Invalid command"};
 }
 
-asf::dyn<Drawable> MakeDrawableFromCommand(const std::string& s) {
+asf_dyn::dyn<Drawable> MakeDrawableFromCommand(const std::string& s) {
   std::vector<std::string> parsed = ParseCommand(s);
   if (!parsed.empty()) {
     if (parsed[0u] == "Rectangle" && parsed.size() == 3u) {
@@ -187,7 +187,7 @@ template <>
 struct Logger<StreamLogger> final {};
 
 void TestDrawable() {
-  asf::dyn<Drawable> p = MakeDrawableFromCommand("Rectangle 2 3");
+  asf_dyn::dyn<Drawable> p = MakeDrawableFromCommand("Rectangle 2 3");
   std::string s = PrintDrawableToString(std::move(p));
   ASF_CHECK_EQ(s,
                "shape = {Rectangle: width = 2.00000, height = 3.00000}, "

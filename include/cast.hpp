@@ -10,7 +10,7 @@
 //   to_dyn<Trait>(cache_deref{Ptr})           -> cache_storage_spec<Ptr>
 //   to_dyn<Trait, uptr>([alloc, ]value)      forward into heap uptr
 //   instantiate_dyn<Trait, As>               type: ODR-use final-leaf object vt
-//     (explicit: template struct asf::instantiate_dyn<Trait, As>;)
+//     (explicit: template struct asf::dyn::instantiate_dyn<Trait, As>;)
 //   trait_cast<Trait>(iface | dyn | c_dyn)   iface: bases either way; dyn: upcast
 //   c_trait_cast<Trait>(iface | dyn | c_dyn) const surface; dyn upcast to c_dyn
 //   to_dyn<Trait, deleter Ptr>(dyn&&)        shallow handoff onto that Ptr
@@ -562,7 +562,7 @@ inline constexpr to_c_dyn_t<Trait> to_c_dyn{};
 // Same inject path as pointer bind (`dyn_object_slots`). Explicitly
 // instantiate at namespace scope when a base is used as dyn and the program
 // has no covering final pointer/mirror bind:
-//   template struct asf::instantiate_dyn<Trait, As>;
+//   template struct asf::dyn::instantiate_dyn<Trait, As>;
 template <template <class> class Trait, class As>
 struct instantiate_dyn {
   using Raw = std::remove_cvref_t<As>;
