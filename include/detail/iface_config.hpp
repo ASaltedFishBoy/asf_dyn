@@ -36,7 +36,7 @@
 #define ASF_VERSION_MAJOR 0
 #endif
 #ifndef ASF_VERSION_MINOR
-#define ASF_VERSION_MINOR 3
+#define ASF_VERSION_MINOR 4
 #endif
 #ifndef ASF_VERSION_PATCH
 #define ASF_VERSION_PATCH 0
@@ -46,7 +46,7 @@
   (ASF_VERSION_MAJOR * 10000 + ASF_VERSION_MINOR * 100 + ASF_VERSION_PATCH)
 
 #ifndef ASF_VERSION_STRING
-#define ASF_VERSION_STRING "0.3.0"
+#define ASF_VERSION_STRING "0.4.0"
 #endif
 
 #ifndef ASF_HAS_DYN_RTTI
@@ -102,10 +102,10 @@
 
 // The vt tag hi-bit width rides along as a _tNN suffix: TUs built with
 // different tag widths must not COMDAT-merge vt / meta instances.
-// Keep the v0_3_0 token in sync with ASF_VERSION_* when bumping.
+// Keep the v0_4_0 token in sync with ASF_VERSION_* when bumping.
 #ifndef ASF_ABI_NAMESPACE
 #define ASF_ABI_NAMESPACE                                                    \
-  ASF_PP_CAT(ASF_PP_CAT(v0_3_0_b, ASF_ABI_FEATURE_BITS),                     \
+  ASF_PP_CAT(ASF_PP_CAT(v0_4_0_b, ASF_ABI_FEATURE_BITS),                     \
              ASF_PP_CAT(_t, ASF_DYN_VT_TAG_HI_BITS))
 #endif
 

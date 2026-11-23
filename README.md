@@ -189,7 +189,7 @@ cmake -S . -B build -G Ninja -DCMAKE_CXX_COMPILER=g++ \
   -DASF_HAS_DYN_RTTI=ON -DASF_HAS_DYN_INTERMEDIATE=OFF
 ```
 
-Details: [docs/en/spec/features.md](docs/en/spec/features.md). Feature flags are also baked into the ABI inline namespace as a binary tag (`v0_3_0_b...`).
+Details: [docs/en/spec/features.md](docs/en/spec/features.md). Feature flags are also baked into the ABI inline namespace as a binary tag (`v0_4_0_b...`).
 
 ## Headers
 
